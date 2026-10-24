@@ -41,13 +41,16 @@ Trees are JSON files in `~/.family-tree-mcp/` (or `FAMILY_TREE_DIR`). Every chan
 | `get_relationship` | e.g. "Sam is Ava's first cousin once removed" |
 | `get_diagram` | Mermaid chart to view in the chat |
 | `export_gedcom` | GEDCOM file for Ancestry, FamilySearch, Gramps, etc. |
-| `publish_site`, `export_html` | Read-only web page of the tree, online or as a file |
+| `publish_site`, `export_html` | Web page of the tree, online (with family photos) or as a file |
+| `change_photo_code` | Replace the code family use to add photos |
 
 ## Sharing
 
 Ask your agent to *"publish the family tree"*. You get a free [Cloudflare Pages](https://pages.cloudflare.com) link that updates itself 30 seconds after you stop editing. Viewers can browse the tree, search for anyone, and tap a person to see their details and family, but can't edit. Details of people who may be living are hidden by default.
 
-One-time setup: a free Cloudflare account, [Node.js](https://nodejs.org), and `npx wrangler login`. Anyone with the link can view it; use [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/) to restrict it. To use your own domain (e.g. `family.example.com`), add it under the project's **Custom domains** in the Cloudflare dashboard. To take it down, run `npx wrangler pages project delete <project>`.
+**Photos.** Publishing also gives you a family code such as `amber-river-falcon-42`. Share it with family: on the site they tap a person's picture, choose **Add photo**, and enter the code once on that device. Photos are cropped to a square and stored in [Workers KV](https://developers.cloudflare.com/kv/) on your Cloudflare account (free tier). Only a hash of the code is uploaded. To lock out an old code, ask your agent to *"change the photo code"*. Photos aren't included in `export_html` files or GEDCOM exports.
+
+One-time setup: a free Cloudflare account, [Node.js](https://nodejs.org), and `npx wrangler login`. Anyone with the link can view it; use [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/) to restrict it. To use your own domain (e.g. `family.example.com`), add it under the project's **Custom domains** in the Cloudflare dashboard. To take it down, run `npx wrangler pages project delete <project>`, and delete the `<project>-photos` KV namespace in the dashboard.
 
 ## Development
 

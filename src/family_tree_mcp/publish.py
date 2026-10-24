@@ -1,24 +1,88 @@
 """Publish share pages to Cloudflare Pages with wrangler and keep them updated."""
 
+import hashlib
+import json
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import sys
 import threading
 import time
 from collections.abc import Callable
+from importlib.resources import files
 from pathlib import Path
 
-from family_tree_mcp.tree import Tree
+from family_tree_mcp.tree import Site, Tree
 
 WRANGLER = ["--yes", "wrangler@4"]
 # Desktop apps often start servers without the shell's PATH, so look where Node usually lives.
 NODE_DIRS = ["/opt/homebrew/bin", "/usr/local/bin", str(Path.home() / ".volta/bin")]
 
 
+# Family codes look like "amber-river-falcon-42": easy to say aloud, hard to guess.
+_WORDS = """
+amber apple aspen autumn basil birch bloom brook cedar cherry clover coral cotton daisy dawn
+delta ember fern field flint forest frost garden ginger harbor hazel honey indigo iris island
+ivory jade jasmine juniper kettle lagoon lantern lemon lilac linen lotus maple meadow mint moss
+nectar oak ocean olive orchid pebble pepper pine plum poppy prairie quartz rain raven reed
+river robin rose saffron sage sand shell silver sky snow spruce star stone summer sun thistle
+thunder tide tulip valley velvet violet walnut willow winter wren
+"""
+WORDS = _WORDS.split()
+
+
+def new_code() -> str:
+    return "-".join([*(secrets.choice(WORDS) for _ in range(3)), str(10 + secrets.randbelow(90))])
+
+
+def site_files(page: str, site: Site | None) -> dict[str, str]:
+    """The files of the Pages project for a page: with photos, also their function and config."""
+    found = {"public/index.html": page}
+    if site and site.photos and site.edit_code:
+        code = hashlib.sha256(site.edit_code.encode()).hexdigest()
+        function = files("family_tree_mcp").joinpath("photos.js").read_text(encoding="utf-8")
+        found["functions/api/photos/[[path]].js"] = function
+        found["wrangler.toml"] = (
+            f'name = "{site.project}"\n'
+            'pages_build_output_dir = "public"\n'
+            'compatibility_date = "2025-01-01"\n\n'
+            f'[vars]\nEDIT_CODE_HASH = "{code}"\n\n'
+            f'[[kv_namespaces]]\nbinding = "PHOTOS"\nid = "{site.photos}"\n'
+        )
+    return found
+
+
+def photo_store(folder: Path, project: str) -> str:
+    """Return the id of the project's Workers KV namespace for photos, creating it if needed."""
+    title = f"{project}-photos"
+    if found := _namespace(folder, title):
+        return found
+    created = _wrangler(folder, "kv", "namespace", "create", title)
+    if created.returncode and "already exists" not in created.stdout:
+        raise ValueError(_failure(created.stdout))
+    if found := _namespace(folder, title):
+        return found
+    raise ValueError("Publishing failed: Cloudflare didn't list the new photo store. Try again.")
+
+
+def _namespace(folder: Path, title: str) -> str | None:
+    listed = _wrangler(folder, "kv", "namespace", "list")
+    # The JSON list follows any warnings wrangler prints, such as "[WARNING] ...".
+    json_start = re.search(r"^\[\s*(?:\{|\]|$)", listed.stdout, re.MULTILINE)
+    if listed.returncode or not (start := json_start):
+        raise ValueError(_failure(listed.stdout))
+    spaces, _ = json.JSONDecoder().raw_decode(listed.stdout[start.start() :])
+    # Older wrangler versions prefix the title with the project name.
+    for space in spaces:
+        if space.get("title") == title or space.get("title", "").endswith(f"-{title}"):
+            return space["id"]
+    return None
+
+
 def deploy(folder: Path, project: str, create: bool = True) -> str:
-    """Deploy the folder to the Pages project, creating it first if asked; return its URL."""
+    """Deploy the site folder to the Pages project, creating it first if asked; return its URL."""
     if create:
         created = _wrangler(
             folder, "pages", "project", "create", project, "--production-branch", "main"
@@ -26,7 +90,7 @@ def deploy(folder: Path, project: str, create: bool = True) -> str:
         if created.returncode and "already exists" not in created.stdout:
             raise ValueError(_failure(created.stdout))
     deployed = _wrangler(
-        folder, "pages", "deploy", str(folder), "--project-name", project, "--branch", "main",
+        folder, "pages", "deploy", "public", "--project-name", project, "--branch", "main",
         "--commit-dirty=true",
     )  # fmt: skip
     if deployed.returncode:
@@ -45,9 +109,9 @@ def _wrangler(folder: Path, *args: str) -> subprocess.CompletedProcess[str]:
     try:
         return subprocess.run(
             [npx, *WRANGLER, *args],
-            # Wrangler writes .wrangler/tmp in its working directory, and apps often start
-            # servers in a read-only one like /.
-            cwd=folder.parent,
+            # Wrangler reads functions/ and wrangler.toml from its working directory and writes
+            # .wrangler/tmp there, and apps often start servers in a read-only one like /.
+            cwd=folder,
             env=env,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,

@@ -71,6 +71,8 @@ class Site(BaseModel):
     url: str
     hide_living: bool = True
     keep_updated: bool = True
+    photos: str | None = None  # Workers KV namespace holding the site's photos
+    edit_code: str | None = None  # family code needed to change photos
 
 
 class Tree(BaseModel):

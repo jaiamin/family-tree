@@ -1,19 +1,21 @@
 """MCP tools for building and reasoning over family trees."""
 
 import atexit
+import json
 import os
 from pathlib import Path
 from typing import Annotated, Literal
 
 from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from family_tree_mcp.diagram import View, mermaid
 from family_tree_mcp.gedcom import to_gedcom
-from family_tree_mcp.publish import Updater, deploy
+from family_tree_mcp.publish import Updater, deploy, new_code, photo_store, site_files
 from family_tree_mcp.share import share_page
-from family_tree_mcp.store import Store
+from family_tree_mcp.store import Store, write_atomic
 from family_tree_mcp.tree import NewPerson, PartnerStatus, Relation, Sex, Site, Tree, slugify
 
 INSTRUCTIONS = """\
@@ -35,7 +37,8 @@ oldest first when birth dates are known.
 Sharing: get_diagram returns Mermaid to display in a ```mermaid block; export_gedcom
 writes a file for Ancestry, FamilySearch, MyHeritage, Gramps etc. To share with family,
 call publish_site once: it puts a read-only page online and then updates it automatically
-as the tree changes.
+as the tree changes. Family can add photos on the page with the photo code publish_site
+returns; change_photo_code replaces it.
 
 Dates are free text; prefer ISO format (YYYY, YYYY-MM or YYYY-MM-DD).
 Every change is backed up: if you make a mistake, or the user asks to revert, use undo.
@@ -58,21 +61,28 @@ SexChange = Annotated[
 
 def create_server(store: Store, publish_delay: float = 30) -> FastMCP:
     mcp = FastMCP("family-tree", instructions=INSTRUCTIONS)
-    deployed: dict[str, str] = {}  # tree name -> page last deployed by this server
+    deployed: dict[str, str] = {}  # Pages project -> site files last deployed by this server
 
-    def write_site(t: Tree, hide_living: bool) -> tuple[Path, str, int]:
-        page, hidden = share_page(t, hide_living)
-        path = _export(f"{slugify(t.name)}-site/index.html", page)
-        return path.parent, page, hidden
+    def write_site(t: Tree, site: Site) -> tuple[Path, str, int]:
+        """Write the Pages project folder; return it, its contents and how many were hidden."""
+        page, hidden = share_page(t, site.hide_living, photos=bool(site.photos))
+        written = site_files(page, site)
+        folder = store.root / "exports" / f"{slugify(t.name)}-site"
+        for name, content in written.items():
+            path = folder / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            # Background updates can rewrite these while a deploy reads them.
+            write_atomic(path, content)
+        return folder, json.dumps(written, sort_keys=True), hidden
 
     def refresh(name: str) -> None:
         t = store.load(name)
         if not (t.site and t.site.keep_updated):
             return
-        folder, page, _ = write_site(t, t.site.hide_living)
-        if deployed.get(t.site.project) != page:
+        folder, contents, _ = write_site(t, t.site)
+        if deployed.get(t.site.project) != contents:
             deploy(folder, t.site.project, create=False)
-            deployed[t.site.project] = page
+            deployed[t.site.project] = contents
 
     updater = Updater(refresh, publish_delay)
     store.on_change = updater.schedule
@@ -311,34 +321,67 @@ def create_server(store: Store, publish_delay: float = 30) -> FastMCP:
         To put it online, use publish_site instead.
         """
         t = store.load(tree)
-        folder, _, hidden = write_site(t, hide_living)
-        return {"file": str(folder / "index.html"), "hidden_living": hidden}
+        page, hidden = share_page(t, hide_living)
+        return {"file": str(_export(f"{slugify(t.name)}.html", page)), "hidden_living": hidden}
 
     @mcp.tool(annotations=ToolAnnotations(destructive_hint=False, open_world_hint=True))
     def publish_site(tree: TreeName, hide_living: bool = True, keep_updated: bool = True) -> dict:
         """Publish a read-only, interactive page of the tree to a free link anyone can open.
 
-        Viewers can browse the tree, search, and tap anyone for their details and family;
-        nothing can be edited. hide_living removes birth dates, places and notes of
-        people who may be alive. With keep_updated, the page is republished automatically once
-        edits pause for 30 seconds; pass keep_updated=False to publish once and stop updating.
-        Uses Cloudflare Pages: the first time, the user runs `npx wrangler login` in a terminal.
+        Viewers can browse the tree, search, and tap anyone for their details and family.
+        The tree itself can't be edited there, but anyone with the returned photo_code can add,
+        change or remove photos; give the code to the user to share with family. hide_living
+        removes birth dates, places and notes of people who may be alive. With keep_updated, the
+        page is republished automatically once edits pause for 30 seconds; pass
+        keep_updated=False to publish once and stop updating. Uses Cloudflare Pages and Workers
+        KV: the first time, the user runs `npx wrangler login` in a terminal.
         """
         t = store.load(tree)
         project = t.site.project if t.site else slugify(t.name)[:58].strip("-")
-        folder, page, hidden = write_site(t, hide_living)
-        url = deploy(folder, project)
-        deployed[project] = page
+        site = Site(
+            project=project,
+            url=t.site.url if t.site else "",
+            hide_living=hide_living,
+            keep_updated=keep_updated,
+            photos=t.site.photos if t.site else None,
+            edit_code=(t.site.edit_code if t.site else None) or new_code(),
+        )
+        folder = store.root / "exports" / f"{slugify(t.name)}-site"
+        folder.mkdir(parents=True, exist_ok=True)
+        site.photos = site.photos or photo_store(folder, project)
+        folder, contents, hidden = write_site(t, site)
+        site.url = deploy(folder, project)
+        deployed[project] = contents
         with store.edit(tree) as current:
-            current.site = Site(
-                project=project, url=url, hide_living=hide_living, keep_updated=keep_updated
-            )
+            current.site = site
         return {
-            "url": url,
+            "url": site.url,
             "hidden_living": hidden,
             "keep_updated": keep_updated,
-            "note": "Anyone with the link can view it. To restrict access, see the README.",
+            "photo_code": site.edit_code,
+            "note": "Anyone with the link can view it; adding or removing photos needs the "
+            "photo code. To restrict viewing, see the README.",
         }
+
+    @mcp.tool(annotations=ToolAnnotations(destructive_hint=False, open_world_hint=True))
+    def change_photo_code(tree: TreeName, code: str | None = None) -> dict:
+        """Replace the code needed to add, change or remove photos on the published site.
+
+        Omit code to generate a new one. The old code stops working once the site updates.
+        """
+        t = store.load(tree)
+        if not (t.site and t.site.photos):
+            raise ToolError("Publish the site with publish_site first.")
+        code = (code or new_code()).strip().lower()
+        if len(code) < 6:
+            raise ToolError("Use a code of at least 6 characters.")
+        site = t.site.model_copy(update={"edit_code": code})
+        folder, contents, _ = write_site(t, site)
+        deploy(folder, site.project, create=False)
+        deployed[site.project] = contents
+        with store.edit(tree) as current:
+            current.site = site
+        return {"url": site.url, "photo_code": code}
 
     def _export(filename: str, content: str) -> Path:
         path = store.root / "exports" / filename
