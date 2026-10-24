@@ -54,7 +54,11 @@ Ask your agent to *"publish the family tree"*. You get a free [Cloudflare Pages]
 
 One-time setup: a free Cloudflare account, [Node.js](https://nodejs.org), and `npx wrangler login`. Anyone with the link can view it; use [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/) to restrict it. To use your own domain (e.g. `family.example.com`), add it under the project's **Custom domains** in the Cloudflare dashboard. To take it down, run `npx wrangler pages project delete <project>`, and delete the `<project>-photos` KV namespace in the dashboard.
 
+The viewer uses one top-to-bottom graph with compact couples, search, pan and zoom. Desktop details open beside the canvas; mobile details expand below it. The bundled [ELK.js layout engine](src/family_tree_mcp/vendor/README.md) runs locally in the page.
+
 ## Development
+
+Install Node.js as well as uv to run the JavaScript layout regression tests.
 
 ```sh
 uv sync
@@ -63,4 +67,4 @@ uv run ruff format . && uv run ruff check . && uv run ty check && uv run pytest
 
 ## License
 
-MIT
+Project code: MIT. The bundled ELK.js engine is distributed under [EPL-2.0](src/family_tree_mcp/vendor/ELK-LICENSE.md).
