@@ -3,3 +3,6 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 dist/
+
+# Disposable local family-tree preview
+.preview/

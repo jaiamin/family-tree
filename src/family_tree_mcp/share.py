@@ -38,6 +38,11 @@ def share_page(tree: Tree, hide_living: bool = True, photos: bool = False) -> tu
     page = (
         ASSETS.joinpath("share.html")
         .read_text(encoding="utf-8")
+        .replace(
+            "__LAYOUT_ENGINE__",
+            ASSETS.joinpath("vendor/elk.bundled.js").read_text(encoding="utf-8"),
+        )
+        .replace("__LAYOUT_JS__", ASSETS.joinpath("layout.js").read_text(encoding="utf-8"))
         .replace("__SHARE_JS__", ASSETS.joinpath("share.js").read_text(encoding="utf-8"))
         .replace("__TITLE__", html.escape(tree.name))
         .replace("__DATA__", embedded)

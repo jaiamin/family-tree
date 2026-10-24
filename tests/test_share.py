@@ -10,15 +10,19 @@ from family_tree_mcp.tree import Tree
 
 RUNNER = """
 const lib = require(process.argv[1]);
-const { tree, viewports } = JSON.parse(require("fs").readFileSync(0, "utf8"));
+const input = JSON.parse(require("fs").readFileSync(0, "utf8"));
+const { tree, viewports } = input;
+(async () => {
 const ids = Object.keys(tree.people);
+const layouts = await Promise.all(viewports.map((v) => lib.layout(tree)));
 console.log(JSON.stringify({
   children: ids.map((id) => lib.children(tree, id)),
   siblings: ids.map((id) => lib.siblings(tree, id)),
   half: ids.map((a) => ids.map((b) => a !== b && lib.halfSiblings(tree, a, b))),
-  layouts: viewports.map((v) => lib.layout(tree, v)),
-  connections: viewports.map((v) => lib.connections(tree, lib.layout(tree, v))),
+  layouts,
+  connections: layouts.map((g) => lib.connections(tree, g)),
 }));
+})().catch((e) => { console.error(e); process.exitCode = 1; });
 """
 
 
@@ -51,7 +55,7 @@ def test_page_logic_matches_python_and_lays_out_everyone(tree: Tree) -> None:
     ids = list(tree.people)
     viewports = [{"width": w, "height": h} for w, h in ((1440, 800), (390, 760), (4000, 1200))]
     data = {"tree": tree.model_dump(exclude_none=True), "viewports": viewports}
-    script = str(files("family_tree_mcp").joinpath("share.js"))
+    script = str(files("family_tree_mcp").joinpath("layout.js"))
     result = subprocess.run(
         ["node", "-e", RUNNER, script], input=json.dumps(data), capture_output=True, text=True
     )
@@ -61,62 +65,20 @@ def test_page_logic_matches_python_and_lays_out_everyone(tree: Tree) -> None:
     assert js["children"] == [tree.children(i) for i in ids]
     assert js["siblings"] == [tree.siblings(i) for i in ids]
     assert js["half"] == [[a != b and tree.half_siblings(a, b) for b in ids] for a in ids]
-    for view, got, edges in zip(viewports, js["layouts"], js["connections"], strict=True):
+    for _view, got, edges in zip(viewports, js["layouts"], js["connections"], strict=True):
         pos, card = got["pos"], got["card"]
         assert set(pos) == set(ids)
-        assert got["portrait"] == (view["height"] > view["width"])
-        boxes = sorted((p["x"], p["y"]) for p in pos.values())
+        boxes = sorted((p["x"], p["y"]) for p in got["nodes"])
         for i, (x, y) in enumerate(boxes):
             assert x >= 0 and x + card["w"] <= got["width"] + 0.5
             assert y >= 0 and y + card["h"] <= got["height"] + 0.5
             for x2, y2 in boxes[i + 1 :]:
                 assert abs(x - x2) >= card["w"] or abs(y - y2) >= card["h"], "cards overlap"
-        for pid in ids:
-            if parents := tree.people[pid].parents:
-                assert any(pos[pid]["y"] > pos[p]["y"] for p in parents)
-        for pid in ids:
-            for partner in tree.people[pid].partners:
-                a, b = pos[pid], pos[partner]
-                joined_cards = (
-                    pid in got["pair"]
-                    and partner in got["pair"]
-                    and a["x"] == b["x"]
-                    and abs(a["y"] - b["y"]) == card["h"]
-                )
-                assert joined_cards or any(
-                    e["kind"] == "couple"
-                    and e["className"] != "dot"
-                    and set(e["people"]) == {pid, partner}
-                    for e in edges
-                ), "Partnership disappeared"
-        # Every parent pair has a visible junction, with all shared children leaving it.
-        for pid in ids:
-            parents = tree.people[pid].parents
-            if len(parents) != 2:
-                continue
-            dot = next(
-                e for e in edges if e["className"] == "dot" and set(e["people"]) == set(parents)
-            )
-            child = next(e for e in edges if e["kind"] == "child" and e["people"][0] == pid)
-            start = child["d"].split("V")[0][1:]
-            dot_start = dot["d"].split("a")[0][1:]
-            x, y = map(float, start.split(","))
-            dx, dy = map(float, dot_start.split(","))
-            assert x == dx + 3.5 and y == dy, "Child disconnected from its parents' junction"
-        # Couples stacked in a column form one joined card.
-        stacked = 0
-        for pid in ids:
-            for other in tree.people[pid].partners:
-                a, b = pos[pid], pos[other]
-                if a["x"] == b["x"] and abs(a["y"] - b["y"]) == card["h"]:
-                    stacked += 1
-                    assert pid in got["pair"] and other in got["pair"]
-        assert stacked or view["height"] < view["width"]
-        # A column of stacked children never mixes children of different couples.
-        runs: dict[float, set[frozenset[str]]] = {}
-        for pid, at in got["spine"].items():
-            runs.setdefault(at["x"], set()).add(frozenset(tree.people[pid].parents))
-        assert all(len(couples) == 1 for couples in runs.values())
+        assert_clean_connections(got, edges)
+        assert any(len(e["children"]) > 1 for e in edges if e["kind"] == "child")
+        assert len(got["nodes"]) == len(ids)
+        assert len({c["personId"] for c in got["nodes"]}) == len(ids)
+    assert js["layouts"][0] == js["layouts"][1], "Mobile must use the same graph as desktop"
 
 
 def test_share_page_hides_living_details_and_embeds_safely() -> None:
@@ -136,7 +98,10 @@ def test_share_page_hides_living_details_and_embeds_safely() -> None:
     )
     assert people["living-me-script"]["private"] is True and "private" not in people["late-grandpa"]
     assert people["late-grandpa"]["birth_place"] == "Pune" and people["old-gran"]["notes"] == "Kept"
-    assert "__" not in page.replace("__proto__", "")
+    assert all(
+        token not in page
+        for token in ("__SHARE_JS__", "__LAYOUT_JS__", "__LAYOUT_ENGINE__", "__DATA__", "__TITLE__")
+    )
     assert data["partnerships"] == {
         "late-grandpa+old-gran": {"status": "married", "marriage_date": "1970"},
         "late-grandpa+living-me-script": {"status": "married"},
@@ -147,43 +112,211 @@ def test_share_page_hides_living_details_and_embeds_safely() -> None:
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="needs Node.js")
-def test_couple_in_different_branches_has_visible_join_and_shared_children() -> None:
-    """Both parents have ancestry: their marriage must stay visible across rows."""
-    script = str(files("family_tree_mcp").joinpath("share.js"))
+@pytest.mark.parametrize("width,height", [(1440, 800), (390, 760), (4000, 1200)])
+def test_parent_units_stay_together_with_ancestry_on_both_sides(width, height) -> None:
+    t = Tree(name="Two families")
+    for name in (
+        "Maternal Grandparent",
+        "Mother",
+        "Paternal Great Grandparent",
+        "Paternal Grandparent",
+        "Father",
+        "Child",
+        "Sibling",
+    ):
+        t.add_person(name)
+    for child, parent in (
+        ("mother", "maternal-grandparent"),
+        ("paternal-grandparent", "paternal-great-grandparent"),
+        ("father", "paternal-grandparent"),
+        ("child", "mother"),
+        ("child", "father"),
+        ("sibling", "mother"),
+        ("sibling", "father"),
+    ):
+        t.link(child, "parent", parent)
+    t.link("mother", "partner", "father")
+    script = str(files("family_tree_mcp").joinpath("layout.js"))
     result = subprocess.run(
-        [
-            "node",
-            "-e",
-            """
-const { connections } = require(process.argv[1]);
-const tree = { people: {
-  divya: { parents: [], partners: ['shashank'] },
-  shashank: { parents: [], partners: ['divya'] },
-  nirav: { parents: ['divya', 'shashank'], partners: [] },
-  ami: { parents: ['divya', 'shashank'], partners: [] },
-} };
-const geometry = {
-  pos: {divya: {x: 0, y: 0}, shashank: {x: 238, y: 112},
-        nirav: {x: 256, y: 172}, ami: {x: 256, y: 300}},
-  hang: {nirav: {x: 247, y: 164}, ami: {x: 247, y: 164}},
-  spine: {}, pair: {}, family: {nirav: 'shashank', ami: 'shashank'},
-  card: {w: 172, h: 52}, gap: {stack: 8, row: 56},
-};
-console.log(JSON.stringify(connections(tree, geometry)));
-""",
-            script,
-        ],
+        ["node", "-e", RUNNER, script],
+        input=json.dumps(
+            {
+                "tree": t.model_dump(exclude_none=True),
+                "viewports": [{"width": width, "height": height}],
+            }
+        ),
         capture_output=True,
         text=True,
     )
     assert result.returncode == 0, result.stderr
-    edges = json.loads(result.stdout)
-    couple = [e for e in edges if e["kind"] == "couple"]
-    assert len(couple) == 2, "Marriage needs a permanent line and a shared-parent dot"
-    dot = next(e for e in couple if e["className"] == "dot")
-    assert set(dot["people"]) == {"divya", "shashank"}
-    children = [e for e in edges if e["kind"] == "child"]
-    assert len(children) == 2
-    assert all(e["d"].startswith("M205,138") for e in children), (
-        "Children must leave the shared join"
+    got = json.loads(result.stdout)
+    geometry = got["layouts"][0]
+    a, b = (geometry["pos"][p] for p in ("mother", "father"))
+    card = geometry["card"]
+    adjacent = a["y"] == b["y"] and abs(a["x"] - b["x"]) == card["w"] + geometry["coupleGap"]
+    assert adjacent, "Parents must be side by side"
+    dots = [
+        e
+        for e in got["connections"][0]
+        if e["className"] == "dot" and set(e["people"]) == {"mother", "father"}
+    ]
+    assert len(dots) == 1, "Parents need one shared junction"
+    assert_clean_connections(geometry, got["connections"][0])
+
+
+def assert_clean_connections(geometry: dict, edges: list[dict]) -> None:
+    """Check what is rendered, including every card and every pair of wire segments."""
+    assert_family_paths_connected(geometry, edges)
+    lines = [e for e in edges if e.get("points")]
+    for e in lines:
+        a, b = e["points"]
+        assert a["x"] == b["x"] or a["y"] == b["y"], "Diagonal connector"
+        for p in geometry["nodes"]:
+            if a["x"] == b["x"]:
+                hit = (
+                    p["x"] + 0.01 < a["x"] < p["x"] + geometry["card"]["w"] - 0.01
+                    and max(a["y"], b["y"]) > p["y"] + 0.01
+                    and min(a["y"], b["y"]) < p["y"] + geometry["card"]["h"] - 0.01
+                )
+            else:
+                hit = (
+                    p["y"] + 0.01 < a["y"] < p["y"] + geometry["card"]["h"] - 0.01
+                    and max(a["x"], b["x"]) > p["x"] + 0.01
+                    and min(a["x"], b["x"]) < p["x"] + geometry["card"]["w"] - 0.01
+                )
+            assert not hit, f"Connector {e['net']} passes through a card"
+    for i, e in enumerate(lines):
+        a, b = e["points"]
+        ev = a["x"] == b["x"]
+        for f in lines[i + 1 :]:
+            c, d = f["points"]
+            fv = c["x"] == d["x"]
+            if ev == fv:
+                axis, fixed = ("y", "x") if ev else ("x", "y")
+                overlap = (
+                    a[fixed] == c[fixed]
+                    and max(min(a[axis], b[axis]), min(c[axis], d[axis]))
+                    < min(max(a[axis], b[axis]), max(c[axis], d[axis])) - 0.01
+                )
+                assert not overlap, "Wire segments overlap instead of sharing one family bus"
+            elif e["net"] != f["net"]:
+                v, h = (e["points"], f["points"]) if ev else (f["points"], e["points"])
+                crossing = (
+                    min(h[0]["x"], h[1]["x"]) + 0.01 < v[0]["x"] < max(h[0]["x"], h[1]["x"]) - 0.01
+                    and min(v[0]["y"], v[1]["y"]) + 0.01
+                    < h[0]["y"]
+                    < max(v[0]["y"], v[1]["y"]) - 0.01
+                )
+                assert not crossing, f"Unrelated connections {e['net']} and {f['net']} cross"
+
+
+def run_graph(tree: Tree) -> dict:
+    script = str(files("family_tree_mcp").joinpath("layout.js"))
+    result = subprocess.run(
+        ["node", "-e", RUNNER, script],
+        input=json.dumps(
+            {
+                "tree": tree.model_dump(exclude_none=True),
+                "viewports": [{"width": 1280, "height": 800}],
+            }
+        ),
+        capture_output=True,
+        text=True,
     )
+    assert result.returncode == 0, result.stderr
+    got = json.loads(result.stdout)
+    return {"geometry": got["layouts"][0], "edges": got["connections"][0]}
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="needs Node.js")
+def test_separate_unions_do_not_assign_children_to_a_new_partner(tree: Tree) -> None:
+    tree.link("dad", "partner", "ex", divorce_date="1985")
+    before = tree.model_dump_json()
+    got = run_graph(tree)
+    edges = got["edges"]
+    assert tree.model_dump_json() == before
+    assert any(e["net"] == "dad+ex" and e["className"] == "former" for e in edges)
+    # A half-sibling's family branch is distinct from the dad/mom branch.
+    for e in edges:
+        if e["kind"] != "child":
+            continue
+        for child in e["children"]:
+            assert set(e["parents"]) == set(tree.people[child].parents)
+    assert_clean_connections(got["geometry"], edges)
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="needs Node.js")
+def test_large_graph_has_one_card_per_person_and_every_child_connection() -> None:
+    t = Tree(name="Large family")
+    t.add_person("Root")
+    for i in range(100):
+        p = t.add_person(f"Child {i}")
+        t.link(p.id, "parent", "root")
+        kid = t.add_person(f"Grandchild {i}")
+        t.link(kid.id, "parent", p.id)
+    got = run_graph(t)
+    assert len(got["geometry"]["nodes"]) == len(t.people)
+    assert len({n["personId"] for n in got["geometry"]["nodes"]}) == len(t.people)
+    connected = {child for e in got["edges"] if e["kind"] == "child" for child in e["children"]}
+    assert connected == set(t.people) - {"root"}
+    assert_clean_connections(got["geometry"], got["edges"])
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="needs Node.js")
+@pytest.mark.parametrize("size", [0, 1])
+def test_empty_and_single_person_graphs(size) -> None:
+    t = Tree(name="Small tree")
+    if size:
+        t.add_person("One person")
+    got = run_graph(t)
+    assert len(got["geometry"]["nodes"]) == size
+    assert not got["edges"]
+
+
+def assert_family_paths_connected(geometry: dict, edges: list[dict]) -> None:
+    """Trace the actual drawn segments from each child back to all recorded parents."""
+    nets: dict[str, list[dict]] = {}
+    for edge in edges:
+        if edge.get("points"):
+            nets.setdefault(edge["net"], []).append(edge)
+    for wires in nets.values():
+        children = {c for e in wires if e["kind"] == "child" for c in e["children"]}
+        if not children:
+            continue
+        parents = next(e["parents"] for e in wires if e["kind"] == "child")
+        points = {tuple(p.values()) for e in wires for p in e["points"]}
+        points.update(
+            (geometry["pos"][c]["x"] + geometry["card"]["w"] / 2, geometry["pos"][c]["y"])
+            for c in children
+        )
+        points = list(points)
+        links = list(range(len(points)))
+
+        def root(i, links=links):
+            while links[i] != i:
+                links[i] = links[links[i]]
+                i = links[i]
+            return i
+
+        for edge in wires:
+            a, b = edge["points"]
+            on = [
+                i
+                for i, (x, y) in enumerate(points)
+                if min(a["x"], b["x"]) - 0.001 <= x <= max(a["x"], b["x"]) + 0.001
+                and min(a["y"], b["y"]) - 0.001 <= y <= max(a["y"], b["y"]) + 0.001
+            ]
+            for i in on[1:]:
+                links[root(i)] = root(on[0])
+        for child in children:
+            p = geometry["pos"][child]
+            target = (p["x"] + geometry["card"]["w"] / 2, p["y"])
+            component = root(points.index(target))
+            connected = [point for i, point in enumerate(points) if root(i) == component]
+            for parent in parents:
+                p = geometry["pos"][parent]
+                assert any(
+                    p["x"] - 0.001 <= x <= p["x"] + geometry["card"]["w"] + 0.001
+                    and p["y"] - 0.001 <= y <= p["y"] + geometry["card"]["h"] + 0.001
+                    for x, y in connected
+                ), f"{child}'s line is disconnected from {parent}"
