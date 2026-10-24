@@ -1,5 +1,6 @@
 """MCP tools for building and reasoning over family trees."""
 
+import atexit
 import os
 from pathlib import Path
 from typing import Annotated, Literal
@@ -34,7 +35,7 @@ oldest first when birth dates are known.
 Sharing: get_diagram returns Mermaid to display in a ```mermaid block; export_diagram
 saves it with a mermaid.live link; export_gedcom writes a file for Ancestry,
 FamilySearch, MyHeritage, Gramps etc. To share with family, call publish_site once: it
-puts a read-only page online and then updates it automatically after every change.
+puts a read-only page online and then updates it automatically as the tree changes.
 
 Dates are free text; prefer ISO format (YYYY, YYYY-MM or YYYY-MM-DD).
 Every change is backed up: if you make a mistake, or the user asks to revert, use undo.
@@ -55,7 +56,7 @@ SexChange = Annotated[
 ]
 
 
-def create_server(store: Store) -> FastMCP:
+def create_server(store: Store, publish_delay: float = 30) -> FastMCP:
     mcp = FastMCP("family-tree", instructions=INSTRUCTIONS)
     deployed: dict[str, str] = {}  # tree name -> page last deployed by this server
 
@@ -73,8 +74,9 @@ def create_server(store: Store) -> FastMCP:
             deploy(folder, t.site.project, create=False)
             deployed[t.site.project] = page
 
-    updater = Updater(refresh)
+    updater = Updater(refresh, publish_delay)
     store.on_change = updater.schedule
+    atexit.register(updater.flush)
 
     @mcp.tool(annotations=READ)
     def list_trees() -> list[dict]:
@@ -334,8 +336,8 @@ def create_server(store: Store) -> FastMCP:
 
         Viewers can browse the chart, see each person's details and ask how two people are
         related; nothing can be edited. hide_living removes birth dates, places and notes of
-        people who may be alive. With keep_updated, the page is republished automatically after
-        every change to the tree; pass keep_updated=False to publish once and stop updating.
+        people who may be alive. With keep_updated, the page is republished automatically once
+        edits pause for 30 seconds; pass keep_updated=False to publish once and stop updating.
         Uses Cloudflare Pages: the first time, the user runs `npx wrangler login` in a terminal.
         """
         t = store.load(tree)
@@ -347,7 +349,6 @@ def create_server(store: Store) -> FastMCP:
             current.site = Site(
                 project=project, url=url, hide_living=hide_living, keep_updated=keep_updated
             )
-        updater.wait()
         return {
             "url": url,
             "hidden_living": hidden,

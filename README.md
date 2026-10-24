@@ -43,9 +43,9 @@ Trees are JSON files in `~/.family-tree-mcp/` (or `FAMILY_TREE_DIR`). Every chan
 
 ## Sharing
 
-Ask your agent to *"publish the family tree"*. You get a free [Cloudflare Pages](https://pages.cloudflare.com) link that updates after every change. Viewers can browse the tree and ask how two people are related, but can't edit. Details of people who may be living are hidden by default.
+Ask your agent to *"publish the family tree"*. You get a free [Cloudflare Pages](https://pages.cloudflare.com) link that updates itself 30 seconds after you stop editing. Viewers can browse the tree and ask how two people are related, but can't edit. Details of people who may be living are hidden by default.
 
-One-time setup: a free Cloudflare account, [Node.js](https://nodejs.org), and `npx wrangler login`. Anyone with the link can view it; use [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/) to restrict it. To take it down, run `npx wrangler pages project delete <project>`.
+One-time setup: a free Cloudflare account, [Node.js](https://nodejs.org), and `npx wrangler login`. Anyone with the link can view it; use [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/) to restrict it. To use your own domain (e.g. `family.example.com`), add it under the project's **Custom domains** in the Cloudflare dashboard. To take it down, run `npx wrangler pages project delete <project>`.
 
 ## Development
 

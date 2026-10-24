@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -61,35 +62,44 @@ def _failure(output: str) -> str:
 
 
 class Updater:
-    """Run publish jobs one at a time on a background thread, collapsing repeated requests."""
+    """Publish a tree once its edits pause for `delay` seconds, one job at a time."""
 
-    def __init__(self, publish: Callable[[str], None]) -> None:
+    def __init__(self, publish: Callable[[str], None], delay: float = 30) -> None:
         self._publish = publish
-        self._pending: list[str] = []
-        self._lock = threading.Lock()
+        self._delay = delay
+        self._due: dict[str, float] = {}
+        self._wake = threading.Condition()
         self._thread: threading.Thread | None = None
         self.errors: dict[str, str] = {}
 
     def schedule(self, tree: Tree) -> None:
         if not (tree.site and tree.site.keep_updated):
             return
-        with self._lock:
-            if tree.name not in self._pending:
-                self._pending.append(tree.name)
+        with self._wake:
+            self._due[tree.name] = time.monotonic() + self._delay
             if not (self._thread and self._thread.is_alive()):
                 self._thread = threading.Thread(target=self._run, daemon=True)
                 self._thread.start()
+            self._wake.notify()
 
-    def wait(self) -> None:
+    def flush(self) -> None:
+        """Publish pending changes now and wait for them, e.g. before the server exits."""
+        with self._wake:
+            self._due = dict.fromkeys(self._due, 0.0)
+            self._wake.notify()
         if self._thread:
             self._thread.join()
 
     def _run(self) -> None:
         while True:
-            with self._lock:
-                if not self._pending:
+            with self._wake:
+                if not self._due:
                     return
-                name = self._pending.pop(0)
+                name, due = min(self._due.items(), key=lambda item: item[1])
+                if (left := due - time.monotonic()) > 0:
+                    self._wake.wait(left)
+                    continue
+                del self._due[name]
             try:
                 self._publish(name)
                 self.errors.pop(name, None)
