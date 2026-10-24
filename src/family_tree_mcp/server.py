@@ -8,6 +8,7 @@ from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
+from family_tree_mcp.diagram import View, mermaid
 from family_tree_mcp.store import Store
 from family_tree_mcp.tree import Relation, Sex
 
@@ -19,6 +20,7 @@ and every other relation are derived, so never record them directly.
 Workflow: call find_people before add_person to avoid duplicates, then connect
 people with add_relationship. Use get_relationship to name how two people are
 related, and get_person, get_ancestors or get_descendants to explore.
+To show the tree visually, use get_diagram and display its output in a ```mermaid block.
 Dates are free text; prefer ISO format (YYYY, YYYY-MM or YYYY-MM-DD).
 """
 
@@ -165,6 +167,23 @@ def create_server(store: Store) -> FastMCP:
     ) -> list[dict]:
         """List a person's descendants by generation (1 = children, 2 = grandchildren, ...)."""
         return store.load(tree).lineage(person_id, "descendants", generations)
+
+    @mcp.tool(annotations=READ)
+    def get_diagram(
+        tree: TreeName,
+        person_id: Annotated[
+            str | None, Field(description="Center the diagram on this person. Omit for everyone.")
+        ] = None,
+        view: View = "both",
+        generations: int | None = None,
+    ) -> str:
+        """Draw the tree as a Mermaid flowchart. Show the result to the user in a ```mermaid block.
+
+        Couples join at a dot above their children. Colors show sex (blue male, pink female,
+        gray unknown), dashed faded boxes are deceased, and an orange border marks person_id.
+        For large trees, pass person_id and generations to keep the diagram readable.
+        """
+        return mermaid(store.load(tree), person_id, view, generations)
 
     return mcp
 
