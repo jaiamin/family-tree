@@ -84,26 +84,23 @@ def website_files(collection: Collection, site: Site) -> tuple[dict[str, str], i
         page, count = share_page(tree, site, list(collection.trees.values()))
         pages[f"trees/{tree.id}/index.html"] = page
         hidden += count
-        links = sum(len(p.parents) for p in tree.people.values())
-        links += sum(len(p.partners) for p in tree.people.values()) // 2
         entries.append(
             f'<li><a class="tree-card" href="/trees/{tree.id}/"><h3>{html.escape(tree.name)}</h3>'
-            f"<dl><div><dt>People</dt><dd>{len(tree.people)}</dd></div>"
-            f"<div><dt>Family links</dt><dd>{links}</dd></div></dl></a></li>"
+            f"<dl><div><dt>People</dt><dd>{len(tree.people)}</dd></div></dl></a></li>"
         )
     listing = (
         '<ul class="trees">' + "".join(entries) + "</ul>"
         if entries
         else "<p>No family trees yet.</p>"
     )
-    unique = len({pid for family in collection.trees.values() for pid in family.members})
     pages["index.html"] = _render(
         "home.html",
         {
             "__TITLE__": html.escape(site.name),
             "__TREES__": listing,
+            "__TREE_COUNT__": str(len(collection.trees)),
             "__SHELL_CSS__": ASSETS.joinpath("shell.css").read_text(encoding="utf-8"),
-            "__HEADER__": _header(site, f"{unique} unique {'person' if unique == 1 else 'people'}"),
+            "__HEADER__": _header(site),
         },
     )
     return pages, hidden
@@ -113,12 +110,12 @@ def _people_count(count: int) -> str:
     return f"{count} {'person' if count == 1 else 'people'}"
 
 
-def _header(site: Site, count: str, switch: str = "", search: str = "") -> str:
+def _header(site: Site, count: str = "", switch: str = "", search: str = "") -> str:
     return _render(
         "header.html",
         {
             "__SITE_NAME__": html.escape(site.name),
-            "__COUNT__": count,
+            "__COUNT__": f'<div class="count" id="count">{count}</div>' if count else "",
             "__TREE_SWITCH__": switch,
             "__SEARCH__": search,
         },
