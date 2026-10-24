@@ -36,9 +36,6 @@ async def test_build_and_query_tree(tmp_path) -> None:
         export = await client.call_tool("export_gedcom", tree)
         assert export.data["people"] == 3
         assert "1 NAME Ada /Smith/" in Path(export.data["path"]).read_text()
-        chart = await client.call_tool("export_diagram", {**tree, "person_id": ids["Ada Smith"]})
-        assert Path(chart.data["path"]).read_text() == diagram.data
-        assert chart.data["url"].startswith("https://mermaid.live/edit#pako:")
         await client.call_tool("remove_person", {**tree, "person_id": ids["Cy Smith"]})
         undone = await client.call_tool("undo", tree)
         assert undone.data["people"] == 3

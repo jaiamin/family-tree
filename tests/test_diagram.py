@@ -1,9 +1,6 @@
-import base64
-import json
 import re
-import zlib
 
-from family_tree_mcp.diagram import mermaid, mermaid_live_url
+from family_tree_mcp.diagram import mermaid
 from family_tree_mcp.tree import Tree
 
 
@@ -62,13 +59,6 @@ def test_views_scope_the_diagram() -> None:
         "Gran", "Grandpa", "Mum", "Dad", "Uncle", "Spouse"
     }  # fmt: skip
     assert "Stranger" in nodes(mermaid(t))
-
-
-def test_mermaid_live_url_round_trips() -> None:
-    src = mermaid(family())
-    payload = mermaid_live_url(src).removeprefix("https://mermaid.live/edit#pako:")
-    state = json.loads(zlib.decompress(base64.urlsafe_b64decode(payload + "==")))
-    assert state["code"] == src
 
 
 def test_divorced_couples_use_dotted_links() -> None:

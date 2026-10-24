@@ -5,54 +5,63 @@ from importlib.resources import files
 
 import pytest
 
-from family_tree_mcp.diagram import View, mermaid
 from family_tree_mcp.share import share_page
 from family_tree_mcp.tree import Tree
 
 RUNNER = """
 const lib = require(process.argv[1]);
-const { tree, pairs, views } = JSON.parse(require("fs").readFileSync(0, "utf8"));
+const { tree, viewports } = JSON.parse(require("fs").readFileSync(0, "utf8"));
+const ids = Object.keys(tree.people);
 console.log(JSON.stringify({
-  relationships: pairs.map(([a, b]) => lib.relationship(tree, a, b)),
-  diagrams: views.map(([focus, view, gens]) => lib.toMermaid(tree, focus, view, gens).source),
+  children: ids.map((id) => lib.children(tree, id)),
+  siblings: ids.map((id) => lib.siblings(tree, id)),
+  half: ids.map((a) => ids.map((b) => a !== b && lib.halfSiblings(tree, a, b))),
+  layouts: viewports.map((v) => lib.layout(tree, v)),
 }));
 """
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="needs Node.js")
-def test_browser_logic_matches_python(tree: Tree) -> None:
-    tree.update_person(
-        "grandma", birth_date="1931-02-03", death_date="2001", name='Grandma "Nana" Núñez'
-    )
+def test_page_logic_matches_python_and_lays_out_everyone(tree: Tree) -> None:
     tree.update_person("sis", birth_date="1990")
     tree.update_person("me", birth_date="c. 1995")
-    tree.link("sis", "partner", "stranger")
     tree.link("dad", "partner", "mom", status="married", marriage_date="1988")
     tree.link("dad", "partner", "ex", divorce_date="1985")
+    # A second family married into the first, and a couple whose children stack.
+    for name in ("In-law Dad", "Spouse", "Spouse Sib"):
+        tree.add_person(name)
+    tree.link("spouse", "parent", "in-law-dad")
+    tree.link("spouse-sib", "parent", "in-law-dad")
+    tree.link("cousin", "partner", "spouse")
+    for name in ("Kid A", "Kid B", "Kid C"):
+        tree.add_person(name)
+        tree.link(name.lower().replace(" ", "-"), "parent", "sis")
     ids = list(tree.people)
-    pairs = [(a, b) for a in ids for b in ids]
-    views: list[tuple[str | None, View, int | None]] = [(None, "both", None)] + [
-        (pid, view, gens)
-        for pid in ids
-        for view in ("ancestors", "descendants", "both")
-        for gens in (None, 1)
-    ]
-    data = {"tree": tree.model_dump(exclude_none=True), "pairs": pairs, "views": views}
+    viewports = [{"width": 1440, "height": 800}, {"width": 390, "height": 760}]
+    data = {"tree": tree.model_dump(exclude_none=True), "viewports": viewports}
     script = str(files("family_tree_mcp").joinpath("share.js"))
     result = subprocess.run(
-        ["node", "-e", RUNNER, script],
-        input=json.dumps(data),
-        capture_output=True,
-        text=True,
+        ["node", "-e", RUNNER, script], input=json.dumps(data), capture_output=True, text=True
     )
     assert result.returncode == 0, result.stderr
     js = json.loads(result.stdout)
 
-    for (a, b), got in zip(pairs, js["relationships"], strict=True):
-        expected = tree.relationship(a, b)
-        assert got == {k: expected[k] for k in ("relationship", "summary") if k in expected}
-    for (focus, view, gens), got in zip(views, js["diagrams"], strict=True):
-        assert got == mermaid(tree, focus, view, gens)
+    assert js["children"] == [tree.children(i) for i in ids]
+    assert js["siblings"] == [tree.siblings(i) for i in ids]
+    assert js["half"] == [[a != b and tree.half_siblings(a, b) for b in ids] for a in ids]
+    for view, got in zip(viewports, js["layouts"], strict=True):
+        pos, card = got["pos"], got["card"]
+        assert set(pos) == set(ids)
+        assert got["portrait"] == (view["height"] > view["width"])
+        boxes = sorted((p["x"], p["y"]) for p in pos.values())
+        for i, (x, y) in enumerate(boxes):
+            assert x >= 0 and x + card["w"] <= got["width"] + 0.5
+            assert y >= 0 and y + card["h"] <= got["height"] + 0.5
+            for x2, y2 in boxes[i + 1 :]:
+                assert abs(x - x2) >= card["w"] or abs(y - y2) >= card["h"], "cards overlap"
+        for pid in ids:
+            if parents := tree.people[pid].parents:
+                assert any(pos[pid]["y"] > pos[p]["y"] for p in parents)
 
 
 def test_share_page_hides_living_details_and_embeds_safely() -> None:

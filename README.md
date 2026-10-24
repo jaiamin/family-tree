@@ -37,13 +37,13 @@ Trees are JSON files in `~/.family-tree-mcp/` (or `FAMILY_TREE_DIR`). Every chan
 | `add_relationship`, `remove_relationship` | Link people as parent, child, partner or sibling |
 | `find_people`, `get_person`, `get_ancestors`, `get_descendants` | Look people up |
 | `get_relationship` | e.g. "Sam is Ava's first cousin once removed" |
-| `get_diagram`, `export_diagram` | Mermaid chart, with a [mermaid.live](https://mermaid.live) link for PNG/SVG |
+| `get_diagram` | Mermaid chart to view in the chat |
 | `export_gedcom` | GEDCOM file for Ancestry, FamilySearch, Gramps, etc. |
 | `publish_site`, `export_html` | Read-only web page of the tree, online or as a file |
 
 ## Sharing
 
-Ask your agent to *"publish the family tree"*. You get a free [Cloudflare Pages](https://pages.cloudflare.com) link that updates itself 30 seconds after you stop editing. Viewers can browse the tree and ask how two people are related, but can't edit. Details of people who may be living are hidden by default.
+Ask your agent to *"publish the family tree"*. You get a free [Cloudflare Pages](https://pages.cloudflare.com) link that updates itself 30 seconds after you stop editing. Viewers can browse the tree, search for anyone, and tap a person to see their details and family, but can't edit. Details of people who may be living are hidden by default.
 
 One-time setup: a free Cloudflare account, [Node.js](https://nodejs.org), and `npx wrangler login`. Anyone with the link can view it; use [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/) to restrict it. To use your own domain (e.g. `family.example.com`), add it under the project's **Custom domains** in the Cloudflare dashboard. To take it down, run `npx wrangler pages project delete <project>`.
 

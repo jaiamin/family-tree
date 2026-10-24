@@ -2,224 +2,490 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
 <title>__TITLE__</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap">
 <style>
   :root {
-    --bg: #f8fafc; --card: #ffffff; --text: #0f172a; --muted: #64748b; --line: #e2e8f0;
-    --accent: #d97706; --chip: #f1f5f9;
+    --bg: #fafafa; --surface: #ffffff; --fg: #09090b; --muted: #71717a; --border: #e4e4e7;
+    --border-strong: #a1a1aa; --line: #c4c4cc; --line-on: #09090b; --chip: #f4f4f5;
+    --shadow: 0 1px 2px rgb(0 0 0 / .05); --shadow-lg: 0 12px 32px -8px rgb(0 0 0 / .18), 0 2px 6px rgb(0 0 0 / .06);
+    color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #0b1120; --card: #111827; --text: #e5e7eb; --muted: #94a3b8; --line: #1f2937; --chip: #1f2937; }
+    :root {
+      --bg: #09090b; --surface: #18181b; --fg: #fafafa; --muted: #a1a1aa; --border: #27272a;
+      --border-strong: #52525b; --line: #3f3f46; --line-on: #fafafa; --chip: #27272a;
+      --shadow: none; --shadow-lg: 0 12px 32px -8px rgb(0 0 0 / .6);
+      color-scheme: dark;
+    }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  header { padding: 20px 16px 8px; max-width: 1400px; margin: 0 auto; }
-  h1 { margin: 0; font-size: 1.5rem; }
-  .sub { color: var(--muted); font-size: .9rem; }
-  main { display: grid; grid-template-columns: 1fr 320px; gap: 16px; padding: 8px 16px 24px; max-width: 1400px; margin: 0 auto; }
-  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; min-width: 0; }
-  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
-  select, button { font: inherit; color: var(--text); background: var(--chip); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
-  button { cursor: pointer; }
-  button:disabled { opacity: .45; cursor: default; }
-  button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
-  .seg { display: inline-flex; gap: 4px; }
-  .spacer { flex: 1; }
-  #chart { overflow: auto; background: #fff; border-radius: 8px; max-height: 75vh; padding: 8px; touch-action: pan-x pan-y pinch-zoom; }
-  #chart svg { display: block; margin: 0 auto; height: auto; }
-  #chart g.node[data-person] { cursor: pointer; }
-  h2 { font-size: 1rem; margin: 0 0 8px; }
-  h3 { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 12px 0 4px; }
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-  .chip { background: var(--chip); border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; font-size: .9rem; cursor: pointer; }
-  .muted { color: var(--muted); }
-  aside .card + .card { margin-top: 16px; }
-  #answer { margin-top: 10px; font-weight: 600; }
-  .row { display: grid; gap: 8px; }
-  .row select { width: 100%; }
-  footer { text-align: center; color: var(--muted); font-size: .8rem; padding: 0 16px 24px; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: flex; flex-direction: column; overflow: hidden; background: var(--bg); color: var(--fg);
+    font: 14px/1.45 Geist, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--fg); color: var(--bg); }
+  button, input { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+  svg.icon { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+  header {
+    display: flex; align-items: center; gap: 16px; padding: 12px max(16px, env(safe-area-inset-right)) 12px max(16px, env(safe-area-inset-left));
+    padding-top: max(12px, env(safe-area-inset-top)); border-bottom: 1px solid var(--border); background: var(--surface); z-index: 3;
+  }
+  .title { min-width: 0; flex: 1; }
+  h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .count { color: var(--muted); font-size: 13px; }
+  .search { position: relative; width: min(320px, 46vw); }
+  .search svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+  .search input {
+    width: 100%; height: 36px; padding: 0 12px 0 34px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface); outline: none; transition: border-color .15s, box-shadow .15s;
+  }
+  .search input::placeholder { color: var(--muted); }
+  .search input::-webkit-search-cancel-button { -webkit-appearance: none; }
+  .search input:focus { border-color: var(--border-strong); box-shadow: 0 0 0 3px var(--chip); }
+  .results {
+    position: absolute; top: calc(100% + 6px); right: 0; left: 0; margin: 0; padding: 4px; list-style: none;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-lg); max-height: 320px; overflow: auto;
+  }
+  .results li { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+  .results li[aria-selected="true"] { background: var(--chip); }
+  .results .empty { color: var(--muted); cursor: default; }
+
+  main { position: relative; flex: 1; overflow: hidden; touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
+  main.dragging { cursor: grabbing; }
+  #stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  #stage.glide { transition: transform .45s cubic-bezier(.16, 1, .3, 1); }
+  #lines { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+  #lines path { fill: none; stroke: var(--line); stroke-width: 1.5; }
+  #lines path.ended { stroke-dasharray: 5 4; }
+  #lines path.on { stroke: var(--line-on); stroke-width: 2; }
+
+  .person {
+    position: absolute; display: flex; align-items: center; gap: 10px; padding: 0 12px; text-align: left; cursor: pointer;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow);
+    transition: border-color .15s, box-shadow .15s, opacity .2s;
+  }
+  .person:hover { border-color: var(--border-strong); }
+  .person.selected { border-color: var(--fg); box-shadow: 0 0 0 1px var(--fg), var(--shadow); }
+  .person.unknown { border-style: dashed; box-shadow: none; background: transparent; color: var(--muted); }
+  .dim .person:not(.related) { opacity: .45; }
+  .avatar {
+    display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; flex: none;
+    background: var(--chip); color: var(--fg); font-size: 12px; font-weight: 600; letter-spacing: .02em;
+  }
+  .avatar.lg { width: 44px; height: 44px; font-size: 15px; }
+  .name { display: block; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .years { display: block; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .person .text { min-width: 0; }
+
+  .zoom {
+    position: absolute; right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); z-index: 2;
+    display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); overflow: hidden;
+  }
+  .zoom button { display: grid; place-items: center; width: 36px; height: 36px; border: 0; background: none; cursor: pointer; }
+  .zoom button + button { border-top: 1px solid var(--border); }
+  .zoom button:hover { background: var(--chip); }
+
+  #card {
+    position: absolute; z-index: 4; width: 320px; max-height: calc(100% - 32px); overflow: auto; padding: 16px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-lg); cursor: auto; user-select: text; -webkit-user-select: text;
+    animation: rise .2s cubic-bezier(.16, 1, .3, 1);
+  }
+  @keyframes rise { from { opacity: 0; transform: translateY(4px); } }
+  #card .top { display: flex; align-items: center; gap: 12px; padding-right: 28px; }
+  #card h2 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
+  #card .close { position: absolute; top: 10px; right: 10px; display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 6px; background: none; color: var(--muted); cursor: pointer; }
+  #card .close:hover { background: var(--chip); color: var(--fg); }
+  #card dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 14px 0 0; font-size: 13px; }
+  #card dt { color: var(--muted); }
+  #card dd { margin: 0; }
+  #card .notes { margin: 12px 0 0; font-size: 13px; white-space: pre-line; }
+  #card section { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+  #card h3 { margin: 0 0 6px; font-size: 12px; font-weight: 500; color: var(--muted); }
+  .relative {
+    display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px 8px; margin: 0 -8px; width: calc(100% + 16px);
+    border: 0; border-radius: 8px; background: none; text-align: left; cursor: pointer;
+  }
+  .relative:hover { background: var(--chip); }
+  .relative .avatar { width: 26px; height: 26px; font-size: 11px; }
+  .relative .note { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; }
+  #card .none { margin: 14px 0 0; color: var(--muted); font-size: 13px; }
+  .empty-tree { display: grid; place-items: center; height: 100%; color: var(--muted); }
+
+  @media (max-width: 640px) {
+    header { gap: 12px; }
+    .count { display: none; }
+    #card {
+      position: fixed; left: 0; right: 0; bottom: 0; top: auto !important; width: auto; max-height: 70vh;
+      border-radius: 16px 16px 0 0; padding-bottom: max(16px, env(safe-area-inset-bottom)); animation-name: sheet;
+    }
+    @keyframes sheet { from { transform: translateY(24px); opacity: 0; } }
+  }
+  @media (prefers-reduced-motion: reduce) { #stage.glide, #card { transition: none; animation: none; } }
 </style>
 </head>
 <body>
 <header>
-  <h1 id="title"></h1>
-  <div class="sub" id="subtitle"></div>
+  <div class="title">
+    <h1 id="title"></h1>
+    <div class="count" id="count"></div>
+  </div>
+  <div class="search">
+    <svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+    <input id="search" type="search" placeholder="Find a person" autocomplete="off" aria-label="Find a person"
+      role="combobox" aria-expanded="false" aria-controls="results">
+    <ul class="results" id="results" role="listbox" hidden></ul>
+  </div>
 </header>
-<main>
-  <section class="card">
-    <div class="toolbar">
-      <select id="focus" aria-label="Center on person"></select>
-      <span class="seg" id="views" role="group" aria-label="View">
-        <button data-view="both">Family</button>
-        <button data-view="ancestors">Ancestors</button>
-        <button data-view="descendants">Descendants</button>
-      </span>
-      <select id="generations" aria-label="Generations">
-        <option value="">All generations</option>
-        <option value="1">1 generation</option>
-        <option value="2">2 generations</option>
-        <option value="3" selected>3 generations</option>
-        <option value="4">4 generations</option>
-      </select>
-      <span class="spacer"></span>
-      <span class="seg">
-        <button id="zoom-out" aria-label="Zoom out">−</button>
-        <button id="zoom-fit">Fit</button>
-        <button id="zoom-in" aria-label="Zoom in">+</button>
-      </span>
-    </div>
-    <div id="chart" aria-live="polite">Loading…</div>
-  </section>
-  <aside>
-    <div class="card" id="person"><span class="muted">Click anyone in the tree to see their details.</span></div>
-    <div class="card">
-      <h2>How are they related?</h2>
-      <div class="row">
-        <select id="rel-a" aria-label="First person"></select>
-        <select id="rel-b" aria-label="Second person"></select>
-      </div>
-      <div id="answer"></div>
-    </div>
-  </aside>
+<main id="view" aria-label="Family tree">
+  <div id="stage"><svg id="lines"></svg></div>
+  <div class="zoom">
+    <button id="zoom-in" aria-label="Zoom in"><svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+    <button id="zoom-out" aria-label="Zoom out"><svg class="icon" viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+    <button id="zoom-fit" aria-label="Show everyone"><svg class="icon" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></button>
+  </div>
 </main>
-<footer>Read-only family tree · made with family-tree-mcp</footer>
 <script id="tree-data" type="application/json">__DATA__</script>
 <script>
 __SHARE_JS__
 </script>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
 <script>
 const tree = JSON.parse(document.getElementById("tree-data").textContent);
 const ids = Object.keys(tree.people);
-const byName = [...ids].sort((a, b) => tree.people[a].name.localeCompare(tree.people[b].name));
-const state = { focus: null, view: "both", generations: 3, scale: 1, natural: 0, nodes: {} };
 const $ = (id) => document.getElementById(id);
+const view = $("view");
+const stage = $("stage");
+const svgNS = "http://www.w3.org/2000/svg";
+const PLACEHOLDER = /^Unknown parent of /;
+
+const person = (id) => tree.people[id];
+const displayName = (id) => (PLACEHOLDER.test(person(id).name) ? "Unknown" : person(id).name);
+const initials = (id) =>
+  PLACEHOLDER.test(person(id).name) ? "?" : (person(id).name.match(/\p{L}+/gu) || ["?"]).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
+const year = (date) => date?.match(/\d{4}/)?.[0] || date;
+function years(p) {
+  if (p.birth_date && p.death_date) return `${year(p.birth_date)} – ${year(p.death_date)}`;
+  if (p.birth_date) return `Born ${year(p.birth_date)}`;
+  if (p.death_date) return `Died ${year(p.death_date)}`;
+  return "";
+}
+function el(tag, attrs = {}, ...kids) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) k === "class" ? (node.className = v) : node.setAttribute(k, v);
+  node.append(...kids.filter((k) => k != null && k !== ""));
+  return node;
+}
+const avatar = (id, size = "") => el("span", { class: `avatar ${size}`, "aria-hidden": "true" }, initials(id));
 
 $("title").textContent = tree.name;
-$("subtitle").textContent = `${ids.length} people` + (tree.description ? ` · ${tree.description}` : "");
+$("count").textContent = `${ids.length} ${ids.length === 1 ? "person" : "people"}`;
 document.title = tree.name;
 
-function options(select, first) {
-  select.innerHTML = "";
-  if (first) select.add(new Option(first, ""));
-  byName.forEach((id) => select.add(new Option(tree.people[id].name, id)));
-}
-options($("focus"), "Everyone");
-options($("rel-a"), "Choose a person");
-options($("rel-b"), "Choose a person");
+// Tree
 
-function years(p) {
-  const y = (d) => d?.match(/\d{4}/)?.[0] || d;
-  if (p.birth_date && p.death_date) return `${y(p.birth_date)}–${y(p.death_date)}`;
-  if (p.birth_date) return `Born ${p.birth_date}`;
-  if (p.death_date) return `Died ${p.death_date}`;
+const { pos, spine, hang, portrait, card, gap, width, height } = layout(tree, { width: innerWidth, height: innerHeight - 64 });
+const PAD = 48;
+stage.style.width = `${width + PAD * 2}px`;
+stage.style.height = `${height + PAD * 2}px`;
+const lines = $("lines");
+lines.setAttribute("width", width + PAD * 2);
+lines.setAttribute("height", height + PAD * 2);
+const at = (id) => ({ x: pos[id].x + PAD, y: pos[id].y + PAD });
+
+const cards = {};
+for (const id of ids) {
+  const p = person(id);
+  const node = el(
+    "button",
+    { class: `person${PLACEHOLDER.test(p.name) ? " unknown" : ""}`, "data-id": id, "aria-label": `${p.name}${years(p) ? `, ${years(p)}` : ""}` },
+    avatar(id),
+    el("span", { class: "text" }, el("span", { class: "name" }, displayName(id)), years(p) && el("span", { class: "years" }, years(p))),
+  );
+  Object.assign(node.style, { left: `${at(id).x}px`, top: `${at(id).y}px`, width: `${card.w}px`, height: `${card.h}px` });
+  stage.append(node);
+  cards[id] = node;
+}
+
+const edges = [];
+function edge(d, people, ended = false) {
+  const path = document.createElementNS(svgNS, "path");
+  path.setAttribute("d", d);
+  if (ended) path.classList.add("ended");
+  lines.append(path);
+  edges.push({ path, people });
+}
+const ended = (a, b) => partnership(tree, a, b)?.status === "divorced";
+const drawn = new Set();
+for (const id of ids) {
+  for (const other of partnersOf(tree, id)) {
+    const key = [id, other].sort().join("+");
+    if (drawn.has(key)) continue;
+    drawn.add(key);
+    const [a, b] = [at(id), at(other)].sort((p, q) => p.x - q.x);
+    if (a.y !== b.y) continue; // partners in different branches and rows are linked in their cards
+    if (b.x - a.x <= card.w + 24) edge(`M${a.x + card.w},${a.y + card.h / 2}H${b.x}`, [id, other], ended(id, other));
+    else {
+      // Partners from different branches on one row: an arc over the cards between them.
+      const lift = Math.min(64, 24 + (b.x - a.x) / 20);
+      edge(`M${a.x + card.w / 2},${a.y}C${a.x + card.w / 2},${a.y - lift} ${b.x + card.w / 2},${b.y - lift} ${b.x + card.w / 2},${b.y}`, [id, other], ended(id, other));
+    }
+  }
+}
+for (const id of ids) {
+  const parents = parentsOf(tree, id);
+  if (!parents.length) continue;
+  const kid = at(id);
+  const busY = Math.max(...parents.map((p) => at(p).y)) + card.h + gap.row / 2;
+  const [a, b] = parents.map(at);
+  // From between two side-by-side parents, otherwise from below the parent in this branch.
+  let from;
+  if (b && a.y === b.y && Math.abs(a.x - b.x) <= card.w + 24) from = { x: (Math.min(a.x, b.x) + Math.max(a.x, b.x) + card.w) / 2, y: a.y + card.h / 2 };
+  else {
+    const near = parents.map((p) => [p, at(p)]).sort(([, p], [, q]) => Math.abs(p.x - kid.x) - Math.abs(q.x - kid.x))[0][1];
+    from = { x: near.x + card.w / 2, y: near.y + card.h };
+  }
+  if (hang[id]) {
+    // Nested branches: a line down the parent's left side, then across to the child.
+    edge(`M${hang[id].x + PAD},${hang[id].y + PAD}V${kid.y + card.h / 2}H${kid.x}`, [id, ...parents]);
+    continue;
+  }
+  // Stacked children hang off a spine down their column's left side.
+  const end = spine[id]
+    ? `H${spine[id].x + PAD}V${kid.y + card.h / 2}H${kid.x}`
+    : `H${kid.x + card.w / 2}V${kid.y}`;
+  edge(`M${from.x},${from.y}V${busY}${end}`, [id, ...parents]);
+}
+
+// Pan and zoom
+
+const camera = { x: 0, y: 0, scale: 1 };
+function apply(glide = false) {
+  stage.classList.toggle("glide", glide);
+  stage.style.transform = `translate(${camera.x}px, ${camera.y}px) scale(${camera.scale})`;
+}
+function zoomAt(scale, cx = view.clientWidth / 2, cy = view.clientHeight / 2, glide = false) {
+  scale = Math.min(2, Math.max(0.15, scale));
+  camera.x = cx - ((cx - camera.x) * scale) / camera.scale;
+  camera.y = cy - ((cy - camera.y) * scale) / camera.scale;
+  camera.scale = scale;
+  apply(glide);
+}
+function fit(glide = false) {
+  const w = width + PAD * 2;
+  const h = height + PAD * 2;
+  // Phones fit the width and scroll down; wider screens fit everyone.
+  camera.scale = Math.min(1, view.clientWidth / w, portrait ? 1 : view.clientHeight / h);
+  camera.x = (view.clientWidth - w * camera.scale) / 2;
+  camera.y = Math.max(0, (view.clientHeight - h * camera.scale) / 2);
+  apply(glide);
+}
+function centreOn(id) {
+  const scale = Math.max(camera.scale, Math.min(1, view.clientWidth / 640));
+  const narrow = matchMedia("(max-width: 640px)").matches;
+  const p = at(id);
+  camera.scale = scale;
+  // Leave room on the right for the person's card on wider screens.
+  camera.x = view.clientWidth * (narrow ? 0.5 : 0.36) - (p.x + card.w / 2) * scale;
+  camera.y = (narrow ? view.clientHeight * 0.22 : view.clientHeight / 2) - (p.y + card.h / 2) * scale;
+  apply(true);
+}
+
+const pointers = new Map();
+let moved = false;
+let pinch = null;
+view.addEventListener("pointerdown", (e) => {
+  if (e.target.closest("#card, .zoom")) return;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  moved = false;
+  if (pointers.size === 2) {
+    const [p, q] = [...pointers.values()];
+    pinch = { dist: Math.hypot(p.x - q.x, p.y - q.y), scale: camera.scale };
+  }
+});
+view.addEventListener("pointermove", (e) => {
+  const last = pointers.get(e.pointerId);
+  if (!last) return;
+  const dx = e.clientX - last.x;
+  const dy = e.clientY - last.y;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pointers.size === 2 && pinch) {
+    const [p, q] = [...pointers.values()];
+    const box = view.getBoundingClientRect();
+    zoomAt((pinch.scale * Math.hypot(p.x - q.x, p.y - q.y)) / pinch.dist, (p.x + q.x) / 2 - box.left, (p.y + q.y) / 2 - box.top);
+    moved = true;
+  } else if (pointers.size === 1 && (moved || Math.abs(dx) + Math.abs(dy) > 3)) {
+    if (!moved) view.setPointerCapture(e.pointerId);
+    moved = true;
+    view.classList.add("dragging");
+    camera.x += dx;
+    camera.y += dy;
+    apply();
+  }
+});
+const release = (e) => {
+  pointers.delete(e.pointerId);
+  if (pointers.size < 2) pinch = null;
+  if (!pointers.size) view.classList.remove("dragging");
+};
+view.addEventListener("pointerup", release);
+view.addEventListener("pointercancel", release);
+view.addEventListener("wheel", (e) => {
+  if (e.target.closest("#card")) return;
+  e.preventDefault();
+  const box = view.getBoundingClientRect();
+  zoomAt(camera.scale * Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)), e.clientX - box.left, e.clientY - box.top);
+}, { passive: false });
+$("zoom-in").onclick = () => zoomAt(camera.scale * 1.3, undefined, undefined, true);
+$("zoom-out").onclick = () => zoomAt(camera.scale / 1.3, undefined, undefined, true);
+$("zoom-fit").onclick = () => { close(); fit(true); };
+
+// Person card
+
+let selected = null;
+function relativeRow(id, note = "") {
+  const row = el("button", { class: "relative" }, avatar(id), el("span", { class: "name" }, displayName(id)), note && el("span", { class: "note" }, note));
+  row.onclick = () => select(id, true);
+  return row;
+}
+function group(title, list, note) {
+  if (!list.length) return null;
+  return el("section", {}, el("h3", {}, title), ...list.map((id) => relativeRow(id, note?.(id))));
+}
+function partnerNote(id, other) {
+  const d = partnership(tree, id, other) || {};
+  if (d.status === "divorced") return d.divorce_date ? `Divorced ${year(d.divorce_date)}` : "Divorced";
+  if (d.status === "married") return d.marriage_date ? `Married ${year(d.marriage_date)}` : "Married";
   return "";
 }
 
-function chips(title, list, note = () => "") {
-  if (!list.length) return null;
-  const section = document.createElement("div");
-  section.innerHTML = '<h3></h3><div class="chips"></div>';
-  section.querySelector("h3").textContent = title;
-  list.forEach((other) => {
-    const chip = document.createElement("span");
-    chip.className = "chip";
-    chip.textContent = tree.people[other].name + note(other);
-    chip.onclick = () => focusOn(other);
-    section.querySelector(".chips").append(chip);
-  });
-  return section;
-}
+function select(id, glide = false) {
+  if (selected) cards[selected].classList.remove("selected");
+  selected = id;
+  const p = person(id);
+  const partners = partnersOf(tree, id);
+  const related = new Set([id, ...parentsOf(tree, id), ...partners, ...children(tree, id), ...siblings(tree, id)]);
+  stage.classList.add("dim");
+  for (const other of ids) cards[other].classList.toggle("related", related.has(other));
+  cards[id].classList.add("selected");
+  for (const { path, people } of edges) path.classList.toggle("on", people.includes(id) && people.every((x) => related.has(x)));
 
-function partnerNote(id, other) {
-  const details = partnership(tree, id, other) || {};
-  const status = details.status === "married" && details.marriage_date
-    ? `married ${details.marriage_date}` : details.status;
-  return status ? ` · ${status}` : "";
-}
+  $("card")?.remove();
+  const facts = [
+    ["Born", [p.birth_date, p.birth_place && `in ${p.birth_place}`].filter(Boolean).join(" ")],
+    ["Died", p.death_date],
+  ].filter(([, v]) => v);
+  const box = el(
+    "div",
+    { id: "card", role: "dialog", "aria-label": p.name },
+    el("div", { class: "top" }, avatar(id, "lg"), el("div", {}, el("h2", {}, displayName(id)), p.birth_date && p.death_date && el("span", { class: "years" }, years(p)))),
+    facts.length ? el("dl", {}, ...facts.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)])) : null,
+    p.notes && el("p", { class: "notes" }, p.notes),
+    group("Parents", parentsOf(tree, id)),
+    group(partners.length > 1 ? "Partners" : "Partner", partners, (o) => partnerNote(id, o)),
+    group("Siblings", siblings(tree, id), (o) => (halfSiblings(tree, id, o) ? "Half" : "")),
+    group("Children", children(tree, id)),
+    related.size === 1 ? el("p", { class: "none" }, "No family recorded yet.") : null,
+  );
+  const shut = el("button", { class: "close", "aria-label": "Close" });
+  shut.innerHTML = '<svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+  shut.onclick = close;
+  box.append(shut);
+  view.append(box);
 
-function showPerson(id) {
-  const p = tree.people[id];
-  const box = $("person");
-  box.innerHTML = `<h2></h2><div class="muted" data-f="years"></div><div class="muted" data-f="place"></div>
-    <p data-f="notes"></p>`;
-  box.querySelector("h2").textContent = p.name;
-  box.querySelector('[data-f="years"]').textContent = years(p);
-  box.querySelector('[data-f="place"]').textContent = p.birth_place ? `Born in ${p.birth_place}` : "";
-  box.querySelector('[data-f="notes"]').textContent = p.notes || "";
-  box.append(...[
-    chips("Parents", p.parents || []),
-    chips("Partners", p.partners || [], (other) => partnerNote(id, other)),
-    chips("Siblings", siblings(tree, id), (other) => (halfSiblings(tree, id, other) ? " · half" : "")),
-    chips("Children", children(tree, id)),
-  ].filter(Boolean));
-  $("rel-a").value ||= id;
+  if (glide) centreOn(id);
+  requestAnimationFrame(place);
+  setTimeout(place, 480);
+  history.replaceState(null, "", `#${id}`);
 }
-
-function focusOn(id) {
-  state.focus = id || null;
-  $("focus").value = id || "";
-  if (id) showPerson(id);
-  render();
+function place() {
+  const box = $("card");
+  if (!box || !selected || matchMedia("(max-width: 640px)").matches) return;
+  const r = cards[selected].getBoundingClientRect();
+  const v = view.getBoundingClientRect();
+  const right = r.right - v.left + 12;
+  const left = right + box.offsetWidth > v.width - 16 ? r.left - v.left - box.offsetWidth - 12 : right;
+  box.style.left = `${Math.max(16, left)}px`;
+  box.style.top = `${Math.min(Math.max(16, r.top - v.top), v.height - box.offsetHeight - 16)}px`;
 }
-
-let renders = 0;
-async function render() {
-  const { source, nodes } = toMermaid(tree, state.focus, state.view, state.focus ? state.generations : null);
-  state.nodes = nodes;
-  document.querySelectorAll("#views button").forEach((b) => {
-    b.disabled = !state.focus;
-    b.setAttribute("aria-pressed", String(!!state.focus && b.dataset.view === state.view));
-  });
-  $("generations").disabled = !state.focus;
-  if (!ids.length) { $("chart").textContent = "This tree is empty."; return; }
-  const { svg } = await mermaid.render(`chart${++renders}`, source);
-  $("chart").innerHTML = svg;
-  const el = $("chart").querySelector("svg");
-  state.natural = el.viewBox.baseVal.width || el.getBoundingClientRect().width;
-  el.style.maxWidth = "none";
-  el.querySelectorAll("g.node").forEach((g) => {
-    const match = g.id.match(/flowchart-(p\d+)-/);
-    if (!match) return;
-    g.dataset.person = nodes[match[1]];
-    g.addEventListener("click", () => focusOn(g.dataset.person));
-  });
-  zoom(Math.max(fitScale(), 0.6));
-  $("chart").scrollLeft = ($("chart").scrollWidth - $("chart").clientWidth) / 2;
+function close() {
+  $("card")?.remove();
+  if (selected) cards[selected].classList.remove("selected");
+  selected = null;
+  stage.classList.remove("dim");
+  for (const { path } of edges) path.classList.remove("on");
+  history.replaceState(null, "", location.pathname);
 }
-
-function zoom(scale) {
-  state.scale = Math.min(3, Math.max(0.2, scale));
-  $("chart").querySelector("svg").style.width = `${state.natural * state.scale}px`;
-}
-const fitScale = () => Math.min(1, ($("chart").clientWidth - 16) / state.natural);
-const fit = () => zoom(fitScale());
-
-$("focus").onchange = (e) => focusOn(e.target.value);
-document.querySelectorAll("#views button").forEach((b) => {
-  b.onclick = () => { state.view = b.dataset.view; render(); };
+stage.addEventListener("click", (e) => {
+  if (moved) return;
+  const node = e.target.closest(".person");
+  node ? select(node.dataset.id) : close();
 });
-$("generations").onchange = (e) => { state.generations = e.target.value ? Number(e.target.value) : null; render(); };
-$("zoom-in").onclick = () => zoom(state.scale * 1.25);
-$("zoom-out").onclick = () => zoom(state.scale / 1.25);
-$("zoom-fit").onclick = fit;
+view.addEventListener("click", (e) => { if (!moved && e.target === view) close(); });
+const observer = new MutationObserver(() => requestAnimationFrame(place));
+observer.observe(stage, { attributes: true, attributeFilter: ["style"] });
+addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+addEventListener("resize", place);
 
-function answer() {
-  const a = $("rel-a").value;
-  const b = $("rel-b").value;
-  if (!a || !b) { $("answer").textContent = ""; return; }
-  const rel = relationship(tree, a, b);
-  $("answer").textContent = rel.summary ||
-    (rel.relationship === "same person" ? "That's the same person." : `No known relationship between ${tree.people[a].name} and ${tree.people[b].name}.`);
+// Search
+
+const search = $("search");
+const results = $("results");
+let matches = [];
+let active = 0;
+function showResults() {
+  const terms = search.value.toLowerCase().split(/\s+/).filter(Boolean);
+  const name = (id) => person(id).name.toLowerCase();
+  const starts = (id) => name(id).split(/\s+/).some((w) => w.startsWith(terms[0]));
+  matches = terms.length
+    ? ids.filter((id) => !PLACEHOLDER.test(person(id).name) && terms.every((t) => name(id).includes(t)))
+        .sort((a, b) => starts(b) - starts(a)).slice(0, 8)
+    : [];
+  active = 0;
+  results.replaceChildren(
+    ...(matches.length
+      ? matches.map((id, i) => {
+          const item = el("li", { role: "option", "aria-selected": String(i === active) }, avatar(id), el("span", {}, el("span", { class: "name" }, person(id).name), years(person(id)) && el("span", { class: "years" }, years(person(id)))));
+          item.onpointerdown = (e) => { e.preventDefault(); choose(id); };
+          return item;
+        })
+      : [el("li", { class: "empty" }, "No one by that name")]),
+  );
+  results.hidden = !terms.length;
+  search.setAttribute("aria-expanded", String(!results.hidden));
 }
-$("rel-a").onchange = answer;
-$("rel-b").onchange = answer;
+function choose(id) {
+  search.value = "";
+  results.hidden = true;
+  search.setAttribute("aria-expanded", "false");
+  search.blur();
+  select(id, true);
+}
+search.addEventListener("input", showResults);
+search.addEventListener("blur", () => { results.hidden = true; });
+search.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    active = (active + (e.key === "ArrowDown" ? 1 : -1) + matches.length) % Math.max(1, matches.length);
+    [...results.children].forEach((li, i) => li.setAttribute("aria-selected", String(i === active)));
+  } else if (e.key === "Enter" && matches[active]) choose(matches[active]);
+  else if (e.key === "Escape") { search.value = ""; showResults(); }
+});
 
-mermaid.initialize({ startOnLoad: false, securityLevel: "strict" });
-render();
+if (!ids.length) view.replaceChildren(el("div", { class: "empty-tree" }, "This family tree is empty."));
+else {
+  fit();
+  const start = decodeURIComponent(location.hash.slice(1));
+  if (tree.people[start]) select(start, true);
+}
+addEventListener("resize", () => { if (!selected) fit(); });
 </script>
 </body>
 </html>
