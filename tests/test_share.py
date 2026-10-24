@@ -32,7 +32,7 @@ def test_page_logic_matches_python_and_lays_out_everyone(tree: Tree) -> None:
     tree.update_person("me", birth_date="c. 1995")
     tree.link("dad", "partner", "mom", status="married", marriage_date="1988")
     tree.link("dad", "partner", "ex", divorce_date="1985")
-    # A second family married into the first, and a couple whose children stack.
+    # A second family married into the first, and a couple with several children.
     for name in ("In-law Dad", "Spouse", "Spouse Sib"):
         tree.add_person(name)
     tree.link("spouse", "parent", "in-law-dad")

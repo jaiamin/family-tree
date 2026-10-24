@@ -133,13 +133,10 @@ async function layout(tree) {
   const pos = {}, cards = [];
   for (const u of units) {
     const n = placed.get(u.id);
-    u.members.forEach((id, i) => {
-      const p = offset(id), other = u.members[0];
-      const status = i && partnership(tree, other, id)?.status;
-      const role = !i ? "" : !partnersOf(tree, id).includes(other) ? "Co-parent"
-        : status === "married" ? "Spouse" : status === "divorced" ? "Former partner" : "Partner";
+    u.members.forEach((id) => {
+      const p = offset(id);
       pos[id] = point({ x: n.x + p.x, y: n.y + p.y });
-      cards.push({ personId: id, ...pos[id], role });
+      cards.push({ personId: id, ...pos[id] });
     });
   }
   for (const f of families.values()) {

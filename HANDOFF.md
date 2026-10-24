@@ -43,6 +43,13 @@ reference duplicates, responsive graph rearrangement, or special-case family nam
 - Forward host port 8000 to sandbox port 8000.
 - Preview data is disposable and excluded from commits. Source copy: public deployed tree.
 
+## Latest cleanup
+- Removed relationship captions from mini cards and deleted their layout metadata.
+  Names/dates remain; relationship details stay in the details panel.
+- No centering postprocessor or experimental layout setting remains.
+- Viewer tests: 9 passed; Ruff passed; browser confirms 64 cards with no Spouse captions.
+- Both local previews refreshed. No publication.
+
 ## Next action
 User reviews local rendering before any publication. Existing draft PR #14 still has the
 older patch. Do not push/deploy until user authorizes publication. Future arbitrary nonplanar

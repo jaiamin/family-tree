@@ -72,7 +72,7 @@ const at = (id) => ({ x: Math.round(pos[id].x) + PAD, y: Math.round(pos[id].y) +
 const cards = {};
 for (const c of geometry.nodes) {
   const id = c.personId, p = person(id);
-  const caption = [c.role, years(p)].filter(Boolean).join(" · ");
+  const caption = years(p);
   const node = el("button", {
     class: `person${PLACEHOLDER.test(p.name) ? " unknown" : ""}`,
     "data-id": id, "aria-label": `${p.name}${caption ? `, ${caption}` : ""}`,
