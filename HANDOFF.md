@@ -102,3 +102,8 @@ graphs can require crossings; current zero-crossing verification applies to this
   not cover zoom; zoom/fit work with details open; hovering Divya then Enter selects Divya.
 - All 95 tests, Ruff, ty, JS syntax and wheel build pass; detector has no findings.
 - Both local preview URLs refreshed. No push/deployment.
+
+## Mobile people count
+- Removed mobile-only count hiding rule; same people count appears on desktop/mobile.
+- Browser checked count visibility and no page overflow at 390px and 320px widths.
+- Both local previews refreshed; no publication.
