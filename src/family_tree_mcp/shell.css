@@ -39,7 +39,7 @@
   :root:not([data-theme="dark"]) .sun, :root[data-theme="dark"] .moon { display: none; }
   h1 a { color: inherit; text-decoration: none; }
   h1 a:hover { color: var(--muted); }
-  h1 { display: flex; align-items: center; gap: 8px; }
+  h1 { display: flex; align-items: center; gap: 4px; }
   h1 > a { flex-shrink: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
   h1:has(.tree-crumb) > a { max-width: 50%; }
   .tree-crumb { overflow: visible; display: flex; align-items: center; column-gap: 4px; min-width: 0; }
