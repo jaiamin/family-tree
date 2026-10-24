@@ -86,14 +86,13 @@
     transition: border-color .15s, box-shadow .15s, opacity .2s;
   }
   .person.joined-top { border-radius: 10px 10px 0 0; border-bottom: 0; box-shadow: none; }
-  .person.joined-bottom { border-radius: 0 0 10px 10px; box-shadow: none; }
+  .person.joined-bottom { border-radius: 0 0 10px 10px; border-top: 0; box-shadow: none; }
+  .person.joined-bottom::before { content: ""; position: absolute; top: -.5px; left: 0; right: 0; height: 1px; background: var(--border); pointer-events: none; }
   .person:hover { border-color: var(--border-strong); }
-  /* Draw above the shared edge so each joined card has a complete outline. */
+  /* Center outlines on card edges, including the shared seam and its outgoing line. */
   .person:hover, .person.selected { z-index: 1; }
-  .person:hover::after, .person.selected::after {
-    content: ""; position: absolute; inset: -1px; border: 1px solid var(--border-strong); border-radius: inherit; pointer-events: none;
-  }
-  .person.selected::after { border: 2px solid var(--fg); }
+  .person:hover { outline: 1px solid var(--border-strong); outline-offset: -.5px; }
+  .person.selected { outline: 2px solid var(--fg); outline-offset: -1px; }
   .person.unknown { border-style: dashed; box-shadow: none; background: transparent; color: var(--muted); }
   .dim .person:not(.related) { opacity: .45; }
   .avatar {
