@@ -1,7 +1,9 @@
 """Render a family tree, or one person's part of it, as a Mermaid flowchart."""
 
+import base64
 import json
 import re
+import zlib
 from typing import Literal
 
 from family_tree_mcp.tree import Person, Tree
@@ -53,9 +55,21 @@ def mermaid(
     return "\n".join(lines)
 
 
+def mermaid_live_url(source: str) -> str:
+    """Link that opens the diagram in the mermaid.live editor, using its pako URL format."""
+    state = {
+        "code": source,
+        "mermaid": '{"theme": "default"}',
+        "updateDiagram": True,
+        "rough": False,
+    }
+    packed = zlib.compress(json.dumps(state).encode(), 9)
+    return "https://mermaid.live/edit#pako:" + base64.urlsafe_b64encode(packed).decode().rstrip("=")
+
+
 def _select(tree: Tree, person_id: str | None, view: View, generations: int | None) -> list[str]:
     if person_id is None:
-        return list(tree.people)
+        return tree.by_birth(list(tree.people))
     tree.get(person_id)
     within = {person_id}
     if view != "descendants":
@@ -64,7 +78,7 @@ def _select(tree: Tree, person_id: str | None, view: View, generations: int | No
         descendants = _near(tree.descendants(person_id), generations) | {person_id}
         within |= descendants
         within |= {p for d in descendants for p in tree.people[d].partners}
-    return [pid for pid in tree.people if pid in within]
+    return tree.by_birth([pid for pid in tree.people if pid in within])
 
 
 def _near(distances: dict[str, int], generations: int | None) -> set[str]:

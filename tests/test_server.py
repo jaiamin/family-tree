@@ -36,6 +36,9 @@ async def test_build_and_query_tree(tmp_path) -> None:
         export = await client.call_tool("export_gedcom", tree)
         assert export.data["people"] == 3
         assert "1 NAME Ada /Smith/" in Path(export.data["path"]).read_text()
+        chart = await client.call_tool("export_diagram", {**tree, "person_id": ids["Ada Smith"]})
+        assert Path(chart.data["path"]).read_text() == diagram.data
+        assert chart.data["url"].startswith("https://mermaid.live/edit#pako:")
 
     # A fresh server reads the same tree back from disk.
     async with Client(create_server(Store(tmp_path))) as client:

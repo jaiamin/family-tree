@@ -7,7 +7,7 @@ from typing import Any, Literal
 from pydantic import BaseModel
 
 Sex = Literal["male", "female"]
-Relation = Literal["parent", "child", "partner"]
+Relation = Literal["parent", "child", "partner", "sibling"]
 Direction = Literal["ancestors", "descendants"]
 
 
@@ -36,14 +36,18 @@ class Tree(BaseModel):
     def ref(self, person_id: str) -> dict[str, str]:
         return {"id": person_id, "name": self.people[person_id].name}
 
+    def by_birth(self, ids: list[str]) -> list[str]:
+        """Order people by birth date; those without one follow in the order they were added."""
+        return sorted(ids, key=lambda i: birth_key(self.people[i].birth_date))
+
     def children(self, person_id: str) -> list[str]:
-        return [p.id for p in self.people.values() if person_id in p.parents]
+        return self.by_birth([p.id for p in self.people.values() if person_id in p.parents])
 
     def siblings(self, person_id: str) -> list[str]:
         parents = set(self.get(person_id).parents)
-        return [
-            p.id for p in self.people.values() if p.id != person_id and parents & set(p.parents)
-        ]
+        return self.by_birth(
+            [p.id for p in self.people.values() if p.id != person_id and parents & set(p.parents)]
+        )
 
     # Editing
 
@@ -81,6 +85,8 @@ class Tree(BaseModel):
                 person.partners.append(relative_id)
                 relative.partners.append(person_id)
             return
+        if relation == "sibling":
+            return self._link_siblings(person, relative)
         parent, child = (relative, person) if relation == "parent" else (person, relative)
         if parent.id in child.parents:
             return
@@ -92,8 +98,29 @@ class Tree(BaseModel):
             )
         child.parents.append(parent.id)
 
+    def _link_siblings(self, a: Person, b: Person) -> None:
+        """Siblings share parents, so give one the other's parents or a placeholder parent."""
+        if set(a.parents) & set(b.parents):
+            return
+        if a.parents and b.parents:
+            raise ValueError(
+                f"{a.name} and {b.name} already have different parents. "
+                "Link them to a shared parent instead."
+            )
+        if not a.parents and not b.parents:
+            placeholder = self.add_person(
+                f"Unknown parent of {a.name}",
+                notes="Placeholder linking siblings. Rename or replace when known.",
+            )
+            a.parents.append(placeholder.id)
+        source, target = (a, b) if a.parents else (b, a)
+        for parent_id in source.parents:
+            self.link(target.id, "parent", parent_id)
+
     def unlink(self, person_id: str, relation: Relation, relative_id: str) -> None:
         person, relative = self.get(person_id), self.get(relative_id)
+        if relation == "sibling":
+            raise ValueError("Siblings come from shared parents; remove a parent link instead.")
         if relation == "partner":
             person.partners = [i for i in person.partners if i != relative_id]
             relative.partners = [i for i in relative.partners if i != person_id]
@@ -212,6 +239,12 @@ def _grand(generations: int) -> str:
 def _ordinal(n: int) -> str:
     words = {1: "first", 2: "second", 3: "third", 4: "fourth", 5: "fifth"}
     return words.get(n, f"{n}th")
+
+
+def birth_key(date: str | None) -> tuple[int, str]:
+    """Sort key from the first YYYY, YYYY-MM or YYYY-MM-DD in a free-text date; unknown last."""
+    match = re.search(r"\d{4}(?:-\d{2}){0,2}", date or "")
+    return (0, match.group()) if match else (1, "")
 
 
 def slugify(text: str) -> str:

@@ -32,7 +32,7 @@ A tree contains people. Each person has an id, a name, optional details (`sex`, 
 - **parents**: at most two per person, with cycles rejected.
 - **partners**: always recorded on both people.
 
-Everything else (children, siblings, aunts, cousins, in-laws) is derived from those links, so the data stays consistent and the agent never has to keep inverse relations in sync.
+Everything else (children, siblings, aunts, cousins, in-laws) is derived from those links, so the data stays consistent and the agent never has to keep inverse relations in sync. Linking two people as `sibling` gives them the same parents, adding a placeholder parent when neither has one. Children and siblings are listed oldest first when birth dates are known.
 
 ## Tools
 
@@ -40,12 +40,13 @@ Everything else (children, siblings, aunts, cousins, in-laws) is derived from th
 | --- | --- |
 | `list_trees`, `create_tree`, `delete_tree`, `get_tree` | Manage trees |
 | `add_person`, `update_person`, `remove_person` | Manage people |
-| `add_relationship`, `remove_relationship` | Link people as `parent`, `child` or `partner` |
+| `add_relationship`, `remove_relationship` | Link people as `parent`, `child`, `partner` or `sibling` |
 | `find_people` | Search by name to get ids |
 | `get_person` | Details with parents, partners, children and siblings |
 | `get_relationship` | Name the relation, e.g. "Sam is Ava's first cousin once removed." |
 | `get_ancestors`, `get_descendants` | Lineage grouped by generation |
 | `get_diagram` | Mermaid chart of the whole tree or one person's ancestors/descendants |
+| `export_diagram` | Save that chart as a `.mmd` file plus a [mermaid.live](https://mermaid.live) link for PNG/SVG/PDF download |
 | `export_gedcom` | Save the tree as a GEDCOM file for other genealogy apps |
 
 `get_diagram` returns [Mermaid](https://mermaid.js.org) source, which Claude, ChatGPT, GitHub and most Markdown viewers render as a chart. Couples join at a dot above their children, boxes are colored by sex (blue, pink, gray when unknown), deceased people are dashed and faded, and the focus person has an orange border.

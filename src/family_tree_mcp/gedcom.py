@@ -54,7 +54,7 @@ def to_gedcom(tree: Tree) -> str:
         lines.append(f"0 {fam[key]} FAM")
         for role, pid in _spouses(tree, key):
             lines.append(f"1 {role} {indi[pid]}")
-        lines += [f"1 CHIL {indi[c]}" for c in children]
+        lines += [f"1 CHIL {indi[c]}" for c in tree.by_birth(children)]
     lines.append("0 TRLR")
     return "\n".join(lines) + "\n"
 
