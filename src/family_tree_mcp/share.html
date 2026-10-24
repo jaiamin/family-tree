@@ -97,6 +97,7 @@
   }
   .zoom button { display: grid; place-items: center; width: 36px; height: 36px; border: 0; background: none; cursor: pointer; }
   .zoom button + button { border-top: 1px solid var(--border); }
+  .zoom button[aria-pressed="true"] { background: var(--chip); color: var(--fg); }
   .zoom button:hover { background: var(--chip); }
 
   #card {
@@ -162,6 +163,8 @@ __HEADER__
   <div id="canvas">
   <div id="stage"><svg id="lines"></svg></div>
   <div class="zoom">
+    <button id="layout-down" title="Top-down" aria-label="Top-down layout" aria-pressed="true"><svg class="icon" viewBox="0 0 24 24"><rect x="8" y="3" width="8" height="5" rx="1"/><path d="M12 8v5M5 16v-3h14v3"/><rect x="2" y="16" width="6" height="5" rx="1"/><rect x="16" y="16" width="6" height="5" rx="1"/></svg></button>
+    <button id="layout-right" title="Left-to-right" aria-label="Left-to-right layout" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24"><rect x="3" y="8" width="5" height="8" rx="1"/><path d="M8 12h5M16 5h-3v14h3"/><rect x="16" y="2" width="5" height="6" rx="1"/><rect x="16" y="16" width="5" height="6" rx="1"/></svg></button>
     <button id="zoom-in" aria-label="Zoom in"><svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
     <button id="zoom-out" aria-label="Zoom out"><svg class="icon" viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
     <button id="zoom-fit" aria-label="Show everyone"><svg class="icon" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></button>
