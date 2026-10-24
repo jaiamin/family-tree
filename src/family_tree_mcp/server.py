@@ -8,7 +8,7 @@ from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from family_tree_mcp.diagram import View, mermaid
+from family_tree_mcp.diagram import View, mermaid, mermaid_live_url
 from family_tree_mcp.gedcom import to_gedcom
 from family_tree_mcp.store import Store
 from family_tree_mcp.tree import Relation, Sex, slugify
@@ -16,13 +16,17 @@ from family_tree_mcp.tree import Relation, Sex, slugify
 INSTRUCTIONS = """\
 Manage family trees. Each tree holds people linked by two kinds of edges:
 parent (at most two per person) and partner. Children, siblings, cousins, in-laws
-and every other relation are derived, so never record them directly.
+and every other relation are derived from those edges.
 
 Workflow: call find_people before add_person to avoid duplicates, then connect
-people with add_relationship. Use get_relationship to name how two people are
-related, and get_person, get_ancestors or get_descendants to explore.
-To show the tree visually, use get_diagram and display its output in a ```mermaid block.
-To move a tree to Ancestry, FamilySearch, MyHeritage, Gramps etc., use export_gedcom.
+people with add_relationship. Linking two people as "sibling" gives them shared
+parents, adding a placeholder parent if neither has one. Use get_relationship to
+name how two people are related, and get_person, get_ancestors or get_descendants
+to explore. Children and siblings are listed oldest first when birth dates are known.
+
+To show the tree visually, use get_diagram and display its output in a ```mermaid
+block; use export_diagram when the user wants to download or share it. To move a
+tree to Ancestry, FamilySearch, MyHeritage, Gramps etc., use export_gedcom.
 Dates are free text; prefer ISO format (YYYY, YYYY-MM or YYYY-MM-DD).
 """
 
@@ -32,6 +36,9 @@ DELETE = ToolAnnotations(destructive_hint=True, open_world_hint=False)
 
 TreeName = Annotated[str, Field(description="Tree name, as shown by list_trees.")]
 PersonId = Annotated[str, Field(description="Person id, as returned by add_person or find_people.")]
+DiagramFocus = Annotated[
+    str | None, Field(description="Center the diagram on this person. Omit for everyone.")
+]
 Text = Annotated[str | None, Field(description="Omit to leave unchanged; empty string clears.")]
 
 
@@ -121,7 +128,7 @@ def create_server(store: Store) -> FastMCP:
     def add_relationship(
         tree: TreeName, person_id: PersonId, relation: Relation, relative_id: PersonId
     ) -> dict:
-        """Record that relative_id is person_id's parent, child or partner.
+        """Record that relative_id is person_id's parent, child, partner or sibling.
 
         Example: relation="parent", person_id="ann", relative_id="bob" means Bob is Ann's parent.
         """
@@ -133,7 +140,7 @@ def create_server(store: Store) -> FastMCP:
     def remove_relationship(
         tree: TreeName, person_id: PersonId, relation: Relation, relative_id: PersonId
     ) -> dict:
-        """Remove a parent, child or partner link recorded with add_relationship."""
+        """Remove a parent, child or partner link. To separate siblings, remove a parent link."""
         with store.edit(tree) as t:
             t.unlink(person_id, relation, relative_id)
             return t.profile(person_id)
@@ -173,19 +180,33 @@ def create_server(store: Store) -> FastMCP:
     @mcp.tool(annotations=READ)
     def get_diagram(
         tree: TreeName,
-        person_id: Annotated[
-            str | None, Field(description="Center the diagram on this person. Omit for everyone.")
-        ] = None,
+        person_id: DiagramFocus = None,
         view: View = "both",
         generations: int | None = None,
     ) -> str:
         """Draw the tree as a Mermaid flowchart. Show the result to the user in a ```mermaid block.
 
-        Couples join at a dot above their children. Colors show sex (blue male, pink female,
-        gray unknown), dashed faded boxes are deceased, and an orange border marks person_id.
-        For large trees, pass person_id and generations to keep the diagram readable.
+        Couples join at a dot above their children, who are ordered by birth date. Colors show sex
+        (blue male, pink female, gray unknown), dashed faded boxes are deceased, and an orange
+        border marks person_id. For large trees, pass person_id and generations.
         """
         return mermaid(store.load(tree), person_id, view, generations)
+
+    @mcp.tool(annotations=WRITE)
+    def export_diagram(
+        tree: TreeName,
+        person_id: DiagramFocus = None,
+        view: View = "both",
+        generations: int | None = None,
+    ) -> dict:
+        """Save the get_diagram chart as a .mmd file and return a mermaid.live link to open it.
+
+        Give both to the user: mermaid.live can download the chart as PNG, SVG or PDF.
+        """
+        t = store.load(tree)
+        source = mermaid(t, person_id, view, generations)
+        name = slugify(t.name) + (f"-{person_id}-{view}" if person_id else "")
+        return {"path": str(_export(name + ".mmd", source)), "url": mermaid_live_url(source)}
 
     @mcp.tool(annotations=WRITE)
     def export_gedcom(tree: TreeName) -> dict:
@@ -194,10 +215,14 @@ def create_server(store: Store) -> FastMCP:
         Returns the file path; give it to the user rather than reading the file into the chat.
         """
         t = store.load(tree)
-        path = store.root / "exports" / f"{slugify(t.name)}.ged"
-        path.parent.mkdir(exist_ok=True)
-        path.write_text(to_gedcom(t), encoding="utf-8")
+        path = _export(f"{slugify(t.name)}.ged", to_gedcom(t))
         return {"path": str(path), "people": len(t.people)}
+
+    def _export(filename: str, content: str) -> Path:
+        path = store.root / "exports" / filename
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+        return path
 
     return mcp
 

@@ -135,3 +135,42 @@ def test_update_person(tree: Tree) -> None:
 
 def test_find_matches_all_words_case_insensitively(tree: Tree) -> None:
     assert [p.id for p in tree.find("kid COUSIN")] == ["cousin-kid"]
+
+
+def test_sibling_link_shares_known_parents(tree: Tree) -> None:
+    tree.add_person("Late Sis", sex="female")
+    tree.link("late-sis", "sibling", "me")
+    assert tree.get("late-sis").parents == ["dad", "mom"]
+    assert tree.relationship("me", "late-sis")["relationship"] == "sister"
+
+
+def test_sibling_link_without_parents_adds_placeholder(tree: Tree) -> None:
+    for name in ("Shashank", "Mukul", "Nina"):
+        tree.add_person(name)
+    tree.link("shashank", "sibling", "mukul")
+    tree.link("nina", "sibling", "shashank")
+    [placeholder] = tree.get("shashank").parents
+    assert tree.get(placeholder).name == "Unknown parent of Shashank"
+    assert tree.get("mukul").parents == tree.get("nina").parents == [placeholder]
+
+
+def test_sibling_link_rejects_people_with_different_parents(tree: Tree) -> None:
+    with pytest.raises(ValueError, match="different parents"):
+        tree.link("me", "sibling", "cousin")
+    with pytest.raises(ValueError, match="parent link"):
+        tree.unlink("me", "sibling", "sis")
+
+
+def test_children_and_siblings_are_ordered_by_birth() -> None:
+    t = Tree(name="T")
+    t.add_person("Parent")
+    for name, born in [
+        ("Youngest", "2005-01-02"),
+        ("Unknown", None),
+        ("Eldest", "c. 1999"),
+        ("Middle", "2005"),
+    ]:
+        t.add_person(name, birth_date=born)
+        t.link(name.lower(), "parent", "parent")
+    assert t.children("parent") == ["eldest", "middle", "youngest", "unknown"]
+    assert t.siblings("unknown") == ["eldest", "middle", "youngest"]
