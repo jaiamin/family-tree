@@ -4,9 +4,11 @@ import subprocess
 from importlib.resources import files
 
 import pytest
+from conftest import seed
 
 from family_tree_mcp.share import share_page
-from family_tree_mcp.tree import Tree
+from family_tree_mcp.store import Family
+from family_tree_mcp.tree import Site, Tree
 
 RUNNER = """
 const lib = require(process.argv[1]);
@@ -34,22 +36,22 @@ def test_page_logic_matches_python_and_lays_out_everyone(tree: Tree) -> None:
     tree.link("dad", "partner", "ex", divorce_date="1985")
     # A second family married into the first, and a couple with several children.
     for name in ("In-law Dad", "Spouse", "Spouse Sib"):
-        tree.add_person(name)
+        seed(tree, name)
     tree.link("spouse", "parent", "in-law-dad")
     tree.link("spouse-sib", "parent", "in-law-dad")
     tree.link("cousin", "partner", "spouse")
     for name in ("Kid A", "Kid B", "Kid C"):
-        tree.add_person(name)
+        seed(tree, name)
         tree.link(name.lower().replace(" ", "-"), "parent", "sis")
     # A second child with the ex next to a childless full brother, and a partner who married in
     # to a family with children.
-    tree.add_person("Brother")
+    seed(tree, "Brother")
     tree.link("brother", "parent", "dad")
     tree.link("brother", "parent", "mom")
-    tree.add_person("Half Two")
+    seed(tree, "Half Two")
     tree.link("half-two", "parent", "dad")
     tree.link("half-two", "parent", "ex")
-    tree.add_person("Sis Husband")
+    seed(tree, "Sis Husband")
     tree.link("sis", "partner", "sis-husband")
     tree.link("kid-a", "parent", "sis-husband")
     ids = list(tree.people)
@@ -75,13 +77,15 @@ def test_page_logic_matches_python_and_lays_out_everyone(tree: Tree) -> None:
 
 def test_share_page_hides_living_details_and_embeds_safely() -> None:
     t = Tree(name="Smiths")
-    t.add_person("Old Gran", birth_date="1890", notes="Kept")
-    t.add_person("Late Grandpa", birth_date="1950", death_date="2010", birth_place="Pune")
-    t.add_person("Living Me</script>", birth_date="1998", birth_place="Mumbai", notes="Private")
+    seed(t, "Old Gran", birth_date="1890", notes="Kept")
+    seed(t, "Late Grandpa", birth_date="1950", death_date="2010", birth_place="Pune")
+    seed(t, "Living Me</script>", birth_date="1998", birth_place="Mumbai", notes="Private")
     t.link("old-gran", "partner", "late-grandpa", marriage_date="1970")
     t.link("living-me-script", "partner", "late-grandpa", marriage_date="2020")
 
-    page, hidden = share_page(t)
+    page, hidden = share_page(
+        t, Site(name="Website", project="example", url=""), [Family(id=t.id, name=t.name)]
+    )
     data = json.loads(page.split('type="application/json">')[1].split("</script>")[0])
     people = data["people"]
     assert hidden == 1
@@ -99,7 +103,11 @@ def test_share_page_hides_living_details_and_embeds_safely() -> None:
         "late-grandpa+living-me-script": {"status": "married"},
     }
 
-    page, hidden = share_page(t, hide_living=False)
+    page, hidden = share_page(
+        t,
+        Site(name="Website", project="example", url="", hide_living=False),
+        [Family(id=t.id, name=t.name)],
+    )
     assert hidden == 0 and "Mumbai" in page and '"private"' not in page
 
 
@@ -115,7 +123,7 @@ def test_parent_units_stay_together_with_ancestry_on_both_sides() -> None:
         "Child",
         "Sibling",
     ):
-        t.add_person(name)
+        seed(t, name)
     for child, parent in (
         ("mother", "maternal-grandparent"),
         ("paternal-grandparent", "paternal-great-grandparent"),
@@ -224,11 +232,11 @@ def test_separate_unions_do_not_assign_children_to_a_new_partner(tree: Tree) -> 
 @pytest.mark.skipif(not shutil.which("node"), reason="needs Node.js")
 def test_large_graph_has_one_card_per_person_and_every_child_connection() -> None:
     t = Tree(name="Large family")
-    t.add_person("Root")
+    seed(t, "Root")
     for i in range(100):
-        p = t.add_person(f"Child {i}")
+        p = seed(t, f"Child {i}")
         t.link(p.id, "parent", "root")
-        kid = t.add_person(f"Grandchild {i}")
+        kid = seed(t, f"Grandchild {i}")
         t.link(kid.id, "parent", p.id)
     got = run_graph(t)
     assert len(got["geometry"]["nodes"]) == len(t.people)
@@ -243,7 +251,7 @@ def test_large_graph_has_one_card_per_person_and_every_child_connection() -> Non
 def test_empty_and_single_person_graphs(size) -> None:
     t = Tree(name="Small tree")
     if size:
-        t.add_person("One person")
+        seed(t, "One person")
     got = run_graph(t)
     assert len(got["geometry"]["nodes"]) == size
     assert not got["edges"]

@@ -54,20 +54,20 @@ def test_photo_function(tmp_path) -> None:
         ["POST", "", {}],
         ["POST", "", {"x-edit-code": "wrong-code"}],
         ["POST", "", code],
-        ["PUT", "/ami", {"content-type": "image/jpeg"}, 10],
-        ["PUT", "/ami", {**code, "content-type": "image/gif"}, 10],
-        ["PUT", "/ami", jpeg, 600 * 1024],
+        ["PUT", "/550e8400-e29b-41d4-a716-446655440000", {"content-type": "image/jpeg"}, 10],
+        ["PUT", "/550e8400-e29b-41d4-a716-446655440000", {**code, "content-type": "image/gif"}, 10],
+        ["PUT", "/550e8400-e29b-41d4-a716-446655440000", jpeg, 600 * 1024],
         ["PUT", "/Bad_Id", jpeg, 10],
-        ["PUT", "/ami/extra", jpeg, 10],
+        ["PUT", "/550e8400-e29b-41d4-a716-446655440000/extra", jpeg, 10],
         ["PUT", "", jpeg, 10],
-        ["PUT", "/ami", jpeg, 2048],
+        ["PUT", "/550e8400-e29b-41d4-a716-446655440000", jpeg, 2048],
         ["GET", ""],
-        ["GET", "/ami?v=1"],
-        ["GET", "/ami"],
-        ["DELETE", "/ami", {}],
-        ["DELETE", "/ami", code],
+        ["GET", "/550e8400-e29b-41d4-a716-446655440000?v=1"],
+        ["GET", "/550e8400-e29b-41d4-a716-446655440000"],
+        ["DELETE", "/550e8400-e29b-41d4-a716-446655440000", {}],
+        ["DELETE", "/550e8400-e29b-41d4-a716-446655440000", code],
         ["GET", ""],
-        ["GET", "/ami"],
+        ["GET", "/550e8400-e29b-41d4-a716-446655440000"],
         ["GET", "", {}, 0, False],
     ]
     digest = hashlib.sha256(b"amber-river-oak-42").hexdigest()
@@ -89,7 +89,7 @@ def test_photo_function(tmp_path) -> None:
     ]
     assert got[0][3] == "{}" and json.loads(got[1][3]) == {"error": "That family code isn't right."}
     version = json.loads(got[10][3])["v"]
-    assert json.loads(got[11][3]) == {"ami": version}
+    assert json.loads(got[11][3]) == {"550e8400-e29b-41d4-a716-446655440000": version}
     assert got[12][:2] == [200, "image/jpeg"] and got[12][3] == "2048 bytes"
     assert got[12][2] == "public, max-age=31536000, immutable" and got[13][2] == "no-cache"
     assert got[16][3] == "{}"

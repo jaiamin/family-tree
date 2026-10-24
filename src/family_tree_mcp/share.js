@@ -53,9 +53,40 @@ $("theme").onclick = () => {
   dark ? (document.documentElement.dataset.theme = "dark") : delete document.documentElement.dataset.theme;
   try { localStorage.setItem("theme", dark ? "dark" : "light"); } catch {}
 };
-$("title").textContent = tree.name;
+const treeSwitch = $("tree-switch"), treeOptions = $("tree-options");
+function closeTreeOptions() {
+  treeOptions.hidden = true;
+  treeSwitch.setAttribute("aria-expanded", "false");
+}
+treeSwitch.onclick = () => {
+  const open = treeOptions.hidden;
+  treeOptions.hidden = !open;
+  treeSwitch.setAttribute("aria-expanded", String(open));
+};
+document.addEventListener("click", (event) => {
+  if (!event.target.closest(".tree-picker")) closeTreeOptions();
+});
+document.addEventListener("focusin", (event) => {
+  if (!event.target.closest(".tree-picker")) closeTreeOptions();
+});
+document.querySelector(".tree-picker").addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    closeTreeOptions();
+    treeSwitch.focus();
+    event.preventDefault();
+  } else if (["ArrowDown", "ArrowUp"].includes(event.key)) {
+    const links = [...treeOptions.querySelectorAll("a")];
+    const index = links.indexOf(document.activeElement);
+    const next = event.key === "ArrowDown" ? (index + 1) % links.length
+      : (index < 0 ? links.length - 1 : (index - 1 + links.length) % links.length);
+    treeOptions.hidden = false;
+    treeSwitch.setAttribute("aria-expanded", "true");
+    links[next].focus();
+    event.preventDefault();
+  }
+});
 $("count").textContent = `${ids.length} ${ids.length === 1 ? "person" : "people"}`;
-document.title = tree.name;
+document.title = `${tree.name} · ${tree.site_name}`;
 
 // Tree
 

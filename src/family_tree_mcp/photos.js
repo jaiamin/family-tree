@@ -11,7 +11,7 @@
 // EDIT_CODE_HASH variable. Each photo lives at photo:<id>, and the index key lists them so a page
 // view costs one read (KV's free tier allows few list calls).
 
-const ID = /^[a-z0-9][a-z0-9-]{0,99}$/;
+const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_BYTES = 512 * 1024;
 

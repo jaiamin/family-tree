@@ -1,19 +1,21 @@
 import re
 
+from conftest import seed
+
 from family_tree_mcp.diagram import mermaid
 from family_tree_mcp.tree import Tree
 
 
 def family() -> Tree:
     t = Tree(name='The "Smith" Family')
-    t.add_person("Gran", sex="female", birth_date="1930-05-01", death_date="2001")
-    t.add_person("Grandpa", sex="male")
-    t.add_person("Mum", sex="female", birth_date="1960")
-    t.add_person("Dad", sex="male")
-    t.add_person("Kid")
-    t.add_person("Uncle", sex="male")
-    t.add_person("Spouse")
-    t.add_person("Stranger")
+    seed(t, "Gran", sex="female", birth_date="1930-05-01", death_date="2001")
+    seed(t, "Grandpa", sex="male")
+    seed(t, "Mum", sex="female", birth_date="1960")
+    seed(t, "Dad", sex="male")
+    seed(t, "Kid")
+    seed(t, "Uncle", sex="male")
+    seed(t, "Spouse")
+    seed(t, "Stranger")
     t.link("gran", "partner", "grandpa")
     t.link("mum", "partner", "dad")
     t.link("uncle", "partner", "spouse")
