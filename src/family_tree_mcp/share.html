@@ -129,6 +129,11 @@
   .relative:hover { background: var(--chip); }
   .relative .avatar { width: 26px; height: 26px; font-size: 11px; }
   .relative .note { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; }
+  #card .branch {
+    width: 100%; margin-top: 14px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface); font-size: 13px; font-weight: 500; cursor: pointer; transition: background-color .15s;
+  }
+  #card .branch:hover, #card .branch[aria-pressed="true"] { background: var(--chip); }
   #card .none { margin: 14px 0 0; color: var(--muted); font-size: 13px; }
   .empty-tree { display: grid; place-items: center; height: 100%; color: var(--muted); }
 
@@ -346,7 +351,8 @@ function centreOn([id, ...group]) {
   const scale = Math.max(0.6, Math.min(1, (w - 48) / b.w, (h - 48) / b.h));
   camera.scale = scale;
   camera.x = w / 2 - (b.x + b.w / 2) * scale;
-  camera.y = h / 2 - (b.y + b.h / 2) * scale;
+  // Near the top rather than centred: trees grow downward, so this shows more of the family below.
+  camera.y = Math.min(h / 2 - (b.y + b.h / 2) * scale, 64 - b.y * scale);
   // When the whole line can't fit at a readable size, keep the person in view.
   const p = at(id);
   const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
@@ -432,17 +438,14 @@ const walk = (start, step) => {
   return seen;
 };
 
-// Selecting someone lights up their line, from the oldest ancestors down to their descendants,
-// and fades everyone who isn't close family.
-function select(id, glide = false) {
-  clear();
-  selected = id;
-  const p = person(id);
+// Lights up someone's line from the oldest ancestors down to their children (or, with branch,
+// all their descendants) and fades everyone who isn't close family.
+function highlight(id, branch = false) {
+  unhighlight();
   const partners = partnersOf(tree, id);
-  const down = walk(id, (x) => children(tree, x));
-  const up = walk(id, (x) => parentsOf(tree, x));
-  const line = new Set([id, ...up, ...down]);
-  const related = new Set([...line, ...partners, ...siblings(tree, id), ...[...down].flatMap((d) => partnersOf(tree, d))]);
+  const down = branch ? walk(id, (x) => children(tree, x)) : new Set(children(tree, id));
+  const line = new Set([id, ...walk(id, (x) => parentsOf(tree, x)), ...down]);
+  const related = new Set([...line, ...partners, ...siblings(tree, id), ...(branch ? [...down].flatMap((d) => partnersOf(tree, d)) : [])]);
   stage.classList.add("dim");
   for (const other of ids) cards[other].classList.toggle("related", related.has(other));
   cards[id].classList.add("selected");
@@ -462,6 +465,28 @@ function select(id, glide = false) {
       : `M${a.x},${ay}C${a.x - 48},${ay} ${b.x - 48},${by} ${b.x},${by}`;
     edge(d, "temp", [id, other], `on temp ${ended(id, other)}`);
   }
+  return related;
+}
+
+function select(id, glide = false) {
+  clear();
+  selected = id;
+  const p = person(id);
+  const partners = partnersOf(tree, id);
+  const up = walk(id, (x) => parentsOf(tree, x));
+  const related = highlight(id);
+  const branch = [...walk(id, (x) => children(tree, x))];
+  let toggle = null;
+  if (branch.length > children(tree, id).length) {
+    toggle = el("button", { class: "branch", "aria-pressed": "false" }, "Show all descendants");
+    toggle.onclick = () => {
+      const on = toggle.getAttribute("aria-pressed") !== "true";
+      toggle.setAttribute("aria-pressed", String(on));
+      toggle.textContent = on ? "Hide descendants" : "Show all descendants";
+      highlight(id, on);
+      if (on && !inView([id, ...branch])) centreOn([id, ...branch]);
+    };
+  }
 
   const facts = [
     ["Born", [p.birth_date, p.birth_place && `in ${p.birth_place}`].filter(Boolean).join(" ")],
@@ -477,6 +502,7 @@ function select(id, glide = false) {
     group(partners.length > 1 ? "Partners" : "Partner", partners, (o) => partnerNote(id, o)),
     group("Siblings", siblings(tree, id), (o) => (halfSiblings(tree, id, o) ? "Half" : "")),
     group("Children", children(tree, id)),
+    toggle,
     related.size === 1 ? el("p", { class: "none" }, "No family recorded yet.") : null,
   );
   const shut = el("button", { class: "close", "aria-label": "Close" });
@@ -511,13 +537,18 @@ function place() {
   const s = camera.scale;
   const [left, top, w] = [camera.x + x * s, camera.y + y * s, card.w * s];
   const [vw, vh, bw, bh] = [view.clientWidth, view.clientHeight, box.offsetWidth, box.offsetHeight];
-  const side = left + w + 12 + bw > vw - 16 ? left - bw - 12 : left + w + 12;
+  // Clear of the indented children below the person, too.
+  const right = left + w + 2 * gap.indent * s + 12;
+  const side = right + bw > vw - 16 ? left - bw - 12 : right;
   box.style.left = `${Math.min(Math.max(16, side), vw - bw - 16)}px`;
   box.style.top = `${Math.min(Math.max(16, top), vh - bh - 16)}px`;
 }
 function clear() {
   $("card")?.remove();
   if (selected) cards[selected].classList.remove("selected");
+  unhighlight();
+}
+function unhighlight() {
   for (const { path } of edges) path.classList.remove("on");
   edges.filter((e) => e.kind === "temp").forEach((e) => e.path.remove());
   edges.splice(0, edges.length, ...edges.filter((e) => e.kind !== "temp"));
