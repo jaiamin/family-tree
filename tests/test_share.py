@@ -36,8 +36,19 @@ def test_page_logic_matches_python_and_lays_out_everyone(tree: Tree) -> None:
     for name in ("Kid A", "Kid B", "Kid C"):
         tree.add_person(name)
         tree.link(name.lower().replace(" ", "-"), "parent", "sis")
+    # A second child with the ex next to a childless full brother, and a partner who married in
+    # to a family with children.
+    tree.add_person("Brother")
+    tree.link("brother", "parent", "dad")
+    tree.link("brother", "parent", "mom")
+    tree.add_person("Half Two")
+    tree.link("half-two", "parent", "dad")
+    tree.link("half-two", "parent", "ex")
+    tree.add_person("Sis Husband")
+    tree.link("sis", "partner", "sis-husband")
+    tree.link("kid-a", "parent", "sis-husband")
     ids = list(tree.people)
-    viewports = [{"width": 1440, "height": 800}, {"width": 390, "height": 760}]
+    viewports = [{"width": w, "height": h} for w, h in ((1440, 800), (390, 760), (4000, 1200))]
     data = {"tree": tree.model_dump(exclude_none=True), "viewports": viewports}
     script = str(files("family_tree_mcp").joinpath("share.js"))
     result = subprocess.run(
@@ -62,6 +73,20 @@ def test_page_logic_matches_python_and_lays_out_everyone(tree: Tree) -> None:
         for pid in ids:
             if parents := tree.people[pid].parents:
                 assert any(pos[pid]["y"] > pos[p]["y"] for p in parents)
+        # Couples stacked in a column form one joined card.
+        stacked = 0
+        for pid in ids:
+            for other in tree.people[pid].partners:
+                a, b = pos[pid], pos[other]
+                if a["x"] == b["x"] and abs(a["y"] - b["y"]) == card["h"]:
+                    stacked += 1
+                    assert pid in got["pair"] and other in got["pair"]
+        assert stacked or view["height"] < view["width"]
+        # A column of stacked children never mixes children of different couples.
+        runs: dict[float, set[frozenset[str]]] = {}
+        for pid, at in got["spine"].items():
+            runs.setdefault(at["x"], set()).add(frozenset(tree.people[pid].parents))
+        assert all(len(couples) == 1 for couples in runs.values())
 
 
 def test_share_page_hides_living_details_and_embeds_safely() -> None:

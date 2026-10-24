@@ -86,6 +86,12 @@
   }
   .person:hover { border-color: var(--border-strong); }
   .person.selected { border-color: var(--fg); box-shadow: 0 0 0 1px var(--fg), var(--shadow); }
+  .person.selected { z-index: 1; }
+  .person.pair-top { border-bottom-width: 0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+  .person.pair-middle { border-bottom-width: 0; border-radius: 0; box-shadow: none; }
+  .person.pair-bottom { border-top-left-radius: 0; border-top-right-radius: 0; }
+  .person.pair-top { box-shadow: none; }
+  .person.pair-ended { border-top-style: dashed; }
   .person.unknown { border-style: dashed; box-shadow: none; background: transparent; color: var(--muted); }
   .dim .person:not(.related) { opacity: .45; }
   .avatar {
@@ -230,7 +236,7 @@ document.title = tree.name;
 
 // Tree
 
-const { pos, spine, hang, portrait, card, gap, width, height } = layout(tree, { width: innerWidth, height: innerHeight - 64 });
+const { pos, spine, hang, pair, family, portrait, card, gap, width, height } = layout(tree, { width: innerWidth, height: innerHeight - 64 });
 const PAD = 48;
 stage.style.width = `${width + PAD * 2}px`;
 stage.style.height = `${height + PAD * 2}px`;
@@ -244,7 +250,7 @@ for (const id of ids) {
   const p = person(id);
   const node = el(
     "button",
-    { class: `person${PLACEHOLDER.test(p.name) ? " unknown" : ""}`, "data-id": id, "aria-label": `${p.name}${years(p) ? `, ${years(p)}` : ""}` },
+    { class: `person${PLACEHOLDER.test(p.name) ? " unknown" : ""}${pair[id] ? ` pair-${pair[id]}` : ""}`, "data-id": id, "aria-label": `${p.name}${years(p) ? `, ${years(p)}` : ""}` },
     el("span", { class: "text" }, el("span", { class: "name" }, displayName(id)), years(p) && el("span", { class: "years" }, years(p))),
   );
   Object.assign(node.style, { left: `${at(id).x}px`, top: `${at(id).y}px`, width: `${card.w}px`, height: `${card.h}px` });
@@ -264,20 +270,36 @@ function edge(d, kind, people, className = "") {
 const ended = (a, b) => (partnership(tree, a, b)?.status === "divorced" ? "ended" : "");
 const arc = (a, b, lift) => `M${a.x + card.w / 2},${a.y}C${a.x + card.w / 2},${a.y - lift} ${b.x + card.w / 2},${b.y - lift} ${b.x + card.w / 2},${b.y}`;
 const linked = new Set();
+// Side by side on one row with no one in between.
+const adjacent = (a, b) => {
+  const [p, q] = [at(a), at(b)].sort((m, n) => m.x - n.x);
+  return p.y === q.y && !ids.some((o) => at(o).y === p.y && at(o).x > p.x && at(o).x < q.x);
+};
+// The middle of the line joining a couple.
+const join = (a, b) => {
+  const [p, q] = [at(a), at(b)].sort((m, n) => m.x - n.x);
+  return { x: (p.x + card.w + q.x) / 2, y: p.y + card.h / 2 };
+};
 for (const id of ids) {
   for (const other of partnersOf(tree, id)) {
     const key = [id, other].sort().join("+");
+    if (linked.has(key)) continue;
+    // A couple stacked into one card in a column is already joined.
+    if (pair[id] && pair[other] && at(id).x === at(other).x) {
+      linked.add(key);
+      if (ended(id, other)) cards[pair[id] === "top" ? other : id].classList.add("pair-ended");
+      continue;
+    }
     const [a, b] = [at(id), at(other)].sort((p, q) => p.x - q.x);
     // Partners in different branches and rows get a line only while one of them is selected.
-    if (linked.has(key) || a.y !== b.y) continue;
+    if (a.y !== b.y) continue;
     linked.add(key);
-    const between = ids.some((o) => at(o).y === a.y && at(o).x > a.x && at(o).x < b.x);
-    if (!between) {
+    if (adjacent(id, other)) {
       edge(`M${a.x + card.w},${a.y + card.h / 2}H${b.x}`, "couple", [id, other], ended(id, other));
       // A dot where the couple's children hang from.
-      if (b.x - a.x <= card.w + 24 && children(tree, id).some((c) => parentsOf(tree, c).includes(other))) {
-        const cx = (a.x + card.w + b.x) / 2;
-        edge(`M${cx - 3.5},${a.y + card.h / 2}a3.5,3.5 0 1,0 7,0a3.5,3.5 0 1,0 -7,0`, "couple", [id, other], "dot");
+      if (children(tree, id).some((c) => parentsOf(tree, c).includes(other))) {
+        const { x, y } = join(id, other);
+        edge(`M${x - 3.5},${y}a3.5,3.5 0 1,0 7,0a3.5,3.5 0 1,0 -7,0`, "couple", [id, other], "dot");
       }
     } else {
       // Partners from different branches on one row: an arc over the cards between them.
@@ -285,28 +307,46 @@ for (const id of ids) {
     }
   }
 }
+
+// Where a child's line starts shows their parents: from the couple's join when both are known
+// and side by side, otherwise from the one parent's card.
+function origin(id) {
+  const parents = parentsOf(tree, id);
+  if (parents.length === 2 && adjacent(...parents)) return join(...parents);
+  const kid = at(id);
+  const near = parents.map(at).sort((p, q) => Math.abs(p.x - kid.x) - Math.abs(q.x - kid.x))[0];
+  return { x: near.x + card.w / 2, y: near.y + card.h };
+}
+// When one family has children from several couples, each couple's bus runs at its own height.
+const lanes = {};
+for (const id of ids) {
+  if (!parentsOf(tree, id).length || hang[id]) continue;
+  const o = origin(id);
+  const list = (lanes[family[id]] ||= []);
+  if (!list.some((x) => x === o.x)) list.push(o.x);
+}
+for (const list of Object.values(lanes)) list.sort((a, b) => a - b);
+
 for (const id of ids) {
   const parents = parentsOf(tree, id);
   if (!parents.length) continue;
   const kid = at(id);
-  const busY = Math.max(...parents.map((p) => at(p).y)) + card.h + gap.row / 2;
-  const [a, b] = parents.map(at);
-  // From between two side-by-side parents, otherwise from below the parent in this branch.
-  let from;
-  if (b && a.y === b.y && Math.abs(a.x - b.x) <= card.w + 24) from = { x: (Math.min(a.x, b.x) + Math.max(a.x, b.x) + card.w) / 2, y: a.y + card.h / 2 };
-  else {
-    const near = parents.map((p) => [p, at(p)]).sort(([, p], [, q]) => Math.abs(p.x - kid.x) - Math.abs(q.x - kid.x))[0][1];
-    from = { x: near.x + card.w / 2, y: near.y + card.h };
-  }
+  const from = origin(id);
+  const mid = kid.y + card.h / 2;
   if (hang[id]) {
-    // Nested branches: a line down the parent's left side, then across to the child.
-    edge(`M${hang[id].x + PAD},${hang[id].y + PAD}V${kid.y + card.h / 2}H${kid.x}`, "child", [id, ...parents]);
+    // Nested branches: a line down the parent's left side, then across to the child. A child of
+    // a couple from two families leaves from the couple's join and turns into that line.
+    const h = { x: hang[id].x + PAD, y: hang[id].y + PAD };
+    const d = parents.length === 2 && adjacent(...parents)
+      ? `M${from.x},${from.y}V${h.y + gap.stack / 2}H${h.x}V${mid}H${kid.x}`
+      : `M${h.x},${h.y}V${mid}H${kid.x}`;
+    edge(d, "child", [id, ...parents]);
     continue;
   }
+  const list = lanes[family[id]] || [from.x];
+  const busY = at(family[id] || parents[0]).y + card.h + gap.row / 2 + (list.indexOf(from.x) - (list.length - 1) / 2) * 10;
   // Stacked children hang off a spine down their column's left side.
-  const end = spine[id]
-    ? `H${spine[id].x + PAD}V${kid.y + card.h / 2}H${kid.x}`
-    : `H${kid.x + card.w / 2}V${kid.y}`;
+  const end = spine[id] ? `H${spine[id].x + PAD}V${mid}H${kid.x}` : `H${kid.x + card.w / 2}V${kid.y}`;
   edge(`M${from.x},${from.y}V${busY}${end}`, "child", [id, ...parents]);
 }
 
