@@ -54,7 +54,9 @@ def share_page(tree: Tree, site: Site, families: list[Family]) -> tuple[str, int
         f'<a class="current-tree" href="/trees/{tree.id}/" title="Reset tree view">'
         f'{html.escape(tree.name)}</a><span class="tree-picker">'
         '<button id="tree-switch" aria-label="Switch family tree" aria-expanded="false" '
-        'aria-controls="tree-options" title="Switch family tree"></button>'
+        'aria-controls="tree-options" title="Switch family tree">'
+        '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">'
+        '<path d="m6 9 6 6 6-6"/></svg></button>'
         f'<ul id="tree-options" class="tree-options" aria-label="Family trees" hidden>'
         f"{''.join(options)}</ul></span></span>"
     )
