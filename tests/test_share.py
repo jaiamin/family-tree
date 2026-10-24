@@ -154,6 +154,22 @@ def test_parent_units_stay_together_with_ancestry_on_both_sides(direction: str) 
     assert not dots, "Joined parents share a block without a junction dot"
     paired = [n for n in geometry["nodes"] if n["personId"] in {"mother", "father"}]
     assert {n["joined"] for n in paired} == {"top", "bottom"}
+    for node in geometry["nodes"]:
+        child = node["personId"]
+        if not t.get(child).parents:
+            continue
+        route = next(
+            r
+            for r in reversed(geometry["routes"])
+            if r["kind"] == "child" and r["children"] == [child]
+        )
+        top_entry = direction == "DOWN" and node["joined"] != "bottom"
+        expected = (
+            {"x": node["x"] + card["w"] / 2, "y": node["y"]}
+            if top_entry
+            else {"x": node["x"], "y": node["y"] + card["h"] / 2}
+        )
+        assert route["points"][-1] == pytest.approx(expected)
     assert_clean_connections(geometry, got["edges"])
 
 
@@ -272,10 +288,6 @@ def assert_family_paths_connected(geometry: dict, edges: list[dict]) -> None:
             continue
         parents = next(e["parents"] for e in wires if e["kind"] == "child")
         points = {tuple(p.values()) for e in wires for p in e["points"]}
-        points.update(
-            (geometry["pos"][c]["x"], geometry["pos"][c]["y"] + geometry["card"]["h"] / 2)
-            for c in children
-        )
         points = list(points)
         links = list(range(len(points)))
 
@@ -297,8 +309,20 @@ def assert_family_paths_connected(geometry: dict, edges: list[dict]) -> None:
                 links[root(i)] = root(on[0])
         for child in children:
             p = geometry["pos"][child]
-            target = (p["x"], p["y"] + geometry["card"]["h"] / 2)
-            component = root(points.index(target))
+            targets = [
+                (p["x"], p["y"] + geometry["card"]["h"] / 2),
+                (p["x"] + geometry["card"]["w"] / 2, p["y"]),
+            ]
+            target = next(
+                (
+                    i
+                    for i, (x, y) in enumerate(points)
+                    if any(abs(x - tx) < 0.001 and abs(y - ty) < 0.001 for tx, ty in targets)
+                ),
+                None,
+            )
+            assert target is not None, f"{child}'s line does not reach its card"
+            component = root(target)
             connected = [point for i, point in enumerate(points) if root(i) == component]
             for parent in parents:
                 p = geometry["pos"][parent]

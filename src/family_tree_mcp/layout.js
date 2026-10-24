@@ -117,7 +117,10 @@ async function layout(tree, direction = "DOWN") {
     }
     for (const id of f.children) {
       const child = owner.get(id), p = offset(id);
-      const target = port(child, `in:${id}`, 0, p.y + CARD.h / 2, "WEST");
+      // The lower card of a joined couple needs side entry to avoid crossing its partner.
+      const fromTop = !horizontal && p.y === 0;
+      const target = port(child, `in:${id}`, fromTop ? CARD.w / 2 : 0,
+        fromTop ? 0 : p.y + CARD.h / 2, fromTop ? "NORTH" : "WEST");
       edges.push({ id: `child:${id}`, sources: [output], targets: [target] });
     }
   }
