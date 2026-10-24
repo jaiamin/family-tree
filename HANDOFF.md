@@ -79,3 +79,14 @@ graphs can require crossings; current zero-crossing verification applies to this
 - All 95 tests, formatting/lint, ty, wheel/sdist builds pass. Browser search/details,
   desktop/mobile geometry and zoom/fit checked; detector reports no findings.
 - Both preview URLs refreshed; port 8000 remains available. Local-only revision.
+
+## Immediate-family selection (complete)
+- Selection frames the person, partners, parents and direct children; excludes distant
+  ancestors. Highlighting also stops at parents; siblings remain visible as close family.
+- Card/search/relative-link selection all preserve the view when the family fits.
+  Reframing retains current zoom when possible, with the existing readable 60% floor.
+- Removed unused ancestor traversal and forced-reframing argument. Graph layout unchanged.
+- Browser: Shashank selection excludes grandparent Hari; reselecting preserves camera;
+  resize preserves camera; mobile Nirav sheet and immediate-family highlighting checked.
+- All 95 tests, Ruff, ty and JS syntax check pass; detector has no findings.
+- Local previews updated on port 8000; no push/deployment.

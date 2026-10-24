@@ -141,7 +141,7 @@ function inView(group) {
 function centreOn([id, ...group]) {
   const b = bounds([id, ...group]);
   const { w, h } = room();
-  const scale = Math.max(0.6, Math.min(1, (w - 48) / b.w, (h - 48) / b.h));
+  const scale = Math.max(0.6, Math.min(camera.scale, 1, (w - 48) / b.w, (h - 48) / b.h));
   camera.scale = scale;
   camera.x = w / 2 - (b.x + b.w / 2) * scale;
   // Leave room below the selection for relatives and the details panel.
@@ -212,7 +212,7 @@ let selected = null;
 function relativeRow(id, note = "") {
   const side = [note, years(person(id))].filter(Boolean).join(" · ");
   const row = el("button", { class: "relative" }, el("span", { class: "name" }, displayName(id)), side && el("span", { class: "note" }, side));
-  row.onclick = () => select(id, true);
+  row.onclick = () => select(id);
   return row;
 }
 function group(title, list, note) {
@@ -224,13 +224,6 @@ function partnerNote(id, other) {
   if (d.status === "married") return d.marriage_date ? `Married ${year(d.marriage_date)}` : "Married";
   return "";
 }
-
-const walk = (start, step) => {
-  const seen = new Set();
-  const queue = [start];
-  while (queue.length) for (const next of step(queue.shift())) if (!seen.has(next)) seen.add(next) && queue.push(next);
-  return seen;
-};
 
 // The family code is kept on this device once it works.
 const CODE = "family-tree-photo-code";
@@ -341,13 +334,12 @@ function photoEditor(id) {
   return { circle: button, panel };
 }
 
-// Lights up someone's line from the oldest ancestors down to their children (or, with branch,
-// all their descendants) and fades everyone who isn't close family.
+// Emphasize immediate family connections without tracing the entire ancestral tree.
 function highlight(id) {
   unhighlight();
   const partners = partnersOf(tree, id);
   const down = new Set(children(tree, id));
-  const line = new Set([id, ...walk(id, (x) => parentsOf(tree, x)), ...down]);
+  const line = new Set([id, ...parentsOf(tree, id), ...down]);
   const related = new Set([...line, ...partners, ...siblings(tree, id)]);
   stage.classList.add("dim");
   for (const other of ids) cards[other].classList.toggle("related", related.has(other));
@@ -361,12 +353,12 @@ function highlight(id) {
   return related;
 }
 
-function select(id, glide = false) {
+function select(id) {
   clear();
   selected = id;
   const p = person(id);
   const partners = partnersOf(tree, id);
-  const up = walk(id, (x) => parentsOf(tree, x));
+  const up = parentsOf(tree, id);
   const related = highlight(id);
   const link = el("button", { class: "action" }, "Copy link");
   link.onclick = async () => {
@@ -413,7 +405,7 @@ function select(id, glide = false) {
 
   // While the tree glides to the person, the card waits at its final spot and appears on arrival.
   const frame = [id, ...up, ...children(tree, id), ...partners];
-  if (glide || !inView(frame)) {
+  if (!inView(frame)) {
     box.classList.add("waiting");
     const show = () => {
       box.classList.remove("waiting");
@@ -497,7 +489,7 @@ function choose(id) {
   results.hidden = true;
   search.setAttribute("aria-expanded", "false");
   search.blur();
-  select(id, true);
+  select(id);
 }
 search.addEventListener("input", showResults);
 search.addEventListener("blur", () => { results.hidden = true; });
@@ -520,7 +512,7 @@ else {
   camera.y = 24 - at(anchor).y * camera.scale;
   apply();
   const start = decodeURIComponent(location.hash.slice(1));
-  if (tree.people[start]) select(start, true);
+  if (tree.people[start]) select(start);
 }
 // Resizing changes the viewport, never the graph or the current zoom.
 if (PHOTOS) {
