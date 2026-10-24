@@ -1,15 +1,16 @@
 # Family graph viewer rewrite
 
 ## Agreed goal
-KISS: one continuous, connected graph; one card per person; partners side by side;
+KISS: one continuous, connected graph; one card per person; partners in vertical pairs;
 all records visible by default; same desktop layout on mobile, navigated by pan/zoom.
 Keep search, person details, zoom and Show everyone. No dropdowns, collapse controls,
 reference duplicates, responsive graph rearrangement, or special-case family names.
 
 ## Acceptance criteria
-- Divya and Shashank each appear once, side by side, with both ancestry inputs and
+- Divya and Shashank each appear once, in one vertical pair, with both ancestry inputs and
   their shared child junction connected correctly.
-- No vertically stacked person cards, card overlaps, or lines through cards.
+- Generations progress left to right; couples have a short vertical connector.
+- No card overlaps or lines through cards.
 - All actual relationships are retained. The user's connected tree stays connected.
 - Shared child buses are drawn once. No unrelated crossings in the user's tree.
 - Readable initial zoom, stable geometry on resize/mobile; Show everyone fits the graph.
@@ -24,7 +25,7 @@ reference duplicates, responsive graph rearrangement, or special-case family nam
 - Keep layout/model code separate from DOM rendering and the HTML/CSS template.
 - Arbitrary future graphs may require crossings; do not misrepresent them as junctions.
 
-## Progress
+## Previous top-to-bottom verification
 - Rewrite complete: layout/model, DOM interactions, and HTML/CSS separated.
 - ELK.js 0.12.0 embedded with source attribution and license; no remote layout service.
 - Both preview URLs contain the same current public-tree copy (64 unique people).
@@ -43,7 +44,7 @@ reference duplicates, responsive graph rearrangement, or special-case family nam
 - Forward host port 8000 to sandbox port 8000.
 - Preview data is disposable and excluded from commits. Source copy: public deployed tree.
 
-## Latest cleanup
+## Earlier cleanup
 - Removed relationship captions from mini cards and deleted their layout metadata.
   Names/dates remain; relationship details stay in the details panel.
 - No centering postprocessor or experimental layout setting remains.
@@ -54,3 +55,14 @@ reference duplicates, responsive graph rearrangement, or special-case family nam
 User reviews local rendering before any publication. Existing draft PR #14 still has the
 older patch. Do not push/deploy until user authorizes publication. Future arbitrary nonplanar
 graphs can require crossings; current zero-crossing verification applies to this tree.
+
+## Left-to-right revision (complete)
+- User approved replacing the previous direction using the same ELK engine.
+- Couples become vertical pairs; individual ancestry enters from the left and shared
+  children leave the couple junction to the right. No alternate mode or routing engine.
+- Actual tree: 64 unique cards, 1196 × 2260 (previously 5500 × 596); no card
+  intersections or unrelated wire crossings; all child paths reach actual parents.
+- Desktop/mobile geometry identical. Search, details, partner navigation and zoom/fit
+  checked in browser. Both local preview URLs refreshed on port 8000.
+- All 95 tests, Ruff, ty, wheel and sdist pass; detector reports no findings.
+- Revision committed locally only; user review before push/deployment.

@@ -153,8 +153,10 @@ def test_parent_units_stay_together_with_ancestry_on_both_sides(width, height) -
     geometry = got["layouts"][0]
     a, b = (geometry["pos"][p] for p in ("mother", "father"))
     card = geometry["card"]
-    adjacent = a["y"] == b["y"] and abs(a["x"] - b["x"]) == card["w"] + geometry["coupleGap"]
-    assert adjacent, "Parents must be side by side"
+    adjacent = a["x"] == b["x"] and abs(a["y"] - b["y"]) == card["h"] + geometry["coupleGap"]
+    assert adjacent, "Partners must form a vertical pair"
+    for child in ("child", "sibling"):
+        assert geometry["pos"][child]["x"] > max(a["x"], b["x"]) + card["w"]
     dots = [
         e
         for e in got["connections"][0]
@@ -286,7 +288,7 @@ def assert_family_paths_connected(geometry: dict, edges: list[dict]) -> None:
         parents = next(e["parents"] for e in wires if e["kind"] == "child")
         points = {tuple(p.values()) for e in wires for p in e["points"]}
         points.update(
-            (geometry["pos"][c]["x"] + geometry["card"]["w"] / 2, geometry["pos"][c]["y"])
+            (geometry["pos"][c]["x"], geometry["pos"][c]["y"] + geometry["card"]["h"] / 2)
             for c in children
         )
         points = list(points)
@@ -310,7 +312,7 @@ def assert_family_paths_connected(geometry: dict, edges: list[dict]) -> None:
                 links[root(i)] = root(on[0])
         for child in children:
             p = geometry["pos"][child]
-            target = (p["x"] + geometry["card"]["w"] / 2, p["y"])
+            target = (p["x"], p["y"] + geometry["card"]["h"] / 2)
             component = root(points.index(target))
             connected = [point for i, point in enumerate(points) if root(i) == component]
             for parent in parents:

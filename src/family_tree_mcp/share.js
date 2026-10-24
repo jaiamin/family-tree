@@ -144,7 +144,7 @@ function centreOn([id, ...group]) {
   const scale = Math.max(0.6, Math.min(1, (w - 48) / b.w, (h - 48) / b.h));
   camera.scale = scale;
   camera.x = w / 2 - (b.x + b.w / 2) * scale;
-  // Near the top rather than centred: trees grow downward, so this shows more of the family below.
+  // Leave room below the selection for relatives and the details panel.
   camera.y = Math.min(h / 2 - (b.y + b.h / 2) * scale, 64 - b.y * scale);
   // When the whole line can't fit at a readable size, keep the person in view.
   const p = at(id);
@@ -516,8 +516,8 @@ else {
   const roots = ids.filter((id) => !parentsOf(tree, id).length);
   const anchor = (roots.length ? roots : ids).reduce((a, b) => children(tree, b).length > children(tree, a).length ? b : a);
   camera.scale = 0.8;
-  camera.x = view.clientWidth / 2 - (at(anchor).x + card.w / 2) * camera.scale;
-  camera.y = 24 - at(anchor).y * camera.scale;
+  camera.x = 24 - at(anchor).x * camera.scale;
+  camera.y = view.clientHeight / 2 - (at(anchor).y + card.h / 2) * camera.scale;
   apply();
   const start = decodeURIComponent(location.hash.slice(1));
   if (tree.people[start]) select(start, true);
