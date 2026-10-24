@@ -9,7 +9,7 @@ reference duplicates, responsive graph rearrangement, or special-case family nam
 ## Acceptance criteria
 - Divya and Shashank each appear once, in one vertical pair, with both ancestry inputs and
   their shared child junction connected correctly.
-- Generations progress left to right; couples have a short vertical connector.
+- Generations progress top to bottom; couples have a short vertical connector.
 - No card overlaps or lines through cards.
 - All actual relationships are retained. The user's connected tree stays connected.
 - Shared child buses are drawn once. No unrelated crossings in the user's tree.
@@ -66,3 +66,16 @@ graphs can require crossings; current zero-crossing verification applies to this
   checked in browser. Both local preview URLs refreshed on port 8000.
 - All 95 tests, Ruff, ty, wheel and sdist pass; detector reports no findings.
 - Revision committed locally only; user review before push/deployment.
+
+## Compact top-to-bottom revision (complete)
+- User selected top-to-bottom generations with vertical couples using existing ELK.
+- Keep individual ancestry inputs on the left; shared output descends through a small
+  reserved right gutter beside the lower partner, preventing card intersections.
+- Added short boundary connections for children recorded under only one partnered
+  parent; multiple-union junctions leave downward to preserve clear routing.
+- Actual tree is 5299 × 824, 64 unique cards, no card intersections or unrelated
+  crossings. Parent-path topology checks pass. Proportions improve only moderately
+  over original 5500 × 596; no claim of a laptop-ratio result.
+- All 95 tests, formatting/lint, ty, wheel/sdist builds pass. Browser search/details,
+  desktop/mobile geometry and zoom/fit checked; detector reports no findings.
+- Both preview URLs refreshed; port 8000 remains available. Local-only revision.

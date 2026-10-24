@@ -516,8 +516,8 @@ else {
   const roots = ids.filter((id) => !parentsOf(tree, id).length);
   const anchor = (roots.length ? roots : ids).reduce((a, b) => children(tree, b).length > children(tree, a).length ? b : a);
   camera.scale = 0.8;
-  camera.x = 24 - at(anchor).x * camera.scale;
-  camera.y = view.clientHeight / 2 - (at(anchor).y + card.h / 2) * camera.scale;
+  camera.x = view.clientWidth / 2 - (at(anchor).x + card.w / 2) * camera.scale;
+  camera.y = 24 - at(anchor).y * camera.scale;
   apply();
   const start = decodeURIComponent(location.hash.slice(1));
   if (tree.people[start]) select(start, true);

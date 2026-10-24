@@ -2,6 +2,7 @@
 
 const CARD = { w: 172, h: 52 };
 const COUPLE_GAP = 24;
+const ROUTE_GAP = 12;
 
 const parentsOf = (tree, id) => (tree.people[id].parents || []).filter((p) => tree.people[p]);
 const partnersOf = (tree, id) => (tree.people[id].partners || []).filter((p) => tree.people[p]);
@@ -62,7 +63,7 @@ function familyGraph(tree) {
     const other = [...partners.get(id)].find((p) => partners.get(id).size === 1 && partners.get(p).size === 1 && !owner.has(p));
     const members = [id, ...(other ? [other] : [])];
     const unit = { id: `person:${id}`, members,
-      width: CARD.w, height: CARD.h * members.length + COUPLE_GAP * (members.length - 1) };
+      width: CARD.w + (other ? ROUTE_GAP * 2 : 0), height: CARD.h * members.length + COUPLE_GAP * (members.length - 1) };
     units.push(unit);
     for (const p of members) owner.set(p, unit);
   }
@@ -84,11 +85,11 @@ async function layout(tree) {
     return id;
   };
   const outlets = new Map();
-  const outlet = (id) => {
+  const outlet = (id, span = CARD.h) => {
     const count = [...families.values()].filter((f) => f.parents.includes(id)).length;
     const index = (outlets.get(id) || 0) + 1;
     outlets.set(id, index);
-    return offset(id).y + CARD.h * index / (count + 1);
+    return offset(id).y + span * index / (count + 1);
   };
   const edges = [], routes = [], dots = [];
   for (const f of families.values()) {
@@ -96,7 +97,9 @@ async function layout(tree) {
     const together = f.parents.length === 2 && owner.get(f.parents[1]) === u;
     let output;
     if (together || f.parents.length === 1) {
-      output = port(u, `out:${f.key}`, u.width, together ? u.height / 2 : outlet(f.parents[0]), "EAST");
+      output = together
+        ? port(u, `out:${f.key}`, CARD.w + ROUTE_GAP, u.height, "SOUTH")
+        : port(u, `out:${f.key}`, CARD.w, outlet(f.parents[0]), "EAST");
       f.internal = together;
     } else {
       // Each union gets its own junction, including former partnerships and half-sibling groups.
@@ -106,7 +109,7 @@ async function layout(tree) {
       f.junction = junction.id;
       for (const id of f.parents) {
         const parent = owner.get(id);
-        const source = port(parent, `union:${f.key}:${id}`, parent.width, outlet(id), "EAST");
+        const source = port(parent, `union:${f.key}:${id}`, outlet(id, CARD.w), parent.height, "SOUTH");
         edges.push({ id: `union:${f.key}:${id}`, sources: [source], targets: [output] });
       }
     }
@@ -119,7 +122,7 @@ async function layout(tree) {
   const Elk = typeof module !== "undefined" ? require("./vendor/elk.bundled.js") : ELK;
   const graph = await new Elk().layout({ id: "tree", children: nodes, edges,
     layoutOptions: {
-      "elk.algorithm": "layered", "elk.direction": "RIGHT", "elk.edgeRouting": "ORTHOGONAL",
+      "elk.algorithm": "layered", "elk.direction": "DOWN", "elk.edgeRouting": "ORTHOGONAL",
       "elk.separateConnectedComponents": "false", "elk.spacing.nodeNode": "32",
       "elk.layered.spacing.nodeNodeBetweenLayers": "72", "elk.spacing.edgeEdge": "12",
       "elk.layered.spacing.edgeEdgeBetweenLayers": "12",
@@ -149,8 +152,16 @@ async function layout(tree) {
       if (f.children.length) {
         dots.push({ x, y, people: f.parents, net: f.key });
         routes.push({ kind: "child", parents: f.parents, children: f.children, people: [...f.children, ...f.parents], net: f.key,
-          points: [{ x, y }, { x: n.x + u.width, y }] });
+          // Exit beside the lower partner, then descend without crossing either card.
+          points: [{ x, y }, { x: n.x + CARD.w + ROUTE_GAP, y },
+            { x: n.x + CARD.w + ROUTE_GAP, y: n.y + u.height }] });
       }
+    }
+    if (f.parents.length === 1 && u.members.length === 2) {
+      const y = n.y + n.ports.find((p) => p.id === `out:${f.key}`).y;
+      routes.push({ kind: "child", parents: f.parents, children: f.children,
+        people: [...f.parents, ...f.children], net: f.key,
+        points: [{ x: n.x + CARD.w, y }, { x: n.x + u.width, y }] });
     }
     if (f.junction) {
       const j = placed.get(f.junction);
@@ -165,8 +176,8 @@ async function layout(tree) {
       const points = [s.startPoint, ...(s.bendPoints || []), s.endPoint];
       if (f.junction) {
         const j = placed.get(f.junction), center = { x: j.x + j.width / 2, y: j.y + j.height / 2 };
-        if (id) points.unshift(center, { x: center.x, y: s.startPoint.y });
-        else points.push({ x: center.x, y: s.endPoint.y }, center);
+        if (id) points.unshift(center, { x: s.startPoint.x, y: center.y });
+        else points.push({ x: s.endPoint.x, y: center.y }, center);
       }
       routes.push({ points, net: f.key, kind: id ? "child" : "couple",
         people: id ? [id, ...f.parents] : f.parents,

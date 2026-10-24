@@ -156,7 +156,7 @@ def test_parent_units_stay_together_with_ancestry_on_both_sides(width, height) -
     adjacent = a["x"] == b["x"] and abs(a["y"] - b["y"]) == card["h"] + geometry["coupleGap"]
     assert adjacent, "Partners must form a vertical pair"
     for child in ("child", "sibling"):
-        assert geometry["pos"][child]["x"] > max(a["x"], b["x"]) + card["w"]
+        assert geometry["pos"][child]["y"] > max(a["y"], b["y"]) + card["h"]
     dots = [
         e
         for e in got["connections"][0]
