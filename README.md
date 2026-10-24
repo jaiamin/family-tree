@@ -19,6 +19,8 @@ Requires [uv](https://docs.astral.sh/uv/). Add to your MCP client:
 
 Or in Claude Code: `claude mcp add family-tree -- uvx --from git+https://github.com/jaiamin/family-tree-mcp family-tree-mcp`
 
+Or in Codex: `codex mcp add family-tree -- uvx --from git+https://github.com/jaiamin/family-tree-mcp family-tree-mcp`
+
 To update, run `uvx --refresh --from git+https://github.com/jaiamin/family-tree-mcp family-tree-mcp` and restart your client.
 
 ## How it works

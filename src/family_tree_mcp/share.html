@@ -80,7 +80,7 @@
   #lines path.dot.on { fill: var(--line-on); }
 
   .person {
-    position: absolute; display: flex; align-items: center; padding: 0 14px; text-align: left; cursor: pointer;
+    position: absolute; display: flex; align-items: center; gap: 10px; padding: 0 12px; text-align: left; cursor: pointer;
     background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow);
     transition: border-color .15s, box-shadow .15s, opacity .2s;
   }
@@ -251,6 +251,7 @@ for (const id of ids) {
   const node = el(
     "button",
     { class: `person${PLACEHOLDER.test(p.name) ? " unknown" : ""}${pair[id] ? ` pair-${pair[id]}` : ""}`, "data-id": id, "aria-label": `${p.name}${years(p) ? `, ${years(p)}` : ""}` },
+    avatar(id),
     el("span", { class: "text" }, el("span", { class: "name" }, displayName(id)), years(p) && el("span", { class: "years" }, years(p))),
   );
   Object.assign(node.style, { left: `${at(id).x}px`, top: `${at(id).y}px`, width: `${card.w}px`, height: `${card.h}px` });
