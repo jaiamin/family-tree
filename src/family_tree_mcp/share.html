@@ -137,11 +137,13 @@
   #card .action:disabled { opacity: .6; cursor: default; }
   #card .who { min-width: 0; }
   #card .none { margin: 14px 0 0; color: var(--muted); font-size: 13px; }
+  #share-status { position: fixed; bottom: max(20px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); z-index: 5; max-width: calc(100% - 100px); padding: 8px 12px; border-radius: 8px; background: var(--fg); color: var(--surface); pointer-events: none; }
+  #share-status:empty { display: none; }
   .empty-tree { display: grid; place-items: center; height: 100%; color: var(--muted); }
 
   @media (max-width: 640px) {
     header { gap: 8px; flex-wrap: wrap; }
-    .title { flex: 1 0 calc(100% - 96px); }
+    .title { flex: 1 0 calc(100% - 136px); }
     .count { white-space: nowrap; }
     .search { order: 1; flex: 1 0 100%; width: 100%; min-width: 0; }
     main { flex-direction: column; }
@@ -159,6 +161,7 @@
 </head>
 <body>
 __HEADER__
+<div id="share-status" role="status" aria-live="polite" aria-atomic="true"></div>
 <main id="view" aria-label="Family tree">
   <div id="canvas">
   <div id="stage"><svg id="lines"></svg></div>

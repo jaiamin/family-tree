@@ -126,6 +126,15 @@ def _header(site: Site, count: str = "", switch: str = "", search: str = "") -> 
             "__COUNT__": f'<div class="count" id="count">{count}</div>' if count else "",
             "__TREE_SWITCH__": switch,
             "__SEARCH__": search,
+            "__SHARE_TREE__": (
+                '<button class="icon-button" id="share-tree" '
+                'aria-label="Share tree" title="Share tree">'
+                '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">'
+                '<path d="M12 16V3m-4 4 4-4 4 4M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>'
+                "</svg></button>"
+                if switch
+                else ""
+            ),
         },
     )
 
