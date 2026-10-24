@@ -72,6 +72,7 @@ function familyGraph(tree) {
 async function layout(tree, direction = "DOWN") {
   const horizontal = direction === "RIGHT";
   const { units, owner, families } = familyGraph(tree);
+  if (horizontal) for (const unit of units) unit.width = CARD.w;
   const nodes = units.map((u) => ({ id: u.id, width: u.width, height: u.height,
     ports: [], layoutOptions: { "elk.portConstraints": "FIXED_POS" } }));
   const byId = new Map(nodes.map((n) => [n.id, n]));
@@ -132,7 +133,8 @@ async function layout(tree, direction = "DOWN") {
       "elk.algorithm": "layered", "elk.direction": direction, "elk.edgeRouting": "ORTHOGONAL",
       "elk.layered.thoroughness": horizontal ? "7" : "20",
       "elk.separateConnectedComponents": "false", "elk.spacing.nodeNode": "32",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "72", "elk.spacing.edgeEdge": "12",
+      "elk.layered.spacing.nodeNodeBetweenLayers": "72",
+      "elk.layered.spacing.edgeNodeBetweenLayers": "36", "elk.spacing.edgeEdge": "12",
       "elk.layered.spacing.edgeEdgeBetweenLayers": "12",
       "elk.layered.nodePlacement.bk.fixedAlignment": "BALANCED",
       "elk.padding": "[top=24,left=24,bottom=24,right=24]",
