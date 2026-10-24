@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
@@ -31,6 +33,9 @@ async def test_build_and_query_tree(tmp_path) -> None:
         assert result.data["summary"] == "Cy Smith is Ben Smith's brother."
         diagram = await client.call_tool("get_diagram", {**tree, "person_id": ids["Ada Smith"]})
         assert diagram.data.startswith('---\ntitle: "The Smiths"')
+        export = await client.call_tool("export_gedcom", tree)
+        assert export.data["people"] == 3
+        assert "1 NAME Ada /Smith/" in Path(export.data["path"]).read_text()
 
     # A fresh server reads the same tree back from disk.
     async with Client(create_server(Store(tmp_path))) as client:
