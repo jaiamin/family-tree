@@ -2,6 +2,7 @@
 
 import datetime
 import html
+import json
 import re
 from importlib.resources import files
 
@@ -13,28 +14,32 @@ ASSETS = files("family_tree_mcp")
 def share_page(tree: Tree, hide_living: bool = True) -> tuple[str, int]:
     """Return the page HTML and how many living people had their details hidden.
 
-    Hiding also drops marriage dates and places for couples where either may be living.
+    Hiding also drops marriage dates and places for couples where either may be living. People
+    whose details were hidden are marked `private` so the page can say so.
     """
     public = tree.model_copy(deep=True, update={"site": None})
-    hidden = 0
+    hidden: list[str] = []
     if hide_living:
         living = {p.id for p in public.people.values() if _maybe_living(p.birth_date, p.death_date)}
         for person in public.people.values():
             if person.id in living and (person.birth_date or person.birth_place or person.notes):
                 person.birth_date = person.birth_place = person.notes = None
-                hidden += 1
+                hidden.append(person.id)
         for key, details in public.partnerships.items():
             if living & set(key.split("+")):
                 details.marriage_date = details.marriage_place = details.divorce_date = None
-    data = public.model_dump_json(exclude_none=True).replace("</", "<\\/")
+    data = public.model_dump(mode="json", exclude_none=True)
+    for pid in hidden:
+        data["people"][pid]["private"] = True
+    embedded = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
     page = (
         ASSETS.joinpath("share.html")
         .read_text(encoding="utf-8")
         .replace("__SHARE_JS__", ASSETS.joinpath("share.js").read_text(encoding="utf-8"))
         .replace("__TITLE__", html.escape(tree.name))
-        .replace("__DATA__", data)
+        .replace("__DATA__", embedded)
     )
-    return page, hidden
+    return page, len(hidden)
 
 
 def _maybe_living(birth_date: str | None, death_date: str | None) -> bool:

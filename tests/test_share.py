@@ -79,6 +79,7 @@ def test_share_page_hides_living_details_and_embeds_safely() -> None:
     assert (
         "birth_date" not in people["living-me-script"] and "notes" not in people["living-me-script"]
     )
+    assert people["living-me-script"]["private"] is True and "private" not in people["late-grandpa"]
     assert people["late-grandpa"]["birth_place"] == "Pune" and people["old-gran"]["notes"] == "Kept"
     assert "__" not in page.replace("__proto__", "")
     assert data["partnerships"] == {
@@ -87,4 +88,4 @@ def test_share_page_hides_living_details_and_embeds_safely() -> None:
     }
 
     page, hidden = share_page(t, hide_living=False)
-    assert hidden == 0 and "Mumbai" in page
+    assert hidden == 0 and "Mumbai" in page and '"private"' not in page

@@ -80,7 +80,7 @@
   #lines path.dot.on { fill: var(--line-on); }
 
   .person {
-    position: absolute; display: flex; align-items: center; gap: 10px; padding: 0 12px; text-align: left; cursor: pointer;
+    position: absolute; display: flex; align-items: center; padding: 0 14px; text-align: left; cursor: pointer;
     background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow);
     transition: border-color .15s, box-shadow .15s, opacity .2s;
   }
@@ -123,17 +123,19 @@
   #card section { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
   #card h3 { margin: 0 0 6px; font-size: 12px; font-weight: 500; color: var(--muted); }
   .relative {
-    display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px 8px; margin: 0 -8px; width: calc(100% + 16px);
+    display: flex; align-items: center; gap: 10px; padding: 7px 8px; margin: 0 -8px; width: calc(100% + 16px);
     border: 0; border-radius: 8px; background: none; text-align: left; cursor: pointer;
   }
   .relative:hover { background: var(--chip); }
-  .relative .avatar { width: 26px; height: 26px; font-size: 11px; }
+  .relative .name { min-width: 0; }
   .relative .note { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; }
-  #card .branch {
-    width: 100%; margin-top: 14px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px;
+  #card .actions { display: flex; gap: 8px; margin-top: 16px; }
+  #card .action {
+    flex: 1; height: 36px; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px; white-space: nowrap;
     background: var(--surface); font-size: 13px; font-weight: 500; cursor: pointer; transition: background-color .15s;
   }
-  #card .branch:hover, #card .branch[aria-pressed="true"] { background: var(--chip); }
+  #card .action:hover, #card .action[aria-pressed="true"] { background: var(--chip); }
+  #card .who { min-width: 0; }
   #card .none { margin: 14px 0 0; color: var(--muted); font-size: 13px; }
   .empty-tree { display: grid; place-items: center; height: 100%; color: var(--muted); }
 
@@ -199,10 +201,15 @@ const initials = (id) =>
   PLACEHOLDER.test(person(id).name) ? "?" : (person(id).name.match(/\p{L}+/gu) || ["?"]).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
 const year = (date) => date?.match(/\d{4}/)?.[0] || date;
 function years(p) {
-  if (p.birth_date && p.death_date) return `${year(p.birth_date)} – ${year(p.death_date)}`;
-  if (p.birth_date) return `Born ${year(p.birth_date)}`;
-  if (p.death_date) return `Died ${year(p.death_date)}`;
+  if (p.birth_date && p.death_date) return `${year(p.birth_date)}–${year(p.death_date)}`;
+  if (p.birth_date) return `b. ${year(p.birth_date)}`;
+  if (p.death_date) return `d. ${year(p.death_date)}`;
   return "";
+}
+// "1915–1998 · 83 years" when both years are known.
+function lifespan(p) {
+  const [born, died] = [p.birth_date, p.death_date].map((d) => Number(d?.match(/\d{4}/)?.[0]));
+  return born && died && died >= born ? `${years(p)} · ${died - born} years` : "";
 }
 function el(tag, attrs = {}, ...kids) {
   const node = document.createElement(tag);
@@ -238,7 +245,6 @@ for (const id of ids) {
   const node = el(
     "button",
     { class: `person${PLACEHOLDER.test(p.name) ? " unknown" : ""}`, "data-id": id, "aria-label": `${p.name}${years(p) ? `, ${years(p)}` : ""}` },
-    avatar(id),
     el("span", { class: "text" }, el("span", { class: "name" }, displayName(id)), years(p) && el("span", { class: "years" }, years(p))),
   );
   Object.assign(node.style, { left: `${at(id).x}px`, top: `${at(id).y}px`, width: `${card.w}px`, height: `${card.h}px` });
@@ -331,7 +337,8 @@ function fit(glide = false) {
 // The part of the screen left free by the person's card: the top on phones, the left otherwise.
 function room() {
   const narrow = matchMedia("(max-width: 640px)").matches;
-  return { w: view.clientWidth * (narrow ? 1 : 0.68), h: view.clientHeight * (narrow ? 0.45 : 1) };
+  const sheet = narrow ? $("card")?.offsetHeight || view.clientHeight * 0.55 : 0;
+  return { w: view.clientWidth * (narrow ? 1 : 0.68), h: Math.max(120, view.clientHeight - sheet) };
 }
 function bounds(group) {
   const xs = group.map((g) => at(g).x);
@@ -415,8 +422,10 @@ $("zoom-fit").onclick = () => { close(); fit(true); };
 // Person card
 
 let selected = null;
+// Each relative's years tell apart people who share a name.
 function relativeRow(id, note = "") {
-  const row = el("button", { class: "relative" }, avatar(id), el("span", { class: "name" }, displayName(id)), note && el("span", { class: "note" }, note));
+  const side = [note, years(person(id))].filter(Boolean).join(" · ");
+  const row = el("button", { class: "relative" }, el("span", { class: "name" }, displayName(id)), side && el("span", { class: "note" }, side));
   row.onclick = () => select(id, true);
   return row;
 }
@@ -476,9 +485,26 @@ function select(id, glide = false) {
   const up = walk(id, (x) => parentsOf(tree, x));
   const related = highlight(id);
   const branch = [...walk(id, (x) => children(tree, x))];
+  const link = el("button", { class: "action" }, "Copy link");
+  link.onclick = async () => {
+    const url = `${location.href.split("#")[0]}#${id}`;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      // Older browsers: copy through a hidden field.
+      const field = el("textarea", { readonly: "", style: "position:fixed;opacity:0" });
+      field.value = url;
+      document.body.append(field);
+      field.select();
+      document.execCommand("copy");
+      field.remove();
+    }
+    link.textContent = "Link copied";
+    setTimeout(() => (link.textContent = "Copy link"), 1500);
+  };
   let toggle = null;
   if (branch.length > children(tree, id).length) {
-    toggle = el("button", { class: "branch", "aria-pressed": "false" }, "Show all descendants");
+    toggle = el("button", { class: "action", "aria-pressed": "false" }, "Show all descendants");
     toggle.onclick = () => {
       const on = toggle.getAttribute("aria-pressed") !== "true";
       toggle.setAttribute("aria-pressed", String(on));
@@ -495,15 +521,16 @@ function select(id, glide = false) {
   const box = el(
     "div",
     { id: "card", role: "dialog", "aria-label": p.name },
-    el("div", { class: "top" }, avatar(id, "lg"), el("div", {}, el("h2", {}, displayName(id)), p.birth_date && p.death_date && el("span", { class: "years" }, years(p)))),
+    el("div", { class: "top" }, avatar(id, "lg"), el("div", { class: "who" }, el("h2", {}, displayName(id)), lifespan(p) && el("span", { class: "years" }, lifespan(p)))),
     facts.length ? el("dl", {}, ...facts.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)])) : null,
     p.notes && el("p", { class: "notes" }, p.notes),
+    p.private && el("p", { class: "none" }, "Details are hidden for living people."),
     group("Parents", parentsOf(tree, id)),
     group(partners.length > 1 ? "Partners" : "Partner", partners, (o) => partnerNote(id, o)),
     group("Siblings", siblings(tree, id), (o) => (halfSiblings(tree, id, o) ? "Half" : "")),
     group("Children", children(tree, id)),
-    toggle,
     related.size === 1 ? el("p", { class: "none" }, "No family recorded yet.") : null,
+    el("div", { class: "actions" }, toggle, link),
   );
   const shut = el("button", { class: "close", "aria-label": "Close" });
   shut.innerHTML = '<svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>';
