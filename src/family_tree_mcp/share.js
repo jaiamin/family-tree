@@ -74,7 +74,7 @@ for (const c of geometry.nodes) {
   const id = c.personId, p = person(id);
   const caption = years(p);
   const node = el("button", {
-    class: `person${PLACEHOLDER.test(p.name) ? " unknown" : ""}`,
+    class: `person${c.joined ? ` joined-${c.joined}` : ""}${PLACEHOLDER.test(p.name) ? " unknown" : ""}`,
     "data-id": id, "aria-label": `${p.name}${caption ? `, ${caption}` : ""}`,
   }, avatar(id), el("span", { class: "text" }, el("span", { class: "name" }, displayName(id)),
     caption && el("span", { class: "years" }, caption)));

@@ -131,7 +131,7 @@ def test_parent_units_stay_together_with_ancestry_on_both_sides() -> None:
     geometry = got["geometry"]
     a, b = (geometry["pos"][p] for p in ("mother", "father"))
     card = geometry["card"]
-    adjacent = a["x"] == b["x"] and abs(a["y"] - b["y"]) == card["h"] + geometry["coupleGap"]
+    adjacent = a["x"] == b["x"] and abs(a["y"] - b["y"]) == card["h"]
     assert adjacent, "Partners must form a vertical pair"
     for child in ("child", "sibling"):
         assert geometry["pos"][child]["y"] > max(a["y"], b["y"]) + card["h"]
@@ -140,7 +140,9 @@ def test_parent_units_stay_together_with_ancestry_on_both_sides() -> None:
         for e in got["edges"]
         if e["className"] == "dot" and set(e["people"]) == {"mother", "father"}
     ]
-    assert len(dots) == 1, "Parents need one shared junction"
+    assert not dots, "Joined parents share a block without a junction dot"
+    paired = [n for n in geometry["nodes"] if n["personId"] in {"mother", "father"}]
+    assert {n["joined"] for n in paired} == {"top", "bottom"}
     assert_clean_connections(geometry, got["edges"])
 
 

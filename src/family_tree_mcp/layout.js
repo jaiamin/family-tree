@@ -1,7 +1,6 @@
 // Family helpers and the tree layout for the share page. tests/test_share.py checks them in Node.
 
 const CARD = { w: 172, h: 52 };
-const COUPLE_GAP = 24;
 const ROUTE_GAP = 12;
 
 const parentsOf = (tree, id) => (tree.people[id].parents || []).filter((p) => tree.people[p]);
@@ -63,7 +62,7 @@ function familyGraph(tree) {
     const other = [...partners.get(id)].find((p) => partners.get(id).size === 1 && partners.get(p).size === 1 && !owner.has(p));
     const members = [id, ...(other ? [other] : [])];
     const unit = { id: `person:${id}`, members,
-      width: CARD.w + (other ? ROUTE_GAP * 2 : 0), height: CARD.h * members.length + COUPLE_GAP * (members.length - 1) };
+      width: CARD.w + (other ? ROUTE_GAP * 2 : 0), height: CARD.h * members.length };
     units.push(unit);
     for (const p of members) owner.set(p, unit);
   }
@@ -77,7 +76,7 @@ async function layout(tree) {
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const offset = (id) => {
     const u = owner.get(id), i = u.members.indexOf(id);
-    return { x: 0, y: i * (CARD.h + COUPLE_GAP) };
+    return { x: 0, y: i * CARD.h };
   };
   const port = (unit, id, x, y, side) => {
     byId.get(unit.id).ports.push({ id, x, y, width: 0, height: 0,
@@ -139,18 +138,14 @@ async function layout(tree) {
     u.members.forEach((id) => {
       const p = offset(id);
       pos[id] = point({ x: n.x + p.x, y: n.y + p.y });
-      cards.push({ personId: id, ...pos[id] });
+      cards.push({ personId: id, ...pos[id], joined: u.members.length === 2 ? (id === u.members[0] ? "top" : "bottom") : "" });
     });
   }
   for (const f of families.values()) {
     const u = owner.get(f.parents[0]), n = placed.get(u.id);
     if (f.internal) {
-      const x = n.x + CARD.w / 2, y = n.y + u.height / 2;
-      routes.push({ kind: "couple", people: f.parents, net: f.key, points: [
-        { x, y: n.y + CARD.h }, { x, y: n.y + CARD.h + COUPLE_GAP },
-      ] });
+      const x = n.x + CARD.w, y = n.y + u.height / 2;
       if (f.children.length) {
-        dots.push({ x, y, people: f.parents, net: f.key });
         routes.push({ kind: "child", parents: f.parents, children: f.children, people: [...f.children, ...f.parents], net: f.key,
           // Exit beside the lower partner, then descend without crossing either card.
           points: [{ x, y }, { x: n.x + CARD.w + ROUTE_GAP, y },
@@ -188,7 +183,7 @@ async function layout(tree) {
   }
 
   return { nodes: cards, pos, routes: routes.map((r) => ({ ...r, points: r.points.map(point) })),
-    dots: dots.map((d) => ({ ...d, ...point(d) })), card: CARD, coupleGap: COUPLE_GAP, width: graph.width || CARD.w, height: graph.height || CARD.h };
+    dots: dots.map((d) => ({ ...d, ...point(d) })), card: CARD, width: graph.width || CARD.w, height: graph.height || CARD.h };
 }
 
 // Shared buses are drawn once. Keep ownership on every segment so sibling selection highlights

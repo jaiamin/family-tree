@@ -85,6 +85,8 @@
     background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow);
     transition: border-color .15s, box-shadow .15s, opacity .2s;
   }
+  .person.joined-top { border-radius: 10px 10px 0 0; border-bottom: 0; box-shadow: none; }
+  .person.joined-bottom { border-radius: 0 0 10px 10px; box-shadow: none; }
   .person:hover { border-color: var(--border-strong); }
   /* Keep the selection outline intact at every zoom level. */
   .person.selected { z-index: 1; }
