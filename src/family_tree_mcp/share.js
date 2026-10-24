@@ -393,8 +393,8 @@ function select(id) {
       group("Siblings", siblings(tree, id), (o) => (halfSiblings(tree, id, o) ? "Half" : "")),
       group("Children", children(tree, id)),
       related.size === 1 ? el("p", { class: "none" }, "No family recorded yet.") : null,
-      el("div", { class: "actions" }, link),
     ),
+    el("div", { class: "actions" }, link),
   );
   const shut = el("button", { class: "close", "aria-label": "Close" });
   shut.innerHTML = '<svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>';
