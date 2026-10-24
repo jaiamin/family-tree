@@ -8,7 +8,7 @@ from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
 from family_tree_mcp import create_server
-from family_tree_mcp.publish import Updater
+from family_tree_mcp.publish import Updater, _failure
 from family_tree_mcp.store import Store
 from family_tree_mcp.tree import Site, Tree
 
@@ -16,6 +16,7 @@ from family_tree_mcp.tree import Site, Tree
 FAKE_NPX = """#!/bin/sh
 shift 2
 echo "$1 $2" >> "$CALLS"
+mkdir -p .wrangler/tmp || exit 1
 case "$1 $2" in
   "pages project")
     [ -n "$CREATED" ] && { echo "A project with this name already exists"; exit 1; }
@@ -42,6 +43,10 @@ def calls(tmp_path, monkeypatch):
 
 @pytest.mark.skipif(os.name == "nt", reason="fake npx is a shell script")
 async def test_publish_once_then_keep_updated(tmp_path, calls, monkeypatch) -> None:
+    # Apps like Claude Desktop start servers in a read-only directory such as /.
+    read_only = tmp_path / "read-only"
+    read_only.mkdir(mode=0o555)
+    monkeypatch.chdir(read_only)
     store = Store(tmp_path / "trees")
     async with Client(create_server(store, publish_delay=0)) as client:
         await client.call_tool("create_tree", {"name": "Smiths"})
@@ -104,3 +109,16 @@ def test_updates_wait_for_edits_to_pause() -> None:
     updater.schedule(tree)
     updater.flush()
     assert published == ["T", "T"]
+
+
+def test_failures_keep_wranglers_error_and_path() -> None:
+    output = """\x1b[31m✘ [ERROR] A file or directory could not be found.\x1b[0m
+
+  Missing file or directory: /.wrangler/tmp
+  This is typically caused by:
+🪵  Logs were written to "/Users/me/Library/Preferences/.wrangler/logs/x.log"
+"""
+    assert _failure(output) == (
+        "Publishing failed: ✘ [ERROR] A file or directory could not be found. "
+        "Missing file or directory: /.wrangler/tmp"
+    )
