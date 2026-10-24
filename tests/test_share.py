@@ -359,3 +359,34 @@ def test_single_parent_exit_follows_layout_direction(direction: str) -> None:
             assert next_point["y"] == pytest.approx(expected["y"])
             assert next_point["x"] > expected["x"]
     assert_clean_connections(geometry, got["edges"])
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="needs Node.js")
+@pytest.mark.parametrize("direction", ["DOWN", "RIGHT"])
+def test_branch_clearance_is_balanced_around_couple(direction: str) -> None:
+    t = Tree(name="Balanced branches")
+    for name in ("Grandparent", "Grandpartner", "Parent", "Partner", "Aunt", "Child A", "Child B"):
+        seed(t, name)
+    t.link("grandparent", "partner", "grandpartner")
+    t.link("parent", "partner", "partner")
+    for child, parents in (
+        ("parent", ("grandparent", "grandpartner")),
+        ("aunt", ("grandparent", "grandpartner")),
+        ("child-a", ("parent", "partner")),
+        ("child-b", ("parent", "partner")),
+    ):
+        for parent in parents:
+            t.link(child, "parent", parent)
+    got = run_graph(t, direction)
+    g = got["geometry"]
+    incoming = next(r for r in reversed(g["routes"]) if r["children"] == ["parent"])
+    outgoing = next(r for r in reversed(g["routes"]) if r["children"] == ["child-a"])
+    axis = "y" if direction == "DOWN" else "x"
+    incoming_gap = incoming["points"][-1][axis] - incoming["points"][-2][axis]
+    outgoing_gap = outgoing["points"][1][axis] - outgoing["points"][0][axis]
+    assert incoming_gap == pytest.approx(36)
+    assert outgoing_gap == pytest.approx(incoming_gap)
+    if direction == "RIGHT":
+        parent = g["pos"]["parent"]
+        assert outgoing["points"][0]["x"] == pytest.approx(parent["x"] + g["card"]["w"])
+    assert_clean_connections(g, got["edges"])
