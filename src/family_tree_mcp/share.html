@@ -93,6 +93,8 @@
   .person:hover, .person.selected { z-index: 1; }
   .person:hover { outline: 1px solid var(--border-strong); outline-offset: -.5px; }
   .person.selected { outline: 2px solid var(--fg); outline-offset: -1px; }
+  .person.joined-bottom:hover::before, .person.joined-top:hover + .joined-bottom::before { background: var(--border-strong); }
+  .person.joined-bottom.selected::before, .person.joined-top.selected + .joined-bottom::before { background: var(--fg); }
   .person.unknown { border-style: dashed; box-shadow: none; background: transparent; color: var(--muted); }
   .dim .person:not(.related) { opacity: .45; }
   .avatar {
