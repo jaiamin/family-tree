@@ -94,7 +94,7 @@ def website_files(collection: Collection, site: Site) -> tuple[dict[str, str], i
         hidden += count
         entries.append(
             f'<li><a class="tree-card" href="/trees/{tree.id}/"><h3>{html.escape(tree.name)}</h3>'
-            f"<dl><div><dt>People</dt><dd>{len(tree.people)}</dd></div></dl></a></li>"
+            f"<p>{_people_count(len(tree.people))}</p></a></li>"
         )
     listing = (
         '<ul class="trees">' + "".join(entries) + "</ul>"
