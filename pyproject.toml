@@ -1,0 +1,28 @@
+[project]
+name = "family-tree-mcp"
+version = "0.1.0"
+description = "An MCP server for building family trees and reasoning over kinship."
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Jai Amin" }]
+requires-python = ">=3.10"
+dependencies = ["fastmcp>=4.1"]
+
+[project.scripts]
+family-tree-mcp = "family_tree_mcp:main"
+
+[build-system]
+requires = ["uv_build>=0.13.4,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = ["pytest>=9.1", "pytest-asyncio>=1.4", "ruff>=0.17", "ty>=0.0.91"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
