@@ -84,7 +84,7 @@ def share_page(tree: Tree, site: Site, families: list[Family]) -> tuple[str, int
 
 def website_files(collection: Collection, site: Site) -> tuple[dict[str, str], int]:
     """Build one chooser plus a stable UUID route per tree; never embed global records."""
-    pages: dict[str, str] = {}
+    pages = {"favicon.svg": ASSETS.joinpath("favicon.svg").read_text(encoding="utf-8")}
     entries = []
     hidden = 0
     for family in sorted(collection.trees.values(), key=lambda t: t.name.casefold()):

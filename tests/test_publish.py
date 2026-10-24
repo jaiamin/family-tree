@@ -73,11 +73,15 @@ async def test_publish_once_then_keep_updated(tmp_path, calls, monkeypatch) -> N
         await client.call_tool("create_tree", {"name": "Smiths"})
         tree = {"tree": "Smiths"}
         await client.call_tool("create_tree", {"name": "Other"})
-        await client.call_tool("add_person", {"tree": "Other", "name": "Other Person"})
+        await client.call_tool(
+            "add_people", {"tree": "Other", "people": [{"name": "Other Person"}]}
+        )
         await client.call_tool("configure_website", {"name": "Website", "project": "example"})
         tid = store.load("Smiths").id
         other_id = store.load("Other").id
-        added = await client.call_tool("add_person", {**tree, "name": "Ann", "birth_date": "1990"})
+        added = await client.call_tool(
+            "add_people", {**tree, "people": [{"name": "Ann", "birth_date": "1990"}]}
+        )
 
         site = await client.call_tool("publish_site", {})
         assert site.data["url"] == "https://smiths-x9.pages.dev"
@@ -102,13 +106,14 @@ async def test_publish_once_then_keep_updated(tmp_path, calls, monkeypatch) -> N
 
         # Every change republishes in the background; a change the page doesn't show doesn't.
         monkeypatch.setenv("CREATED", "1")
-        await client.call_tool("add_person", {**tree, "name": "Bo"})
+        await client.call_tool("add_people", {**tree, "people": [{"name": "Bo"}]})
         await asyncio.to_thread(_wait, store)
         page = (folder / f"public/trees/{tid}/index.html").read_text()
         assert '"Bo"' in page and calls()[5:] == ["pages deploy public"]
         assert "Other Person" in (folder / f"public/trees/{other_id}/index.html").read_text()
         await client.call_tool(
-            "update_person", {**tree, "person_id": added.data["id"], "notes": "private"}
+            "update_people",
+            {**tree, "changes": [{"id": added.data["ids"]["Ann"], "notes": "private"}]},
         )
         await asyncio.to_thread(_wait, store)
         assert len(calls()) == 6
@@ -122,7 +127,7 @@ async def test_publish_once_then_keep_updated(tmp_path, calls, monkeypatch) -> N
         assert again.data["photo_code"] == code
         assert calls()[6:] == ["pages project create", "pages deploy public"]
         count = len(calls())
-        await client.call_tool("add_person", {**tree, "name": "Cy"})
+        await client.call_tool("add_people", {**tree, "people": [{"name": "Cy"}]})
         await asyncio.to_thread(_wait, store)
         assert len(calls()) == count
         listed = await client.call_tool("get_website", {})
@@ -148,7 +153,7 @@ async def test_collection_without_photos_can_update(tmp_path, calls) -> None:
     with store.transaction() as data:
         data.site = Site(name="Website", project="example", url="https://example.pages.dev")
     async with Client(create_server(store, publish_delay=0)) as client:
-        await client.call_tool("add_person", {"tree": "Smiths", "name": "Ann"})
+        await client.call_tool("add_people", {"tree": "Smiths", "people": [{"name": "Ann"}]})
         await asyncio.to_thread(_wait, store)
         with pytest.raises(ToolError, match="publish_site first"):
             await client.call_tool("change_photo_code", {})
@@ -162,7 +167,10 @@ async def test_parallel_tool_calls_keep_every_change(tmp_path) -> None:
     async with Client(create_server(Store(tmp_path))) as client:
         await client.call_tool("create_tree", {"name": "T"})
         await asyncio.gather(
-            *[client.call_tool("add_person", {"tree": "T", "name": f"P{i}"}) for i in range(15)]
+            *[
+                client.call_tool("add_people", {"tree": "T", "people": [{"name": f"P{i}"}]})
+                for i in range(15)
+            ]
         )
         people = await client.call_tool("find_people", {"tree": "T"})
         assert len(people.data) == 15

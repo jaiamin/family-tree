@@ -69,7 +69,8 @@ function familyGraph(tree) {
   return { units, owner, families };
 }
 
-async function layout(tree) {
+async function layout(tree, direction = "DOWN") {
+  const horizontal = direction === "RIGHT";
   const { units, owner, families } = familyGraph(tree);
   const nodes = units.map((u) => ({ id: u.id, width: u.width, height: u.height,
     ports: [], layoutOptions: { "elk.portConstraints": "FIXED_POS" } }));
@@ -97,7 +98,7 @@ async function layout(tree) {
     let output;
     if (together || f.parents.length === 1) {
       output = together
-        ? port(u, `out:${f.key}`, CARD.w + ROUTE_GAP, u.height, "SOUTH")
+        ? port(u, `out:${f.key}`, horizontal ? u.width : CARD.w + ROUTE_GAP, horizontal ? u.height / 2 : u.height, horizontal ? "EAST" : "SOUTH")
         : port(u, `out:${f.key}`, CARD.w, outlet(f.parents[0]), "EAST");
       f.internal = together;
     } else {
@@ -108,7 +109,9 @@ async function layout(tree) {
       f.junction = junction.id;
       for (const id of f.parents) {
         const parent = owner.get(id);
-        const source = port(parent, `union:${f.key}:${id}`, outlet(id, CARD.w), parent.height, "SOUTH");
+        const source = horizontal
+          ? port(parent, `union:${f.key}:${id}`, parent.width, outlet(id), "EAST")
+          : port(parent, `union:${f.key}:${id}`, outlet(id, CARD.w), parent.height, "SOUTH");
         edges.push({ id: `union:${f.key}:${id}`, sources: [source], targets: [output] });
       }
     }
@@ -121,7 +124,7 @@ async function layout(tree) {
   const Elk = typeof module !== "undefined" ? require("./vendor/elk.bundled.js") : ELK;
   const graph = await new Elk().layout({ id: "tree", children: nodes, edges,
     layoutOptions: {
-      "elk.algorithm": "layered", "elk.direction": "DOWN", "elk.edgeRouting": "ORTHOGONAL",
+      "elk.algorithm": "layered", "elk.direction": direction, "elk.edgeRouting": "ORTHOGONAL",
       "elk.separateConnectedComponents": "false", "elk.spacing.nodeNode": "32",
       "elk.layered.spacing.nodeNodeBetweenLayers": "72", "elk.spacing.edgeEdge": "12",
       "elk.layered.spacing.edgeEdgeBetweenLayers": "12",
@@ -148,8 +151,9 @@ async function layout(tree) {
       if (f.children.length) {
         routes.push({ kind: "child", parents: f.parents, children: f.children, people: [...f.children, ...f.parents], net: f.key,
           // Exit beside the lower partner, then descend without crossing either card.
-          points: [{ x, y }, { x: n.x + CARD.w + ROUTE_GAP, y },
-            { x: n.x + CARD.w + ROUTE_GAP, y: n.y + u.height }] });
+          points: horizontal ? [{ x, y }, { x: n.x + u.width, y }]
+            : [{ x, y }, { x: n.x + CARD.w + ROUTE_GAP, y },
+              { x: n.x + CARD.w + ROUTE_GAP, y: n.y + u.height }] });
       }
     }
     if (f.parents.length === 1 && u.members.length === 2) {

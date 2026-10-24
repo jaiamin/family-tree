@@ -16,7 +16,7 @@ const input = JSON.parse(require("fs").readFileSync(0, "utf8"));
 const { tree } = input;
 (async () => {
 const ids = Object.keys(tree.people);
-const geometry = await lib.layout(tree);
+const geometry = await lib.layout(tree, input.direction);
 console.log(JSON.stringify({
   children: ids.map((id) => lib.children(tree, id)),
   siblings: ids.map((id) => lib.siblings(tree, id)),
@@ -29,7 +29,8 @@ console.log(JSON.stringify({
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="needs Node.js")
-def test_page_logic_matches_python_and_lays_out_everyone(tree: Tree) -> None:
+@pytest.mark.parametrize("direction", ["DOWN", "RIGHT"])
+def test_page_logic_matches_python_and_lays_out_everyone(tree: Tree, direction: str) -> None:
     tree.update_person("sis", birth_date="1990")
     tree.update_person("me", birth_date="c. 1995")
     tree.link("dad", "partner", "mom", status="married", marriage_date="1988")
@@ -55,7 +56,7 @@ def test_page_logic_matches_python_and_lays_out_everyone(tree: Tree) -> None:
     tree.link("sis", "partner", "sis-husband")
     tree.link("kid-a", "parent", "sis-husband")
     ids = list(tree.people)
-    js = run_graph(tree)
+    js = run_graph(tree, direction)
 
     assert js["children"] == [tree.children(i) for i in ids]
     assert js["siblings"] == [tree.siblings(i) for i in ids]
@@ -112,7 +113,8 @@ def test_share_page_hides_living_details_and_embeds_safely() -> None:
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="needs Node.js")
-def test_parent_units_stay_together_with_ancestry_on_both_sides() -> None:
+@pytest.mark.parametrize("direction", ["DOWN", "RIGHT"])
+def test_parent_units_stay_together_with_ancestry_on_both_sides(direction: str) -> None:
     t = Tree(name="Two families")
     for name in (
         "Maternal Grandparent",
@@ -135,14 +137,15 @@ def test_parent_units_stay_together_with_ancestry_on_both_sides() -> None:
     ):
         t.link(child, "parent", parent)
     t.link("mother", "partner", "father")
-    got = run_graph(t)
+    got = run_graph(t, direction)
     geometry = got["geometry"]
     a, b = (geometry["pos"][p] for p in ("mother", "father"))
     card = geometry["card"]
     adjacent = a["x"] == b["x"] and abs(a["y"] - b["y"]) == card["h"]
     assert adjacent, "Partners must form a vertical pair"
     for child in ("child", "sibling"):
-        assert geometry["pos"][child]["y"] > max(a["y"], b["y"]) + card["h"]
+        axis, size = ("x", "w") if direction == "RIGHT" else ("y", "h")
+        assert geometry["pos"][child][axis] > max(a[axis], b[axis]) + card[size]
     dots = [
         e
         for e in got["edges"]
@@ -200,11 +203,11 @@ def assert_clean_connections(geometry: dict, edges: list[dict]) -> None:
                 assert not crossing, f"Unrelated connections {e['net']} and {f['net']} cross"
 
 
-def run_graph(tree: Tree) -> dict:
+def run_graph(tree: Tree, direction: str = "DOWN") -> dict:
     script = str(files("family_tree_mcp").joinpath("layout.js"))
     result = subprocess.run(
         ["node", "-e", RUNNER, script],
-        input=json.dumps({"tree": tree.model_dump(exclude_none=True)}),
+        input=json.dumps({"tree": tree.model_dump(exclude_none=True), "direction": direction}),
         capture_output=True,
         text=True,
     )

@@ -96,8 +96,10 @@ document.title = `${tree.name} · ${tree.site_name}`;
 
 // Tree
 
-const geometry = await layout(tree);
-const { pos, card, width, height } = geometry;
+let direction = "DOWN";
+try { if (localStorage.getItem("tree-layout") === "RIGHT") direction = "RIGHT"; } catch {}
+let geometry = await layout(tree, direction);
+let { pos, card, width, height } = geometry;
 const PAD = 48;
 stage.style.width = `${width + PAD * 2}px`;
 stage.style.height = `${height + PAD * 2}px`;
@@ -238,6 +240,48 @@ view.addEventListener("wheel", (e) => {
 $("zoom-in").onclick = () => zoomAt(camera.scale * 1.3, undefined, undefined, true);
 $("zoom-out").onclick = () => zoomAt(camera.scale / 1.3, undefined, undefined, true);
 $("zoom-fit").onclick = () => { close(); fit(true); };
+
+function updateLayoutButtons() {
+  $("layout-down").setAttribute("aria-pressed", String(direction === "DOWN"));
+  $("layout-right").setAttribute("aria-pressed", String(direction === "RIGHT"));
+}
+async function switchLayout(next) {
+  if (next === direction) return;
+  const buttons = [$("layout-down"), $("layout-right")];
+  buttons.forEach((button) => button.disabled = true);
+  try {
+    const nextGeometry = await layout(tree, next);
+    geometry = nextGeometry;
+    ({ pos, card, width, height } = geometry);
+    direction = next;
+    stage.style.width = `${width + PAD * 2}px`;
+    stage.style.height = `${height + PAD * 2}px`;
+    lines.setAttribute("width", width + PAD * 2);
+    lines.setAttribute("height", height + PAD * 2);
+    for (const c of geometry.nodes) {
+      Object.assign(cards[c.personId].style, { left: `${c.x + PAD}px`, top: `${c.y + PAD}px` });
+    }
+    lines.replaceChildren();
+    edges.length = 0;
+    for (const e of connections(geometry, PAD)) edge(e);
+    if (selected) {
+      highlight(selected);
+      const p = at(selected);
+      camera.x = view.clientWidth / 2 - (p.x + card.w / 2) * camera.scale;
+      camera.y = view.clientHeight / 2 - (p.y + card.h / 2) * camera.scale;
+      apply();
+    } else fit();
+    updateLayoutButtons();
+    try { localStorage.setItem("tree-layout", direction); } catch {}
+  } catch (error) {
+    console.error("Unable to switch tree layout", error);
+  } finally {
+    buttons.forEach((button) => button.disabled = false);
+  }
+}
+$("layout-down").onclick = () => switchLayout("DOWN");
+$("layout-right").onclick = () => switchLayout("RIGHT");
+updateLayoutButtons();
 
 // Person card
 

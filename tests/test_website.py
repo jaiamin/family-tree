@@ -15,13 +15,13 @@ def embedded(page: str) -> dict:
 def test_chooser_for_zero_one_and_many_trees_with_safe_names(tmp_path) -> None:
     site = Site(name='Website <script>alert("x")</script>', project="example", url="")
     pages, _ = website_files(Collection(), site)
-    assert list(pages) == ["index.html"]
+    assert set(pages) == {"index.html", "favicon.svg"}
     assert "No family trees yet" in pages["index.html"]
     assert '<script>alert("x")</script>' not in pages["index.html"]
     store = Store(tmp_path)
     first = store.create("First & family", '<img src=x onerror="alert(1)">')
     pages, _ = website_files(store.collection(), site)
-    assert len(pages) == 2
+    assert len(pages) == 3
     assert f'href="/trees/{first.id}/"' in pages["index.html"]
     assert "First &amp; family" in pages["index.html"]
     assert "<img src=x" not in pages["index.html"]
@@ -29,6 +29,7 @@ def test_chooser_for_zero_one_and_many_trees_with_safe_names(tmp_path) -> None:
     second = store.create("Second")
     pages, _ = website_files(store.collection(), site)
     assert set(pages) == {
+        "favicon.svg",
         "index.html",
         f"trees/{first.id}/index.html",
         f"trees/{second.id}/index.html",
@@ -90,3 +91,16 @@ def test_template_tokens_in_user_names_remain_literal(tmp_path) -> None:
     assert "<title>__TREES__</title>" in pages["index.html"]
     assert "<title>__DATA__ __TITLE__ __TREES__</title>" in pages[f"trees/{tree.id}/index.html"]
     assert embedded(pages[f"trees/{tree.id}/index.html"])["name"] == tree.name
+
+
+def test_home_and_tree_share_a_valid_svg_favicon(tmp_path) -> None:
+    import xml.etree.ElementTree as ET
+
+    store = Store(tmp_path)
+    store.create("Family")
+    pages, _ = website_files(store.collection(), Site(name="Website", project="example", url=""))
+    icon = ET.fromstring(pages["favicon.svg"])
+    assert icon.tag == "{http://www.w3.org/2000/svg}svg"
+    for path, page in pages.items():
+        if path.endswith(".html"):
+            assert '<link rel="icon" type="image/svg+xml" href="/favicon.svg">' in page
