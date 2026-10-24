@@ -24,7 +24,7 @@ def mermaid(
 ) -> str:
     ids = _select(tree, person_id, view, generations)
     node = {pid: f"p{i}" for i, pid in enumerate(ids)}
-    lines = ["---", f"title: {json.dumps(tree.name)}", "---", "flowchart TD"]
+    lines = ["---", f"title: {json.dumps(tree.name, ensure_ascii=False)}", "---", "flowchart TD"]
     lines += [f'    {node[pid]}["{_label(tree.people[pid])}"]' for pid in ids]
 
     # Couples (partners, or a child's two parents) meet at a small union node above their children.

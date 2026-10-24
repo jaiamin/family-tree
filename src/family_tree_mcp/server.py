@@ -10,6 +10,7 @@ from pydantic import Field
 
 from family_tree_mcp.diagram import View, mermaid, mermaid_live_url
 from family_tree_mcp.gedcom import to_gedcom
+from family_tree_mcp.share import share_page
 from family_tree_mcp.store import Store
 from family_tree_mcp.tree import Relation, Sex, slugify
 
@@ -26,7 +27,8 @@ to explore. Children and siblings are listed oldest first when birth dates are k
 
 To show the tree visually, use get_diagram and display its output in a ```mermaid
 block; use export_diagram when the user wants to download or share it. To move a
-tree to Ancestry, FamilySearch, MyHeritage, Gramps etc., use export_gedcom.
+tree to Ancestry, FamilySearch, MyHeritage, Gramps etc., use export_gedcom. To share a
+read-only web page with family, use export_html.
 Dates are free text; prefer ISO format (YYYY, YYYY-MM or YYYY-MM-DD).
 Every change is backed up: if you make a mistake, or the user asks to revert, use undo.
 """
@@ -228,9 +230,27 @@ def create_server(store: Store) -> FastMCP:
         path = _export(f"{slugify(t.name)}.ged", to_gedcom(t))
         return {"path": str(path), "people": len(t.people)}
 
+    @mcp.tool(annotations=WRITE)
+    def export_html(tree: TreeName, hide_living: bool = True) -> dict:
+        """Save a read-only, interactive web page of the tree that can be shared as a link.
+
+        Viewers can browse the chart, see each person's details and ask how two people are
+        related. hide_living removes birth dates, places and notes of people who may be alive.
+        Give the user the folder and the publish command, which hosts it free on Cloudflare Pages.
+        """
+        t = store.load(tree)
+        page, hidden = share_page(t, hide_living)
+        slug = slugify(t.name)
+        path = _export(f"{slug}-site/index.html", page)
+        return {
+            "folder": str(path.parent),
+            "hidden_living": hidden,
+            "publish": f'npx wrangler pages deploy "{path.parent}" --project-name {slug[:58]}',
+        }
+
     def _export(filename: str, content: str) -> Path:
         path = store.root / "exports" / filename
-        path.parent.mkdir(exist_ok=True)
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
         return path
 
