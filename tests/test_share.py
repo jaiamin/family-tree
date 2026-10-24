@@ -390,3 +390,24 @@ def test_branch_clearance_is_balanced_around_couple(direction: str) -> None:
         parent = g["pos"]["parent"]
         assert outgoing["points"][0]["x"] == pytest.approx(parent["x"] + g["card"]["w"])
     assert_clean_connections(g, got["edges"])
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="needs Node.js")
+@pytest.mark.parametrize("direction", ["DOWN", "RIGHT"])
+@pytest.mark.parametrize("couple", [False, True])
+def test_unbranched_connection_uses_one_branch_length(direction: str, couple: bool) -> None:
+    t = Tree(name="One child")
+    for name in ("Parent", "Child"):
+        seed(t, name)
+    t.link("child", "parent", "parent")
+    if couple:
+        seed(t, "Partner")
+        t.link("parent", "partner", "partner")
+        t.link("child", "parent", "partner")
+    got = run_graph(t, direction)
+    route = got["geometry"]["routes"][-1]
+    start, end = route["points"]
+    axis, other = ("y", "x") if direction == "DOWN" else ("x", "y")
+    assert end[axis] - start[axis] == pytest.approx(36)
+    assert end[other] == pytest.approx(start[other])
+    assert_clean_connections(got["geometry"], got["edges"])

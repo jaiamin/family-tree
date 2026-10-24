@@ -133,7 +133,7 @@ async function layout(tree, direction = "DOWN") {
       "elk.algorithm": "layered", "elk.direction": direction, "elk.edgeRouting": "ORTHOGONAL",
       "elk.layered.thoroughness": horizontal ? "7" : "20",
       "elk.separateConnectedComponents": "false", "elk.spacing.nodeNode": "32",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "72",
+      "elk.layered.spacing.nodeNodeBetweenLayers": "36",
       "elk.layered.spacing.edgeNodeBetweenLayers": "36", "elk.spacing.edgeEdge": "12",
       "elk.layered.spacing.edgeEdgeBetweenLayers": "12",
       "elk.layered.nodePlacement.bk.fixedAlignment": "BALANCED",
