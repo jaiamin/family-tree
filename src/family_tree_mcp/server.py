@@ -9,8 +9,9 @@ from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from family_tree_mcp.diagram import View, mermaid
+from family_tree_mcp.gedcom import to_gedcom
 from family_tree_mcp.store import Store
-from family_tree_mcp.tree import Relation, Sex
+from family_tree_mcp.tree import Relation, Sex, slugify
 
 INSTRUCTIONS = """\
 Manage family trees. Each tree holds people linked by two kinds of edges:
@@ -21,6 +22,7 @@ Workflow: call find_people before add_person to avoid duplicates, then connect
 people with add_relationship. Use get_relationship to name how two people are
 related, and get_person, get_ancestors or get_descendants to explore.
 To show the tree visually, use get_diagram and display its output in a ```mermaid block.
+To move a tree to Ancestry, FamilySearch, MyHeritage, Gramps etc., use export_gedcom.
 Dates are free text; prefer ISO format (YYYY, YYYY-MM or YYYY-MM-DD).
 """
 
@@ -184,6 +186,18 @@ def create_server(store: Store) -> FastMCP:
         For large trees, pass person_id and generations to keep the diagram readable.
         """
         return mermaid(store.load(tree), person_id, view, generations)
+
+    @mcp.tool(annotations=WRITE)
+    def export_gedcom(tree: TreeName) -> dict:
+        """Save the tree as a GEDCOM 5.5.1 (.ged) file for import into other genealogy apps.
+
+        Returns the file path; give it to the user rather than reading the file into the chat.
+        """
+        t = store.load(tree)
+        path = store.root / "exports" / f"{slugify(t.name)}.ged"
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(to_gedcom(t), encoding="utf-8")
+        return {"path": str(path), "people": len(t.people)}
 
     return mcp
 
