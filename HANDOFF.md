@@ -90,3 +90,15 @@ graphs can require crossings; current zero-crossing verification applies to this
   resize preserves camera; mobile Nirav sheet and immediate-family highlighting checked.
 - All 95 tests, Ruff, ty and JS syntax check pass; detector has no findings.
 - Local previews updated on port 8000; no push/deployment.
+
+## Details sidebar and search hover (complete)
+- Desktop uses a 320px sidebar beside a clipped canvas; framing reads actual canvas
+  dimensions instead of estimating free space. Removed floating-panel placement code.
+- Mobile starts with a 38dvh sheet (max 320px), expandable to 70dvh. Name/close/expand
+  controls stay fixed while details scroll. Canvas and zoom remain above the sheet.
+- Search hover and arrow keys share one active-result helper; Enter opens the hovered
+  result. Active option is also linked through aria-activedescendant.
+- Browser assertions: sidebar/canvas don't overlap; collapsed and expanded sheets do
+  not cover zoom; zoom/fit work with details open; hovering Divya then Enter selects Divya.
+- All 95 tests, Ruff, ty, JS syntax and wheel build pass; detector has no findings.
+- Both local preview URLs refreshed. No push/deployment.

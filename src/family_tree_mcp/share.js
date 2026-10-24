@@ -2,7 +2,7 @@
 const tree = JSON.parse(document.getElementById("tree-data").textContent);
 const ids = Object.keys(tree.people);
 const $ = (id) => document.getElementById(id);
-const view = $("view");
+const view = $("canvas");
 const stage = $("stage");
 const svgNS = "http://www.w3.org/2000/svg";
 const PLACEHOLDER = /^Unknown parent of /;
@@ -103,7 +103,6 @@ const camera = { x: 0, y: 0, scale: 1 };
 function apply(glide = false) {
   stage.classList.toggle("glide", glide);
   stage.style.transform = `translate(${camera.x}px, ${camera.y}px) scale(${camera.scale})`;
-  place();
 }
 function zoomAt(scale, cx = view.clientWidth / 2, cy = view.clientHeight / 2, glide = false) {
   scale = Math.min(2, Math.max(0.15, scale));
@@ -120,11 +119,9 @@ function fit(glide = false) {
   camera.y = Math.max(0, (view.clientHeight - h * camera.scale) / 2);
   apply(glide);
 }
-// The part of the screen left free by the person's card: the top on phones, the left otherwise.
+// The canvas excludes the sidebar or mobile sheet, so framing uses its actual free space.
 function room() {
-  const narrow = matchMedia("(max-width: 640px)").matches;
-  const sheet = narrow ? $("card")?.offsetHeight || view.clientHeight * 0.55 : 0;
-  return { w: view.clientWidth * (narrow ? 1 : 0.68), h: Math.max(120, view.clientHeight - sheet) };
+  return { w: view.clientWidth, h: view.clientHeight };
 }
 function bounds(group) {
   const xs = group.map((g) => at(g).x);
@@ -386,22 +383,32 @@ function select(id) {
     "div",
     { id: "card", role: "dialog", "aria-label": p.name },
     el("div", { class: "top" }, photo.circle, el("div", { class: "who" }, el("h2", {}, displayName(id)), lifespan(p) && el("span", { class: "years" }, lifespan(p)))),
-    facts.length ? el("dl", {}, ...facts.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)])) : null,
-    photo.panel,
-    p.notes && el("p", { class: "notes" }, p.notes),
-    p.private && el("p", { class: "none" }, "Details are hidden for living people."),
-    group("Parents", parentsOf(tree, id)),
-    group(partners.length > 1 ? "Partners" : "Partner", partners, (o) => partnerNote(id, o)),
-    group("Siblings", siblings(tree, id), (o) => (halfSiblings(tree, id, o) ? "Half" : "")),
-    group("Children", children(tree, id)),
-    related.size === 1 ? el("p", { class: "none" }, "No family recorded yet.") : null,
-    el("div", { class: "actions" }, link),
+    el("div", { class: "details-body", id: "details-body" },
+      facts.length ? el("dl", {}, ...facts.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)])) : null,
+      photo.panel,
+      p.notes && el("p", { class: "notes" }, p.notes),
+      p.private && el("p", { class: "none" }, "Details are hidden for living people."),
+      group("Parents", parentsOf(tree, id)),
+      group(partners.length > 1 ? "Partners" : "Partner", partners, (o) => partnerNote(id, o)),
+      group("Siblings", siblings(tree, id), (o) => (halfSiblings(tree, id, o) ? "Half" : "")),
+      group("Children", children(tree, id)),
+      related.size === 1 ? el("p", { class: "none" }, "No family recorded yet.") : null,
+      el("div", { class: "actions" }, link),
+    ),
   );
   const shut = el("button", { class: "close", "aria-label": "Close" });
   shut.innerHTML = '<svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>';
   shut.onclick = close;
+  const expand = el("button", { class: "sheet-toggle", "aria-expanded": "false", "aria-controls": "details-body" }, "Expand details");
+  expand.onclick = () => {
+    const expanded = box.classList.toggle("expanded");
+    expand.setAttribute("aria-expanded", String(expanded));
+    expand.textContent = expanded ? "Collapse details" : "Expand details";
+    if (!inView(frame)) centreOn(frame);
+  };
+  box.querySelector(".top").after(expand);
   box.append(shut);
-  view.append(box);
+  $("view").append(box);
 
   // While the tree glides to the person, the card waits at its final spot and appears on arrival.
   const frame = [id, ...up, ...children(tree, id), ...partners];
@@ -418,21 +425,7 @@ function select(id) {
       setTimeout(show, 600);
     } else show();
   }
-  place();
   history.replaceState(null, "", `#${id}`);
-}
-// Positions come from the camera, not the DOM, so the card never reads a half-finished glide.
-function place() {
-  const box = $("card");
-  if (!box || !selected || matchMedia("(max-width: 640px)").matches) return;
-  const { x, y } = at(selected);
-  const s = camera.scale;
-  const [left, top, w] = [camera.x + x * s, camera.y + y * s, card.w * s];
-  const [vw, vh, bw, bh] = [view.clientWidth, view.clientHeight, box.offsetWidth, box.offsetHeight];
-  const right = left + w + 12;
-  const side = right + bw > vw - 16 ? left - bw - 12 : right;
-  box.style.left = `${Math.min(Math.max(16, side), vw - bw - 16)}px`;
-  box.style.top = `${Math.min(Math.max(16, top), vh - bh - 16)}px`;
 }
 function clear() {
   $("card")?.remove();
@@ -455,7 +448,6 @@ stage.addEventListener("click", (e) => {
 });
 view.addEventListener("click", (e) => { if (!moved && e.target === view) close(); });
 addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
-addEventListener("resize", place);
 
 // Search
 
@@ -463,6 +455,13 @@ const search = $("search");
 const results = $("results");
 let matches = [];
 let active = 0;
+function activateResult(index) {
+  active = index;
+  [...results.children].forEach((li, i) => li.setAttribute("aria-selected", String(i === active)));
+  const item = matches.length && results.children[active];
+  if (item) search.setAttribute("aria-activedescendant", item.id);
+  else search.removeAttribute("aria-activedescendant");
+}
 function showResults() {
   const terms = search.value.toLowerCase().split(/\s+/).filter(Boolean);
   const name = (id) => person(id).name.toLowerCase();
@@ -475,12 +474,14 @@ function showResults() {
   results.replaceChildren(
     ...(matches.length
       ? matches.map((id, i) => {
-          const item = el("li", { role: "option", "aria-selected": String(i === active) }, avatar(id), el("span", {}, el("span", { class: "name" }, person(id).name), years(person(id)) && el("span", { class: "years" }, years(person(id)))));
+          const item = el("li", { id: `search-result-${i}`, role: "option", "aria-selected": String(i === active) }, avatar(id), el("span", {}, el("span", { class: "name" }, person(id).name), years(person(id)) && el("span", { class: "years" }, years(person(id)))));
+          item.onpointerenter = () => activateResult(i);
           item.onpointerdown = (e) => { e.preventDefault(); choose(id); };
           return item;
         })
       : [el("li", { class: "empty" }, "No one by that name")]),
   );
+  activateResult(0);
   results.hidden = !terms.length;
   search.setAttribute("aria-expanded", String(!results.hidden));
 }
@@ -488,6 +489,7 @@ function choose(id) {
   search.value = "";
   results.hidden = true;
   search.setAttribute("aria-expanded", "false");
+  search.removeAttribute("aria-activedescendant");
   search.blur();
   select(id);
 }
@@ -496,8 +498,7 @@ search.addEventListener("blur", () => { results.hidden = true; });
 search.addEventListener("keydown", (e) => {
   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
     e.preventDefault();
-    active = (active + (e.key === "ArrowDown" ? 1 : -1) + matches.length) % Math.max(1, matches.length);
-    [...results.children].forEach((li, i) => li.setAttribute("aria-selected", String(i === active)));
+    activateResult((active + (e.key === "ArrowDown" ? 1 : -1) + matches.length) % Math.max(1, matches.length));
   } else if (e.key === "Enter" && matches[active]) choose(matches[active]);
   else if (e.key === "Escape") { search.value = ""; showResults(); }
 });
