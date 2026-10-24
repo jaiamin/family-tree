@@ -35,14 +35,8 @@ def to_gedcom(tree: Tree) -> str:
     for person in tree.people.values():
         lines += [f"0 {indi[person.id]} INDI", f"1 NAME {_name(person.name)}"]
         lines.append(f"1 SEX {SEX.get(person.sex or '', 'U')}")
-        for tag, date, place in [
-            ("BIRT", person.birth_date, person.birth_place),
-            ("DEAT", person.death_date, None),
-        ]:
-            if date or place:
-                lines.append(f"1 {tag}")
-                lines += [f"2 DATE {_date(date)}"] if date else []
-                lines += [f"2 PLAC {place}"] if place else []
+        lines += _event("BIRT", person.birth_date, person.birth_place)
+        lines += _event("DEAT", person.death_date, None)
         if person.notes:
             lines += _text(1, "NOTE", person.notes)
         for key, ref in fam.items():
@@ -55,8 +49,22 @@ def to_gedcom(tree: Tree) -> str:
         for role, pid in _spouses(tree, key):
             lines.append(f"1 {role} {indi[pid]}")
         lines += [f"1 CHIL {indi[c]}" for c in tree.by_birth(children)]
+        if len(key) == 2 and (details := tree.partnership(*key)):
+            lines += _event("MARR", details.marriage_date, details.marriage_place)
+            if details.status == "divorced" or details.divorce_date:
+                lines += _event("DIV", details.divorce_date, None)
     lines.append("0 TRLR")
     return "\n".join(lines) + "\n"
+
+
+def _event(tag: str, date: str | None, place: str | None) -> list[str]:
+    if not (date or place):
+        return []
+    return (
+        [f"1 {tag}"]
+        + ([f"2 DATE {_date(date)}"] if date else [])
+        + ([f"2 PLAC {place}"] if place else [])
+    )
 
 
 def _spouses(tree: Tree, couple: frozenset[str]) -> list[tuple[str, str]]:

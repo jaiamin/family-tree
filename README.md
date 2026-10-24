@@ -30,28 +30,30 @@ Trees are saved as JSON files in `~/.family-tree-mcp/`. Set `FAMILY_TREE_DIR` to
 A tree contains people. Each person has an id, a name, optional details (`sex`, `birth_date`, `death_date`, `birth_place`, `notes`), and two kinds of links:
 
 - **parents**: at most two per person, with cycles rejected.
-- **partners**: always recorded on both people.
+- **partners**: always recorded on both people, optionally with a status (`married`, `divorced`, `partners`), marriage date and place, and divorce date.
 
-Everything else (children, siblings, aunts, cousins, in-laws) is derived from those links, so the data stays consistent and the agent never has to keep inverse relations in sync. Linking two people as `sibling` gives them the same parents, adding a placeholder parent when neither has one. Children and siblings are listed oldest first when birth dates are known.
+Everything else (children, siblings, aunts, cousins, in-laws, step-relations) is derived from those links, so the data stays consistent and the agent never has to keep inverse relations in sync. Linking two people as `sibling` gives them the same parents, adding a placeholder parent when neither has one. Children and siblings are listed oldest first when birth dates are known.
 
 ## Tools
 
 | Tool | Purpose |
 | --- | --- |
-| `list_trees`, `create_tree`, `delete_tree`, `get_tree` | Manage trees |
+| `list_trees`, `create_tree`, `rename_tree`, `delete_tree`, `get_tree` | Manage trees |
 | `undo` | Revert the last change, or restore a deleted tree |
-| `add_person`, `update_person`, `remove_person` | Manage people |
-| `add_relationship`, `remove_relationship` | Link people as `parent`, `child`, `partner` or `sibling` |
+| `add_people` | Add a whole family and its links in one call |
+| `add_person`, `update_person`, `remove_person` | Manage one person |
+| `merge_people` | Combine a duplicate (or a placeholder parent) into one person |
+| `add_relationship`, `remove_relationship` | Link people as `parent`, `child`, `partner` (with marriage details) or `sibling` |
 | `find_people` | Search by name to get ids |
-| `get_person` | Details with parents, partners, children and siblings |
-| `get_relationship` | Name the relation, e.g. "Sam is Ava's first cousin once removed." |
+| `get_person` | Details with parents, partners (and marriage details), children and siblings (half-siblings marked) |
+| `get_relationship` | Name the relation, e.g. "Sam is Ava's first cousin once removed", "mother-in-law", "former stepfather" |
 | `get_ancestors`, `get_descendants` | Lineage grouped by generation |
 | `get_diagram` | Mermaid chart of the whole tree or one person's ancestors/descendants |
 | `export_diagram` | Save that chart as a `.mmd` file plus a [mermaid.live](https://mermaid.live) link for PNG/SVG/PDF download |
 | `export_gedcom` | Save the tree as a GEDCOM file for other genealogy apps |
 | `export_html` | Save a read-only, interactive web page of the tree to share as a link |
 
-`get_diagram` returns [Mermaid](https://mermaid.js.org) source, which Claude, ChatGPT, GitHub and most Markdown viewers render as a chart. Couples join at a dot above their children, boxes are colored by sex (blue, pink, gray when unknown), deceased people are dashed and faded, and the focus person has an orange border.
+`get_diagram` returns [Mermaid](https://mermaid.js.org) source, which Claude, ChatGPT, GitHub and most Markdown viewers render as a chart. Couples join at a dot above their children (with dotted lines once divorced), boxes are colored by sex (blue, pink, gray when unknown), deceased people are dashed and faded, and the focus person has an orange border.
 
 `export_gedcom` writes a GEDCOM 5.5.1 file to `~/.family-tree-mcp/exports/`, which Ancestry, FamilySearch, MyHeritage, Gramps and most other genealogy apps can import. The last word of a name becomes the surname, and dates that aren't ISO are kept as text.
 

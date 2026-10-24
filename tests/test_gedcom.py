@@ -72,3 +72,15 @@ def test_long_notes_survive_line_limits() -> None:
             rebuilt += value
     assert rebuilt == note
     assert all(len(line) <= 255 for line in lines)
+
+
+def test_marriages_and_divorces_become_family_events() -> None:
+    t = Tree(name="T")
+    for name in ("Ann", "Bo", "Cy"):
+        t.add_person(name)
+    t.link("ann", "partner", "bo", marriage_date="1950-06-01", marriage_place="Pune")
+    t.link("ann", "partner", "cy", status="divorced", divorce_date="1970")
+
+    recs = records(to_gedcom(t))
+    assert recs["@F1@ FAM"][2:] == ["1 MARR", "2 DATE 1 JUN 1950", "2 PLAC Pune"]
+    assert recs["@F2@ FAM"][2:] == ["1 DIV", "2 DATE 1970"]

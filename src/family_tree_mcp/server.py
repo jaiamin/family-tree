@@ -12,23 +12,28 @@ from family_tree_mcp.diagram import View, mermaid, mermaid_live_url
 from family_tree_mcp.gedcom import to_gedcom
 from family_tree_mcp.share import share_page
 from family_tree_mcp.store import Store
-from family_tree_mcp.tree import Relation, Sex, slugify
+from family_tree_mcp.tree import NewPerson, PartnerStatus, Relation, Sex, slugify
 
 INSTRUCTIONS = """\
 Manage family trees. Each tree holds people linked by two kinds of edges:
-parent (at most two per person) and partner. Children, siblings, cousins, in-laws
-and every other relation are derived from those edges.
+parent (at most two per person) and partner (optionally married or divorced, with
+dates). Children, siblings, cousins, in-laws, step-relations and every other
+relation are derived from those edges.
 
-Workflow: call find_people before add_person to avoid duplicates, then connect
-people with add_relationship. Linking two people as "sibling" gives them shared
-parents, adding a placeholder parent if neither has one. Use get_relationship to
-name how two people are related, and get_person, get_ancestors or get_descendants
-to explore. Children and siblings are listed oldest first when birth dates are known.
+Building: call find_people first to avoid duplicates. Enter families with add_people
+(one call for many people and their links); use add_person and add_relationship for
+single changes. Linking two people as "sibling" gives them shared parents, adding a
+placeholder parent if neither has one. If someone was added twice, or a placeholder
+turns out to be a known person, use merge_people.
 
-To show the tree visually, use get_diagram and display its output in a ```mermaid
-block; use export_diagram when the user wants to download or share it. To move a
-tree to Ancestry, FamilySearch, MyHeritage, Gramps etc., use export_gedcom. To share a
-read-only web page with family, use export_html.
+Exploring: get_relationship names how two people are related; get_person,
+get_ancestors and get_descendants list family. Children and siblings are listed
+oldest first when birth dates are known.
+
+Sharing: get_diagram returns Mermaid to display in a ```mermaid block; export_diagram
+saves it with a mermaid.live link; export_gedcom writes a file for Ancestry,
+FamilySearch, MyHeritage, Gramps etc.; export_html builds a read-only web page.
+
 Dates are free text; prefer ISO format (YYYY, YYYY-MM or YYYY-MM-DD).
 Every change is backed up: if you make a mistake, or the user asks to revert, use undo.
 """
@@ -61,6 +66,12 @@ def create_server(store: Store) -> FastMCP:
         """Create a new, empty family tree."""
         tree = store.create(name, description)
         return {"name": tree.name, "description": tree.description}
+
+    @mcp.tool(annotations=WRITE)
+    def rename_tree(tree: TreeName, new_name: str) -> dict:
+        """Rename a tree. People, backups and relationships are kept."""
+        renamed = store.rename(tree, new_name)
+        return {"name": renamed.name, "people": len(renamed.people)}
 
     @mcp.tool(annotations=DELETE)
     def delete_tree(tree: TreeName) -> str:
@@ -105,6 +116,24 @@ def create_server(store: Store) -> FastMCP:
         return person.model_dump(exclude_none=True)
 
     @mcp.tool(annotations=WRITE)
+    def add_people(tree: TreeName, people: list[NewPerson]) -> dict:
+        """Add many people and their parent, partner and sibling links in one call.
+
+        Prefer this over repeated add_person calls when entering a family. Each entry can
+        link to others in the batch by their ref (or name) and to existing people by id.
+        All entries are added, or none are if any link is invalid.
+        """
+        with store.edit(tree) as t:
+            existing = {p.name.casefold(): p.id for p in t.people.values()}
+            ids = t.add_people(people)
+        duplicates = [
+            {"new_id": ids[p.ref or p.name], "existing_id": existing[p.name.casefold()]}
+            for p in people
+            if p.name.casefold() in existing
+        ]
+        return {"ids": ids, "possible_duplicates": duplicates}
+
+    @mcp.tool(annotations=WRITE)
     def update_person(
         tree: TreeName,
         person_id: PersonId,
@@ -129,6 +158,17 @@ def create_server(store: Store) -> FastMCP:
             return t.profile(person_id)
 
     @mcp.tool(annotations=DELETE)
+    def merge_people(tree: TreeName, keep_id: PersonId, duplicate_id: PersonId) -> dict:
+        """Merge a duplicate into keep_id, then remove the duplicate.
+
+        Fills keep_id's missing details from the duplicate and moves its parents, partners
+        and children. Also use it to replace a placeholder parent with the real person.
+        """
+        with store.edit(tree) as t:
+            t.merge(keep_id, duplicate_id)
+            return t.profile(keep_id)
+
+    @mcp.tool(annotations=DELETE)
     def remove_person(tree: TreeName, person_id: PersonId) -> str:
         """Remove a person and all of their relationships."""
         with store.edit(tree) as t:
@@ -138,14 +178,31 @@ def create_server(store: Store) -> FastMCP:
 
     @mcp.tool(annotations=WRITE)
     def add_relationship(
-        tree: TreeName, person_id: PersonId, relation: Relation, relative_id: PersonId
+        tree: TreeName,
+        person_id: PersonId,
+        relation: Relation,
+        relative_id: PersonId,
+        status: PartnerStatus | None = None,
+        marriage_date: Text = None,
+        marriage_place: Text = None,
+        divorce_date: Text = None,
     ) -> dict:
         """Record that relative_id is person_id's parent, child, partner or sibling.
 
         Example: relation="parent", person_id="ann", relative_id="bob" means Bob is Ann's parent.
+        For partners, optionally record status and marriage details; call again to update them.
+        Siblings get the same parents, with a placeholder parent if neither has any.
         """
         with store.edit(tree) as t:
-            t.link(person_id, relation, relative_id)
+            t.link(
+                person_id,
+                relation,
+                relative_id,
+                status=status,
+                marriage_date=marriage_date,
+                marriage_place=marriage_place,
+                divorce_date=divorce_date,
+            )
             return t.profile(person_id)
 
     @mcp.tool(annotations=DELETE)

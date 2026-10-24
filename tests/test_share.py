@@ -27,6 +27,8 @@ def test_browser_logic_matches_python(tree: Tree) -> None:
     tree.update_person("sis", birth_date="1990")
     tree.update_person("me", birth_date="c. 1995")
     tree.link("sis", "partner", "stranger")
+    tree.link("dad", "partner", "mom", status="married", marriage_date="1988")
+    tree.link("dad", "partner", "ex", divorce_date="1985")
     ids = list(tree.people)
     pairs = [(a, b) for a in ids for b in ids]
     views: list[tuple[str | None, View, int | None]] = [(None, "both", None)] + [
@@ -58,6 +60,8 @@ def test_share_page_hides_living_details_and_embeds_safely() -> None:
     t.add_person("Old Gran", birth_date="1890", notes="Kept")
     t.add_person("Late Grandpa", birth_date="1950", death_date="2010", birth_place="Pune")
     t.add_person("Living Me</script>", birth_date="1998", birth_place="Mumbai", notes="Private")
+    t.link("old-gran", "partner", "late-grandpa", marriage_date="1970")
+    t.link("living-me-script", "partner", "late-grandpa", marriage_date="2020")
 
     page, hidden = share_page(t)
     data = json.loads(page.split('type="application/json">')[1].split("</script>")[0])
@@ -68,6 +72,10 @@ def test_share_page_hides_living_details_and_embeds_safely() -> None:
     )
     assert people["late-grandpa"]["birth_place"] == "Pune" and people["old-gran"]["notes"] == "Kept"
     assert "__" not in page.replace("__proto__", "")
+    assert data["partnerships"] == {
+        "late-grandpa+old-gran": {"status": "married", "marriage_date": "1970"},
+        "late-grandpa+living-me-script": {"status": "married"},
+    }
 
     page, hidden = share_page(t, hide_living=False)
     assert hidden == 0 and "Mumbai" in page

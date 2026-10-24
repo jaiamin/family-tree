@@ -27,14 +27,18 @@ def mermaid(
     lines = ["---", f"title: {json.dumps(tree.name, ensure_ascii=False)}", "---", "flowchart TD"]
     lines += [f'    {node[pid]}["{_label(tree.people[pid])}"]' for pid in ids]
 
-    # Couples (partners, or a child's two parents) meet at a small union node above their children.
+    # Couples (partners, or a child's two parents) meet at a small union node above their children;
+    # divorced couples join it with dotted lines.
     unions: dict[frozenset[str], str] = {}
 
     def union(pair: frozenset[str]) -> str:
         if pair not in unions:
             unions[pair] = u = f"u{len(unions)}"
             lines.append(f"    {u}(( )):::union")
-            lines.extend(f"    {node[pid]} --- {u}" for pid in sorted(pair, key=ids.index))
+            a, b = sorted(pair, key=ids.index)
+            details = tree.partnership(a, b)
+            link = "-.-" if details and details.status == "divorced" else "---"
+            lines.extend([f"    {node[a]} {link} {u}", f"    {node[b]} {link} {u}"])
         return unions[pair]
 
     for pid in ids:

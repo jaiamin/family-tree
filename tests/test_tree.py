@@ -1,6 +1,6 @@
 import pytest
 
-from family_tree_mcp.tree import Tree, kinship
+from family_tree_mcp.tree import NewPerson, Partnership, Tree, kinship
 
 
 @pytest.mark.parametrize(
@@ -16,8 +16,15 @@ from family_tree_mcp.tree import Tree, kinship
         ("me", "cousin-kid", "first cousin once removed"),
         ("kid", "cousin-kid", "second cousin"),
         ("dad", "mom", "partner"),
-        ("me", "uncle", "aunt's partner"),
-        ("mom", "grandma", "partner's mother"),
+        ("me", "uncle", "uncle by marriage"),
+        ("mom", "grandma", "mother-in-law"),
+        ("grandma", "mom", "daughter-in-law"),
+        ("sis", "mom", "mother"),
+        ("half", "mom", "stepmother"),
+        ("mom", "half", "stepson"),
+        ("mom", "aunt", "sister-in-law"),
+        ("cousin", "dad", "uncle"),
+        ("uncle", "cousin-kid", "partner's grandchild"),
         ("me", "me", "same person"),
         ("me", "stranger", "no known relationship"),
     ],
@@ -147,3 +154,92 @@ def test_children_and_siblings_are_ordered_by_birth() -> None:
         t.link(name.lower(), "parent", "parent")
     assert t.children("parent") == ["eldest", "middle", "youngest", "unknown"]
     assert t.siblings("unknown") == ["eldest", "middle", "youngest"]
+
+
+def test_add_people_links_batch_refs_and_existing_ids(tree: Tree) -> None:
+    ids = tree.add_people(
+        [
+            NewPerson(name="Ravi", sex="male", partners=["cousin"]),
+            NewPerson(ref="kid1", name="Asha", siblings=["Dev"]),
+            NewPerson(ref="kid2", name="Asha", parents=["Ravi", "cousin"]),
+            NewPerson(name="Dev", parents=["Ravi", "cousin"]),
+        ]
+    )
+    assert ids == {"Ravi": "ravi", "kid1": "asha", "kid2": "asha-2", "Dev": "dev"}
+    # Parents are linked before siblings, so Asha shares Dev's parents rather than a placeholder.
+    assert tree.get("asha").parents == ["ravi", "cousin"]
+    assert tree.relationship("me", "asha")["relationship"] == "first cousin once removed"
+
+
+def test_add_people_rejects_bad_batches(tree: Tree) -> None:
+    with pytest.raises(ValueError, match="Unknown person 'Nobody'"):
+        tree.add_people([NewPerson(name="Ravi", parents=["Nobody"])])
+    with pytest.raises(ValueError, match="appears twice"):
+        tree.add_people([NewPerson(name="Ravi"), NewPerson(name="Ravi")])
+
+
+def test_partner_details_infer_status_and_update(tree: Tree) -> None:
+    tree.link("dad", "partner", "mom", marriage_date="1988-06-01", marriage_place="Pune")
+    assert tree.partnership("mom", "dad") == Partnership(
+        status="married", marriage_date="1988-06-01", marriage_place="Pune"
+    )
+    tree.link("mom", "partner", "dad", status="divorced", divorce_date="2001")
+    assert tree.relationship("mom", "dad")["relationship"] == "ex-husband"
+    assert tree.profile("dad")["partners"][0] == {
+        "id": "mom", "name": "Mom", "status": "divorced",
+        "marriage_date": "1988-06-01", "marriage_place": "Pune", "divorce_date": "2001",
+    }  # fmt: skip
+    with pytest.raises(ValueError, match="only apply to partner"):
+        tree.link("me", "parent", "dad", status="married")
+    tree.unlink("dad", "partner", "mom")
+    assert tree.partnerships == {}
+
+
+def test_divorce_makes_step_and_in_law_relations_former(tree: Tree) -> None:
+    tree.link("dad", "partner", "ex", status="divorced")
+    assert tree.relationship("me", "ex")["relationship"] == "former stepmother"
+    assert tree.relationship("ex", "grandma")["relationship"] == "former mother-in-law"
+    assert tree.relationship("dad", "ex")["relationship"] == "ex-wife"
+
+
+def test_profile_marks_half_siblings(tree: Tree) -> None:
+    assert tree.profile("me")["siblings"] == [
+        {"id": "sis", "name": "Sis"},
+        {"id": "half", "name": "Half", "half": True},
+    ]
+
+
+def test_merge_moves_links_and_fills_details(tree: Tree) -> None:
+    tree.link("dad", "partner", "mom", status="married")
+    tree.add_person("Mother", birth_date="1962", notes="Loves chai")
+    tree.link("mother", "partner", "uncle")
+    tree.link("cousin", "parent", "mother")
+    tree.merge("mom", "mother")
+
+    mom = tree.get("mom")
+    assert "mother" not in tree.people
+    assert (mom.birth_date, mom.notes, mom.partners) == ("1962", "Loves chai", ["dad", "uncle"])
+    assert tree.get("cousin").parents == ["aunt", "mom"]
+    assert tree.partnership("mom", "dad") == Partnership(status="married")
+
+
+def test_merge_replaces_placeholder_parent(tree: Tree) -> None:
+    tree.add_person("Shashank")
+    tree.add_person("Mukul")
+    tree.link("shashank", "sibling", "mukul")
+    [placeholder] = tree.get("shashank").parents
+    tree.merge("grandpa", placeholder)
+    assert tree.relationship("mukul", "dad")["relationship"] == "half-brother"
+
+
+def test_merge_rejects_impossible_merges(tree: Tree) -> None:
+    with pytest.raises(ValueError, match="ancestor and descendant"):
+        tree.merge("me", "grandpa")
+    with pytest.raises(ValueError, match="3 parents"):
+        tree.merge("me", "cousin")
+
+
+def test_remove_person_drops_partnership_details(tree: Tree) -> None:
+    tree.link("dad", "partner", "mom", status="married")
+    tree.remove_person("mom")
+    assert tree.partnerships == {}

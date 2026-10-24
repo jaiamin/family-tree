@@ -60,3 +60,18 @@ def test_old_backups_are_pruned(tmp_path, monkeypatch) -> None:
     assert names(store) == ["A", "B"]
     with pytest.raises(ValueError, match="Nothing to undo"):
         store.undo("T")
+
+
+def test_rename_moves_tree_and_history(tmp_path) -> None:
+    store = Store(tmp_path)
+    store.create("T")
+    add(store, "Ann")
+    store.create("Taken")
+    with pytest.raises(ValueError, match="already exists"):
+        store.rename("T", "Taken")
+
+    store.rename("T", "Amin-Patel Family")
+    assert [t.name for t in store.trees()] == ["Amin-Patel Family", "Taken"]
+    store.undo("amin-patel-family")
+    assert store.load("Amin-Patel Family").name == "Amin-Patel Family"
+    assert store.load("Amin-Patel Family").people == {}

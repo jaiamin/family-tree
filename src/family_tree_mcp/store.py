@@ -53,12 +53,28 @@ class Store:
         self._backup(name)
         self._path(name).unlink()
 
+    def rename(self, name: str, new_name: str) -> Tree:
+        tree = self.load(name)
+        old, new = self._path(name), self._path(new_name)
+        if new != old and new.exists():
+            raise ValueError(f"Tree '{new_name}' already exists.")
+        tree.name = new_name
+        self.save(tree, backup=False)
+        if new != old:
+            old.unlink()
+            history = self.root / "backups" / old.stem
+            if history.exists() and not (target := self.root / "backups" / new.stem).exists():
+                history.rename(target)
+        return tree
+
     def undo(self, name: str) -> tuple[Tree, int]:
         """Restore the most recent backup, returning the tree and how many backups remain."""
         backups = self._backups(name)
         if not backups:
             raise ValueError(f"Nothing to undo for '{name}'.")
         tree = Tree.model_validate_json(backups[-1].read_text())
+        if self._path(name).exists():
+            tree.name = self.load(name).name  # keep the current name if it was renamed since
         self.save(tree, backup=False)
         backups[-1].unlink()
         return tree, len(backups) - 1
