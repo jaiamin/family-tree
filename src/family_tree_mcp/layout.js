@@ -99,7 +99,9 @@ async function layout(tree, direction = "DOWN") {
     if (together || f.parents.length === 1) {
       output = together
         ? port(u, `out:${f.key}`, horizontal ? u.width : CARD.w + ROUTE_GAP, horizontal ? u.height / 2 : u.height, horizontal ? "EAST" : "SOUTH")
-        : port(u, `out:${f.key}`, CARD.w, outlet(f.parents[0]), "EAST");
+        : !horizontal && u.members.length === 1
+          ? port(u, `out:${f.key}`, CARD.w / 2, CARD.h, "SOUTH")
+          : port(u, `out:${f.key}`, CARD.w, outlet(f.parents[0]), "EAST");
       f.internal = together;
     } else {
       // Each union gets its own junction, including former partnerships and half-sibling groups.
@@ -128,6 +130,7 @@ async function layout(tree, direction = "DOWN") {
   const graph = await new Elk().layout({ id: "tree", children: nodes, edges,
     layoutOptions: {
       "elk.algorithm": "layered", "elk.direction": direction, "elk.edgeRouting": "ORTHOGONAL",
+      "elk.layered.thoroughness": horizontal ? "7" : "20",
       "elk.separateConnectedComponents": "false", "elk.spacing.nodeNode": "32",
       "elk.layered.spacing.nodeNodeBetweenLayers": "72", "elk.spacing.edgeEdge": "12",
       "elk.layered.spacing.edgeEdgeBetweenLayers": "12",
