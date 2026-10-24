@@ -23,7 +23,7 @@ For Claude Code:
 claude mcp add family-tree -- uvx --from git+https://github.com/jaiamin/family-tree-mcp family-tree-mcp
 ```
 
-Trees are saved as JSON files in `~/.family-tree-mcp/`. Set `FAMILY_TREE_DIR` to store them elsewhere.
+Trees are saved as JSON files in `~/.family-tree-mcp/`. Set `FAMILY_TREE_DIR` to store them elsewhere. Every change keeps a backup of the previous version (the last 50 per tree), so `undo` can revert mistakes or restore a deleted tree.
 
 ## Model
 
@@ -39,6 +39,7 @@ Everything else (children, siblings, aunts, cousins, in-laws) is derived from th
 | Tool | Purpose |
 | --- | --- |
 | `list_trees`, `create_tree`, `delete_tree`, `get_tree` | Manage trees |
+| `undo` | Revert the last change, or restore a deleted tree |
 | `add_person`, `update_person`, `remove_person` | Manage people |
 | `add_relationship`, `remove_relationship` | Link people as `parent`, `child`, `partner` or `sibling` |
 | `find_people` | Search by name to get ids |

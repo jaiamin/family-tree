@@ -28,6 +28,7 @@ To show the tree visually, use get_diagram and display its output in a ```mermai
 block; use export_diagram when the user wants to download or share it. To move a
 tree to Ancestry, FamilySearch, MyHeritage, Gramps etc., use export_gedcom.
 Dates are free text; prefer ISO format (YYYY, YYYY-MM or YYYY-MM-DD).
+Every change is backed up: if you make a mistake, or the user asks to revert, use undo.
 """
 
 READ = ToolAnnotations(read_only_hint=True, open_world_hint=False)
@@ -50,7 +51,7 @@ def create_server(store: Store) -> FastMCP:
         """List all family trees with their size."""
         return [
             {"name": t.name, "description": t.description, "people": len(t.people)}
-            for t in store.list()
+            for t in store.trees()
         ]
 
     @mcp.tool(annotations=WRITE)
@@ -61,9 +62,18 @@ def create_server(store: Store) -> FastMCP:
 
     @mcp.tool(annotations=DELETE)
     def delete_tree(tree: TreeName) -> str:
-        """Permanently delete a family tree and everyone in it."""
+        """Delete a family tree and everyone in it. It can be restored with undo."""
         store.delete(tree)
-        return f"Deleted tree '{tree}'."
+        return f"Deleted tree '{tree}'. Call undo with this tree name to restore it."
+
+    @mcp.tool(annotations=DELETE)
+    def undo(tree: TreeName) -> dict:
+        """Revert the tree's most recent change, or restore it if it was deleted.
+
+        Call repeatedly to step further back. Undone changes cannot be redone.
+        """
+        restored, remaining = store.undo(tree)
+        return {"tree": restored.name, "people": len(restored.people), "undos_left": remaining}
 
     @mcp.tool(annotations=READ)
     def get_tree(tree: TreeName) -> dict:
