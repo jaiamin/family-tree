@@ -39,9 +39,10 @@ function halfSiblings(tree, a, b) {
 
 // Ancestry-style layout. Everyone with parents hangs below one family unit (a person plus the
 // partners who married in); couples sit side by side, centred over their children. From
-// generation `depth` down, each branch nests as an indented column instead, and runs of children
-// without families of their own always stack. layout() picks the depth that shows everyone at the
-// largest size in the given viewport; on portrait screens, families stack and only the width fits.
+// generation `depth` down, each branch nests as an indented column instead, where a couple stacks
+// into one joined card, and runs of children without families of their own always stack.
+// layout() picks the depth that shows everyone at the largest size in the given viewport; on
+// portrait screens, families stack and only the width fits.
 function layout(tree, viewport = { width: 1280, height: 800 }) {
   const ids = byBirth(tree, Object.keys(tree.people));
   const male = (id) => tree.people[id].sex === "male";
@@ -62,7 +63,12 @@ function layout(tree, viewport = { width: 1280, height: 800 }) {
     }
   }
   const headOf = (id) => spouseOf[id] || id;
-  const spouses = (head) => ids.filter((id) => spouseOf[id] === head);
+  const spouses = (head) => partnersOf(tree, head).filter((id) => spouseOf[id] === head);
+  // Side by side, someone with several partners sits between the first two.
+  const members = (head) => {
+    const s = spouses(head);
+    return s.length > 1 ? [s[0], head, ...s.slice(1)] : [head, ...s];
+  };
 
   // Children hang below their father's unit when both parents lead their own units.
   const kidsOf = {};
@@ -72,21 +78,36 @@ function layout(tree, viewport = { width: 1280, height: 800 }) {
     const father = parents.find((p) => male(p) && !spouseOf[p]);
     (kidsOf[father || headOf(parents[0])] ||= []).push(id);
   }
+  // Each couple's children sit together, in the order the couple appears.
+  const group = {};
+  for (const [head, kids] of Object.entries(kidsOf)) {
+    const order = members(head);
+    for (const kid of kids) {
+      const other = parentsOf(tree, kid).find((p) => p !== head && order.includes(p));
+      group[kid] = order.indexOf(other || head);
+    }
+    kids.sort((a, b) => group[a] - group[b]);
+  }
   const leaf = (id) => !kidsOf[id] && !partnersOf(tree, id).length;
   const unitWidth = (head) => (1 + spouses(head).length) * CARD.w + spouses(head).length * GAP.couple;
 
   // Boxes measure a branch, then place it with its top-left corner at (x, y).
   const nested = (head) => {
     const kids = (kidsOf[head] || []).map(nested);
-    const w = Math.max(unitWidth(head), ...kids.map((k) => GAP.indent + k.w));
-    const h = CARD.h + kids.reduce((sum, k) => sum + GAP.stack + k.h, 0);
+    const couple = [head, ...spouses(head)];
+    const top = couple.length * CARD.h;
+    const w = Math.max(CARD.w, ...kids.map((k) => GAP.indent + k.w));
+    const h = top + kids.reduce((sum, k) => sum + GAP.stack + k.h, 0);
     return { w, h, place(x, y, out, hang) {
-      unit(head, x, y, out);
+      couple.forEach((m, i) => {
+        out.pos[m] = { x, y: y + i * CARD.h };
+        if (couple.length > 1) out.pair[m] = i === 0 ? "top" : i === couple.length - 1 ? "bottom" : "middle";
+      });
       if (hang) out.hang[head] = hang;
-      let top = y + CARD.h;
+      let below = y + top;
       for (const k of kids) {
-        k.place(x + GAP.indent, top + GAP.stack, out, { x: x + GAP.indent / 2, y: y + CARD.h });
-        top += GAP.stack + k.h;
+        k.place(x + GAP.indent, below + GAP.stack, out, { x: x + GAP.indent / 2, y: y + top });
+        below += GAP.stack + k.h;
       }
     } };
   };
@@ -100,11 +121,18 @@ function layout(tree, viewport = { width: 1280, height: 800 }) {
       });
     },
   });
+  // A child who married into a neighbouring family moves to that side of the row, so the
+  // couple sits next to each other instead of being joined by a line across the tree.
+  const side = (kid) => {
+    const here = ordered.indexOf(rootOf(kid));
+    const there = [kid, ...spouses(kid)].flatMap((m) => partnersOf(tree, m)).map((p) => ordered.indexOf(rootOf(p)));
+    return there.some((i) => i > here) ? 1 : there.some((i) => i < here) ? -1 : 0;
+  };
   const spread = (head, level, depth) => {
     const kids = [];
-    for (const kid of kidsOf[head] || []) {
+    for (const kid of [...(kidsOf[head] || [])].sort((a, b) => side(a) - side(b))) {
       const last = kids[kids.length - 1];
-      if (leaf(kid) && last?.run) last.run.push(kid);
+      if (leaf(kid) && last?.run && group[last.run[0]] === group[kid]) last.run.push(kid);
       else kids.push(leaf(kid) ? { run: [kid] } : { id: kid });
     }
     const boxes = kids.map((k) =>
@@ -123,7 +151,7 @@ function layout(tree, viewport = { width: 1280, height: 800 }) {
     } };
   };
   const unit = (head, x, y, out) => {
-    [head, ...spouses(head)].forEach((m, i) => (out.pos[m] = { x: x + i * (CARD.w + GAP.couple), y }));
+    members(head).forEach((m, i) => (out.pos[m] = { x: x + i * (CARD.w + GAP.couple), y }));
   };
 
   // Root families sit side by side, with families linked by marriage next to each other.
@@ -152,7 +180,8 @@ function layout(tree, viewport = { width: 1280, height: 800 }) {
     const scale = Math.min(1, viewport.width / w, portrait ? 1 : viewport.height / h);
     if (!best || scale >= best.scale - 1e-9) best = { boxes, w, h, scale };
   }
-  const out = { pos: {}, spine: {}, hang: {} };
+  const out = { pos: {}, spine: {}, hang: {}, pair: {}, family: {} };
+  for (const [head, kids] of Object.entries(kidsOf)) for (const kid of kids) out.family[kid] = head;
   let offset = 0;
   for (const box of best?.boxes || []) {
     portrait ? box.place((best.w - box.w) / 2, offset, out) : box.place(offset, 0, out);

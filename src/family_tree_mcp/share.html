@@ -8,6 +8,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap">
+<script>
+  try { if (localStorage.getItem("theme") === "dark") document.documentElement.dataset.theme = "dark"; } catch {}
+</script>
 <style>
   :root {
     --bg: #fafafa; --surface: #ffffff; --fg: #09090b; --muted: #71717a; --border: #e4e4e7;
@@ -15,13 +18,11 @@
     --shadow: 0 1px 2px rgb(0 0 0 / .05); --shadow-lg: 0 12px 32px -8px rgb(0 0 0 / .18), 0 2px 6px rgb(0 0 0 / .06);
     color-scheme: light;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #09090b; --surface: #18181b; --fg: #fafafa; --muted: #a1a1aa; --border: #27272a;
-      --border-strong: #52525b; --line: #3f3f46; --line-on: #fafafa; --chip: #27272a;
-      --shadow: none; --shadow-lg: 0 12px 32px -8px rgb(0 0 0 / .6);
-      color-scheme: dark;
-    }
+  :root[data-theme="dark"] {
+    --bg: #09090b; --surface: #18181b; --fg: #fafafa; --muted: #a1a1aa; --border: #27272a;
+    --border-strong: #52525b; --line: #3f3f46; --line-on: #fafafa; --chip: #27272a;
+    --shadow: none; --shadow-lg: 0 12px 32px -8px rgb(0 0 0 / .6);
+    color-scheme: dark;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
@@ -36,13 +37,21 @@
   svg.icon { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 
   header {
-    display: flex; align-items: center; gap: 16px; padding: 12px max(16px, env(safe-area-inset-right)) 12px max(16px, env(safe-area-inset-left));
+    display: flex; align-items: center; gap: 8px; padding: 12px max(16px, env(safe-area-inset-right)) 12px max(16px, env(safe-area-inset-left));
     padding-top: max(12px, env(safe-area-inset-top)); border-bottom: 1px solid var(--border); background: var(--surface); z-index: 3;
   }
   .title { min-width: 0; flex: 1; }
   h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .count { color: var(--muted); font-size: 13px; }
-  .search { position: relative; width: min(320px, 46vw); }
+  .search { position: relative; width: min(320px, 40vw); }
+  .actions { display: flex; gap: 8px; }
+  .icon-button {
+    display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface); color: var(--muted); cursor: pointer; transition: background-color .15s, color .15s;
+  }
+  .icon-button:hover { background: var(--chip); color: var(--fg); }
+  .icon-button svg.icon { width: 16px; height: 16px; }
+  :root:not([data-theme="dark"]) .sun, :root[data-theme="dark"] .moon { display: none; }
   .search svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
   .search input {
     width: 100%; height: 36px; padding: 0 12px 0 34px; border: 1px solid var(--border); border-radius: 8px;
@@ -65,8 +74,9 @@
   #stage.glide { transition: transform .45s cubic-bezier(.16, 1, .3, 1); }
   #lines { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
   #lines path { fill: none; stroke: var(--line); stroke-width: 1.5; }
-  #lines path.ended { stroke-dasharray: 5 4; }
   #lines path.on { stroke: var(--line-on); stroke-width: 2; }
+  #lines path.dot { fill: var(--line); stroke: none; }
+  #lines path.dot.on { fill: var(--line-on); }
 
   .person {
     position: absolute; display: flex; align-items: center; gap: 10px; padding: 0 12px; text-align: left; cursor: pointer;
@@ -74,7 +84,15 @@
     transition: border-color .15s, box-shadow .15s, opacity .2s;
   }
   .person:hover { border-color: var(--border-strong); }
-  .person.selected { border-color: var(--fg); box-shadow: 0 0 0 1px var(--fg), var(--shadow); }
+  /* A ring of its own, so joined couple cards (which drop a border) and zoom rounding can't eat an edge. */
+  .person.selected { z-index: 1; }
+  .person.selected::after {
+    content: ""; position: absolute; inset: -1px; border: 2px solid var(--fg); border-radius: inherit; pointer-events: none;
+  }
+  .person.pair-top { border-bottom-width: 0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+  .person.pair-middle { border-bottom-width: 0; border-radius: 0; box-shadow: none; }
+  .person.pair-bottom { border-top-left-radius: 0; border-top-right-radius: 0; }
+  .person.pair-top { box-shadow: none; }
   .person.unknown { border-style: dashed; box-shadow: none; background: transparent; color: var(--muted); }
   .dim .person:not(.related) { opacity: .45; }
   .avatar {
@@ -97,8 +115,9 @@
   #card {
     position: absolute; z-index: 4; width: 320px; max-height: calc(100% - 32px); overflow: auto; padding: 16px;
     background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-lg); cursor: auto; user-select: text; -webkit-user-select: text;
-    animation: rise .2s cubic-bezier(.16, 1, .3, 1);
   }
+  #card:not(.waiting) { animation: rise .2s cubic-bezier(.16, 1, .3, 1); }
+  #card.waiting { visibility: hidden; }
   @keyframes rise { from { opacity: 0; transform: translateY(4px); } }
   #card .top { display: flex; align-items: center; gap: 12px; padding-right: 28px; }
   #card h2 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
@@ -111,22 +130,30 @@
   #card section { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
   #card h3 { margin: 0 0 6px; font-size: 12px; font-weight: 500; color: var(--muted); }
   .relative {
-    display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px 8px; margin: 0 -8px; width: calc(100% + 16px);
+    display: flex; align-items: center; gap: 10px; padding: 7px 8px; margin: 0 -8px; width: calc(100% + 16px);
     border: 0; border-radius: 8px; background: none; text-align: left; cursor: pointer;
   }
   .relative:hover { background: var(--chip); }
-  .relative .avatar { width: 26px; height: 26px; font-size: 11px; }
+  .relative .name { min-width: 0; }
   .relative .note { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; }
+  #card .actions { display: flex; gap: 8px; margin-top: 16px; }
+  #card .action {
+    flex: 1; height: 36px; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px; white-space: nowrap;
+    background: var(--surface); font-size: 13px; font-weight: 500; cursor: pointer; transition: background-color .15s;
+  }
+  #card .action:hover, #card .action[aria-pressed="true"] { background: var(--chip); }
+  #card .who { min-width: 0; }
   #card .none { margin: 14px 0 0; color: var(--muted); font-size: 13px; }
   .empty-tree { display: grid; place-items: center; height: 100%; color: var(--muted); }
 
   @media (max-width: 640px) {
-    header { gap: 12px; }
+    header { gap: 8px; }
     .count { display: none; }
     #card {
       position: fixed; left: 0; right: 0; bottom: 0; top: auto !important; width: auto; max-height: 70vh;
-      border-radius: 16px 16px 0 0; padding-bottom: max(16px, env(safe-area-inset-bottom)); animation-name: sheet;
+      border-radius: 16px 16px 0 0; padding-bottom: max(16px, env(safe-area-inset-bottom));
     }
+    #card:not(.waiting) { animation-name: sheet; }
     @keyframes sheet { from { transform: translateY(24px); opacity: 0; } }
   }
   @media (prefers-reduced-motion: reduce) { #stage.glide, #card { transition: none; animation: none; } }
@@ -143,6 +170,15 @@
     <input id="search" type="search" placeholder="Find a person" autocomplete="off" aria-label="Find a person"
       role="combobox" aria-expanded="false" aria-controls="results">
     <ul class="results" id="results" role="listbox" hidden></ul>
+  </div>
+  <div class="actions">
+    <a class="icon-button" href="https://github.com/jaiamin/family-tree-mcp" target="_blank" rel="noopener" aria-label="family-tree-mcp on GitHub" title="GitHub">
+      <svg class="icon" viewBox="0 0 24 24"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>
+    </a>
+    <button class="icon-button" id="theme" aria-label="Switch light or dark mode" title="Light or dark">
+      <svg class="icon moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+      <svg class="icon sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+    </button>
   </div>
 </header>
 <main id="view" aria-label="Family tree">
@@ -172,10 +208,15 @@ const initials = (id) =>
   PLACEHOLDER.test(person(id).name) ? "?" : (person(id).name.match(/\p{L}+/gu) || ["?"]).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
 const year = (date) => date?.match(/\d{4}/)?.[0] || date;
 function years(p) {
-  if (p.birth_date && p.death_date) return `${year(p.birth_date)} – ${year(p.death_date)}`;
-  if (p.birth_date) return `Born ${year(p.birth_date)}`;
-  if (p.death_date) return `Died ${year(p.death_date)}`;
+  if (p.birth_date && p.death_date) return `${year(p.birth_date)}–${year(p.death_date)}`;
+  if (p.birth_date) return `b. ${year(p.birth_date)}`;
+  if (p.death_date) return `d. ${year(p.death_date)}`;
   return "";
+}
+// "1915–1998 · 83 years" when both years are known.
+function lifespan(p) {
+  const [born, died] = [p.birth_date, p.death_date].map((d) => Number(d?.match(/\d{4}/)?.[0]));
+  return born && died && died >= born ? `${years(p)} · ${died - born} years` : "";
 }
 function el(tag, attrs = {}, ...kids) {
   const node = document.createElement(tag);
@@ -185,27 +226,32 @@ function el(tag, attrs = {}, ...kids) {
 }
 const avatar = (id, size = "") => el("span", { class: `avatar ${size}`, "aria-hidden": "true" }, initials(id));
 
+$("theme").onclick = () => {
+  const dark = document.documentElement.dataset.theme !== "dark";
+  dark ? (document.documentElement.dataset.theme = "dark") : delete document.documentElement.dataset.theme;
+  try { localStorage.setItem("theme", dark ? "dark" : "light"); } catch {}
+};
 $("title").textContent = tree.name;
 $("count").textContent = `${ids.length} ${ids.length === 1 ? "person" : "people"}`;
 document.title = tree.name;
 
 // Tree
 
-const { pos, spine, hang, portrait, card, gap, width, height } = layout(tree, { width: innerWidth, height: innerHeight - 64 });
+const { pos, spine, hang, pair, family, portrait, card, gap, width, height } = layout(tree, { width: innerWidth, height: innerHeight - 64 });
 const PAD = 48;
 stage.style.width = `${width + PAD * 2}px`;
 stage.style.height = `${height + PAD * 2}px`;
 const lines = $("lines");
 lines.setAttribute("width", width + PAD * 2);
 lines.setAttribute("height", height + PAD * 2);
-const at = (id) => ({ x: pos[id].x + PAD, y: pos[id].y + PAD });
+const at = (id) => ({ x: Math.round(pos[id].x) + PAD, y: Math.round(pos[id].y) + PAD });
 
 const cards = {};
 for (const id of ids) {
   const p = person(id);
   const node = el(
     "button",
-    { class: `person${PLACEHOLDER.test(p.name) ? " unknown" : ""}`, "data-id": id, "aria-label": `${p.name}${years(p) ? `, ${years(p)}` : ""}` },
+    { class: `person${PLACEHOLDER.test(p.name) ? " unknown" : ""}${pair[id] ? ` pair-${pair[id]}` : ""}`, "data-id": id, "aria-label": `${p.name}${years(p) ? `, ${years(p)}` : ""}` },
     avatar(id),
     el("span", { class: "text" }, el("span", { class: "name" }, displayName(id)), years(p) && el("span", { class: "years" }, years(p))),
   );
@@ -215,53 +261,93 @@ for (const id of ids) {
 }
 
 const edges = [];
-function edge(d, people, ended = false) {
+function edge(d, kind, people, className = "") {
   const path = document.createElementNS(svgNS, "path");
   path.setAttribute("d", d);
-  if (ended) path.classList.add("ended");
+  if (className) path.setAttribute("class", className);
   lines.append(path);
-  edges.push({ path, people });
+  edges.push({ path, kind, people });
+  return path;
 }
-const ended = (a, b) => partnership(tree, a, b)?.status === "divorced";
-const drawn = new Set();
+const arc = (a, b, lift) => `M${a.x + card.w / 2},${a.y}C${a.x + card.w / 2},${a.y - lift} ${b.x + card.w / 2},${b.y - lift} ${b.x + card.w / 2},${b.y}`;
+const linked = new Set();
+// Side by side on one row with no one in between.
+const adjacent = (a, b) => {
+  const [p, q] = [at(a), at(b)].sort((m, n) => m.x - n.x);
+  return p.y === q.y && !ids.some((o) => at(o).y === p.y && at(o).x > p.x && at(o).x < q.x);
+};
+// The middle of the line joining a couple.
+const join = (a, b) => {
+  const [p, q] = [at(a), at(b)].sort((m, n) => m.x - n.x);
+  return { x: (p.x + card.w + q.x) / 2, y: p.y + card.h / 2 };
+};
 for (const id of ids) {
   for (const other of partnersOf(tree, id)) {
     const key = [id, other].sort().join("+");
-    if (drawn.has(key)) continue;
-    drawn.add(key);
+    if (linked.has(key)) continue;
+    // A couple stacked into one card in a column is already joined.
+    if (pair[id] && pair[other] && at(id).x === at(other).x) {
+      linked.add(key);
+      continue;
+    }
     const [a, b] = [at(id), at(other)].sort((p, q) => p.x - q.x);
-    if (a.y !== b.y) continue; // partners in different branches and rows are linked in their cards
-    if (b.x - a.x <= card.w + 24) edge(`M${a.x + card.w},${a.y + card.h / 2}H${b.x}`, [id, other], ended(id, other));
-    else {
+    // Partners in different branches and rows get a line only while one of them is selected.
+    if (a.y !== b.y) continue;
+    linked.add(key);
+    if (adjacent(id, other)) {
+      edge(`M${a.x + card.w},${a.y + card.h / 2}H${b.x}`, "couple", [id, other]);
+      // A dot where the couple's children hang from.
+      if (children(tree, id).some((c) => parentsOf(tree, c).includes(other))) {
+        const { x, y } = join(id, other);
+        edge(`M${x - 3.5},${y}a3.5,3.5 0 1,0 7,0a3.5,3.5 0 1,0 -7,0`, "couple", [id, other], "dot");
+      }
+    } else {
       // Partners from different branches on one row: an arc over the cards between them.
-      const lift = Math.min(64, 24 + (b.x - a.x) / 20);
-      edge(`M${a.x + card.w / 2},${a.y}C${a.x + card.w / 2},${a.y - lift} ${b.x + card.w / 2},${b.y - lift} ${b.x + card.w / 2},${b.y}`, [id, other], ended(id, other));
+      edge(arc(a, b, Math.min(64, 24 + (b.x - a.x) / 20)), "couple", [id, other]);
     }
   }
 }
+
+// Where a child's line starts shows their parents: from the couple's join when both are known
+// and side by side, otherwise from the one parent's card.
+function origin(id) {
+  const parents = parentsOf(tree, id);
+  if (parents.length === 2 && adjacent(...parents)) return join(...parents);
+  const kid = at(id);
+  const near = parents.map(at).sort((p, q) => Math.abs(p.x - kid.x) - Math.abs(q.x - kid.x))[0];
+  return { x: near.x + card.w / 2, y: near.y + card.h };
+}
+// When one family has children from several couples, each couple's bus runs at its own height.
+const lanes = {};
+for (const id of ids) {
+  if (!parentsOf(tree, id).length || hang[id]) continue;
+  const o = origin(id);
+  const list = (lanes[family[id]] ||= []);
+  if (!list.some((x) => x === o.x)) list.push(o.x);
+}
+for (const list of Object.values(lanes)) list.sort((a, b) => a - b);
+
 for (const id of ids) {
   const parents = parentsOf(tree, id);
   if (!parents.length) continue;
   const kid = at(id);
-  const busY = Math.max(...parents.map((p) => at(p).y)) + card.h + gap.row / 2;
-  const [a, b] = parents.map(at);
-  // From between two side-by-side parents, otherwise from below the parent in this branch.
-  let from;
-  if (b && a.y === b.y && Math.abs(a.x - b.x) <= card.w + 24) from = { x: (Math.min(a.x, b.x) + Math.max(a.x, b.x) + card.w) / 2, y: a.y + card.h / 2 };
-  else {
-    const near = parents.map((p) => [p, at(p)]).sort(([, p], [, q]) => Math.abs(p.x - kid.x) - Math.abs(q.x - kid.x))[0][1];
-    from = { x: near.x + card.w / 2, y: near.y + card.h };
-  }
+  const from = origin(id);
+  const mid = kid.y + card.h / 2;
   if (hang[id]) {
-    // Nested branches: a line down the parent's left side, then across to the child.
-    edge(`M${hang[id].x + PAD},${hang[id].y + PAD}V${kid.y + card.h / 2}H${kid.x}`, [id, ...parents]);
+    // Nested branches: a line down the parent's left side, then across to the child. A child of
+    // a couple from two families leaves from the couple's join and turns into that line.
+    const h = { x: hang[id].x + PAD, y: hang[id].y + PAD };
+    const d = parents.length === 2 && adjacent(...parents)
+      ? `M${from.x},${from.y}V${h.y + gap.stack / 2}H${h.x}V${mid}H${kid.x}`
+      : `M${h.x},${h.y}V${mid}H${kid.x}`;
+    edge(d, "child", [id, ...parents]);
     continue;
   }
+  const list = lanes[family[id]] || [from.x];
+  const busY = at(family[id] || parents[0]).y + card.h + gap.row / 2 + (list.indexOf(from.x) - (list.length - 1) / 2) * 10;
   // Stacked children hang off a spine down their column's left side.
-  const end = spine[id]
-    ? `H${spine[id].x + PAD}V${kid.y + card.h / 2}H${kid.x}`
-    : `H${kid.x + card.w / 2}V${kid.y}`;
-  edge(`M${from.x},${from.y}V${busY}${end}`, [id, ...parents]);
+  const end = spine[id] ? `H${spine[id].x + PAD}V${mid}H${kid.x}` : `H${kid.x + card.w / 2}V${kid.y}`;
+  edge(`M${from.x},${from.y}V${busY}${end}`, "child", [id, ...parents]);
 }
 
 // Pan and zoom
@@ -270,6 +356,7 @@ const camera = { x: 0, y: 0, scale: 1 };
 function apply(glide = false) {
   stage.classList.toggle("glide", glide);
   stage.style.transform = `translate(${camera.x}px, ${camera.y}px) scale(${camera.scale})`;
+  place();
 }
 function zoomAt(scale, cx = view.clientWidth / 2, cy = view.clientHeight / 2, glide = false) {
   scale = Math.min(2, Math.max(0.15, scale));
@@ -287,15 +374,40 @@ function fit(glide = false) {
   camera.y = Math.max(0, (view.clientHeight - h * camera.scale) / 2);
   apply(glide);
 }
-function centreOn(id) {
-  const scale = Math.max(camera.scale, Math.min(1, view.clientWidth / 640));
+// The part of the screen left free by the person's card: the top on phones, the left otherwise.
+function room() {
   const narrow = matchMedia("(max-width: 640px)").matches;
-  const p = at(id);
+  const sheet = narrow ? $("card")?.offsetHeight || view.clientHeight * 0.55 : 0;
+  return { w: view.clientWidth * (narrow ? 1 : 0.68), h: Math.max(120, view.clientHeight - sheet) };
+}
+function bounds(group) {
+  const xs = group.map((g) => at(g).x);
+  const ys = group.map((g) => at(g).y);
+  return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs) + card.w, h: Math.max(...ys) - Math.min(...ys) + card.h };
+}
+function inView(group) {
+  const b = bounds(group);
+  const { w, h } = room();
+  const [x, y, s] = [camera.x, camera.y, camera.scale];
+  return x + b.x * s >= 0 && y + b.y * s >= 0 && x + (b.x + b.w) * s <= w && y + (b.y + b.h) * s <= h && s >= 0.6;
+}
+// Frames the person with their line, zooming out only as far as needed.
+function centreOn([id, ...group]) {
+  const b = bounds([id, ...group]);
+  const { w, h } = room();
+  const scale = Math.max(0.6, Math.min(1, (w - 48) / b.w, (h - 48) / b.h));
   camera.scale = scale;
-  // Leave room on the right for the person's card on wider screens.
-  camera.x = view.clientWidth * (narrow ? 0.5 : 0.36) - (p.x + card.w / 2) * scale;
-  camera.y = (narrow ? view.clientHeight * 0.22 : view.clientHeight / 2) - (p.y + card.h / 2) * scale;
+  camera.x = w / 2 - (b.x + b.w / 2) * scale;
+  // Near the top rather than centred: trees grow downward, so this shows more of the family below.
+  camera.y = Math.min(h / 2 - (b.y + b.h / 2) * scale, 64 - b.y * scale);
+  // When the whole line can't fit at a readable size, keep the person in view.
+  const p = at(id);
+  const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+  camera.x = clamp(camera.x, 24 - p.x * scale, w - 24 - (p.x + card.w) * scale);
+  camera.y = clamp(camera.y, 24 - p.y * scale, h - 24 - (p.y + card.h) * scale);
+  const before = stage.style.transform;
   apply(true);
+  return stage.style.transform !== before;
 }
 
 const pointers = new Map();
@@ -350,8 +462,10 @@ $("zoom-fit").onclick = () => { close(); fit(true); };
 // Person card
 
 let selected = null;
+// Each relative's years tell apart people who share a name.
 function relativeRow(id, note = "") {
-  const row = el("button", { class: "relative" }, avatar(id), el("span", { class: "name" }, displayName(id)), note && el("span", { class: "note" }, note));
+  const side = [note, years(person(id))].filter(Boolean).join(" · ");
+  const row = el("button", { class: "relative" }, el("span", { class: "name" }, displayName(id)), side && el("span", { class: "note" }, side));
   row.onclick = () => select(id, true);
   return row;
 }
@@ -361,23 +475,84 @@ function group(title, list, note) {
 }
 function partnerNote(id, other) {
   const d = partnership(tree, id, other) || {};
-  if (d.status === "divorced") return d.divorce_date ? `Divorced ${year(d.divorce_date)}` : "Divorced";
   if (d.status === "married") return d.marriage_date ? `Married ${year(d.marriage_date)}` : "Married";
   return "";
 }
 
-function select(id, glide = false) {
-  if (selected) cards[selected].classList.remove("selected");
-  selected = id;
-  const p = person(id);
+const walk = (start, step) => {
+  const seen = new Set();
+  const queue = [start];
+  while (queue.length) for (const next of step(queue.shift())) if (!seen.has(next)) seen.add(next) && queue.push(next);
+  return seen;
+};
+
+// Lights up someone's line from the oldest ancestors down to their children (or, with branch,
+// all their descendants) and fades everyone who isn't close family.
+function highlight(id, branch = false) {
+  unhighlight();
   const partners = partnersOf(tree, id);
-  const related = new Set([id, ...parentsOf(tree, id), ...partners, ...children(tree, id), ...siblings(tree, id)]);
+  const down = branch ? walk(id, (x) => children(tree, x)) : new Set(children(tree, id));
+  const line = new Set([id, ...walk(id, (x) => parentsOf(tree, x)), ...down]);
+  const related = new Set([...line, ...partners, ...siblings(tree, id), ...(branch ? [...down].flatMap((d) => partnersOf(tree, d)) : [])]);
   stage.classList.add("dim");
   for (const other of ids) cards[other].classList.toggle("related", related.has(other));
   cards[id].classList.add("selected");
-  for (const { path, people } of edges) path.classList.toggle("on", people.includes(id) && people.every((x) => related.has(x)));
+  for (const { path, kind, people: [a, ...rest] } of edges) {
+    const on = kind === "child" ? line.has(a) && rest.some((x) => line.has(x)) : related.has(a) && related.has(rest[0]) && (line.has(a) || line.has(rest[0]));
+    path.classList.toggle("on", on);
+    // Shared bus segments: highlighted lines go on top so grey siblings can't cover them.
+    if (on) lines.append(path);
+  }
+  for (const other of partners) {
+    if (linked.has([id, other].sort().join("+"))) continue;
+    // Side to side between the two cards, or around the left of a shared column.
+    const [a, b] = [at(id), at(other)].sort((p, q) => p.x - q.x);
+    const [ay, by] = [a.y + card.h / 2, b.y + card.h / 2];
+    const d = b.x - a.x >= card.w + 24
+      ? `M${a.x + card.w},${ay}C${(a.x + card.w + b.x) / 2},${ay} ${(a.x + card.w + b.x) / 2},${by} ${b.x},${by}`
+      : `M${a.x},${ay}C${a.x - 48},${ay} ${b.x - 48},${by} ${b.x},${by}`;
+    edge(d, "temp", [id, other], "on temp");
+  }
+  return related;
+}
 
-  $("card")?.remove();
+function select(id, glide = false) {
+  clear();
+  selected = id;
+  const p = person(id);
+  const partners = partnersOf(tree, id);
+  const up = walk(id, (x) => parentsOf(tree, x));
+  const related = highlight(id);
+  const branch = [...walk(id, (x) => children(tree, x))];
+  const link = el("button", { class: "action" }, "Copy link");
+  link.onclick = async () => {
+    const url = `${location.href.split("#")[0]}#${id}`;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      // Older browsers: copy through a hidden field.
+      const field = el("textarea", { readonly: "", style: "position:fixed;opacity:0" });
+      field.value = url;
+      document.body.append(field);
+      field.select();
+      document.execCommand("copy");
+      field.remove();
+    }
+    link.textContent = "Link copied";
+    setTimeout(() => (link.textContent = "Copy link"), 1500);
+  };
+  let toggle = null;
+  if (branch.length > children(tree, id).length) {
+    toggle = el("button", { class: "action", "aria-pressed": "false" }, "Show all descendants");
+    toggle.onclick = () => {
+      const on = toggle.getAttribute("aria-pressed") !== "true";
+      toggle.setAttribute("aria-pressed", String(on));
+      toggle.textContent = on ? "Hide descendants" : "Show all descendants";
+      highlight(id, on);
+      if (on && !inView([id, ...branch])) centreOn([id, ...branch]);
+    };
+  }
+
   const facts = [
     ["Born", [p.birth_date, p.birth_place && `in ${p.birth_place}`].filter(Boolean).join(" ")],
     ["Died", p.death_date],
@@ -385,14 +560,16 @@ function select(id, glide = false) {
   const box = el(
     "div",
     { id: "card", role: "dialog", "aria-label": p.name },
-    el("div", { class: "top" }, avatar(id, "lg"), el("div", {}, el("h2", {}, displayName(id)), p.birth_date && p.death_date && el("span", { class: "years" }, years(p)))),
+    el("div", { class: "top" }, avatar(id, "lg"), el("div", { class: "who" }, el("h2", {}, displayName(id)), lifespan(p) && el("span", { class: "years" }, lifespan(p)))),
     facts.length ? el("dl", {}, ...facts.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)])) : null,
     p.notes && el("p", { class: "notes" }, p.notes),
+    p.private && el("p", { class: "none" }, "Details are hidden for living people."),
     group("Parents", parentsOf(tree, id)),
     group(partners.length > 1 ? "Partners" : "Partner", partners, (o) => partnerNote(id, o)),
     group("Siblings", siblings(tree, id), (o) => (halfSiblings(tree, id, o) ? "Half" : "")),
     group("Children", children(tree, id)),
     related.size === 1 ? el("p", { class: "none" }, "No family recorded yet.") : null,
+    el("div", { class: "actions" }, toggle, link),
   );
   const shut = el("button", { class: "close", "aria-label": "Close" });
   shut.innerHTML = '<svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>';
@@ -400,27 +577,52 @@ function select(id, glide = false) {
   box.append(shut);
   view.append(box);
 
-  if (glide) centreOn(id);
-  requestAnimationFrame(place);
-  setTimeout(place, 480);
+  // While the tree glides to the person, the card waits at its final spot and appears on arrival.
+  const frame = [id, ...up, ...children(tree, id), ...partners];
+  if (glide || !inView(frame)) {
+    box.classList.add("waiting");
+    const show = () => {
+      box.classList.remove("waiting");
+      stage.removeEventListener("transitionend", arrived);
+    };
+    // Cards fade too; only the stage's own move counts as arriving.
+    const arrived = (e) => e.target === stage && e.propertyName === "transform" && show();
+    if (centreOn(frame)) {
+      stage.addEventListener("transitionend", arrived);
+      setTimeout(show, 600);
+    } else show();
+  }
+  place();
   history.replaceState(null, "", `#${id}`);
 }
+// Positions come from the camera, not the DOM, so the card never reads a half-finished glide.
 function place() {
   const box = $("card");
   if (!box || !selected || matchMedia("(max-width: 640px)").matches) return;
-  const r = cards[selected].getBoundingClientRect();
-  const v = view.getBoundingClientRect();
-  const right = r.right - v.left + 12;
-  const left = right + box.offsetWidth > v.width - 16 ? r.left - v.left - box.offsetWidth - 12 : right;
-  box.style.left = `${Math.max(16, left)}px`;
-  box.style.top = `${Math.min(Math.max(16, r.top - v.top), v.height - box.offsetHeight - 16)}px`;
+  const { x, y } = at(selected);
+  const s = camera.scale;
+  const [left, top, w] = [camera.x + x * s, camera.y + y * s, card.w * s];
+  const [vw, vh, bw, bh] = [view.clientWidth, view.clientHeight, box.offsetWidth, box.offsetHeight];
+  // Clear of the indented children below the person, too.
+  const right = left + w + 2 * gap.indent * s + 12;
+  const side = right + bw > vw - 16 ? left - bw - 12 : right;
+  box.style.left = `${Math.min(Math.max(16, side), vw - bw - 16)}px`;
+  box.style.top = `${Math.min(Math.max(16, top), vh - bh - 16)}px`;
 }
-function close() {
+function clear() {
   $("card")?.remove();
   if (selected) cards[selected].classList.remove("selected");
+  unhighlight();
+}
+function unhighlight() {
+  for (const { path } of edges) path.classList.remove("on");
+  edges.filter((e) => e.kind === "temp").forEach((e) => e.path.remove());
+  edges.splice(0, edges.length, ...edges.filter((e) => e.kind !== "temp"));
+}
+function close() {
+  clear();
   selected = null;
   stage.classList.remove("dim");
-  for (const { path } of edges) path.classList.remove("on");
   history.replaceState(null, "", location.pathname);
 }
 stage.addEventListener("click", (e) => {
@@ -429,8 +631,6 @@ stage.addEventListener("click", (e) => {
   node ? select(node.dataset.id) : close();
 });
 view.addEventListener("click", (e) => { if (!moved && e.target === view) close(); });
-const observer = new MutationObserver(() => requestAnimationFrame(place));
-observer.observe(stage, { attributes: true, attributeFilter: ["style"] });
 addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
 addEventListener("resize", place);
 
