@@ -70,6 +70,16 @@ The viewer uses one top-to-bottom graph with compact couples, search, pan and zo
 
 Use your own empty data folder, configure your own website title and Cloudflare project, and create your own trees. No family records, website name, domain or family name are built into the source. Separate installations use separate collections and Cloudflare projects; UUID sharing applies within one collection.
 
+## Agent workflow
+
+1. Start with `list_trees`, `get_website` and `find_people` without a tree filter. Search globally before creating a person; use returned UUIDs rather than inventing IDs.
+2. Use `configure_website` once for the site name/project. Create trees with `create_tree`; use `add_people` with batch `ref` values to add people and explicit parent/partner links. The gender field is `sex`, accepting `male` or `female` (omit when unknown).
+3. Use `update_people` for batch corrections and partnership status. For a link, `relative_id` is `person_id`'s `relation`. A partner is never automatically a parent. Don't add guessed parents or dates to silence review notes.
+4. Use `set_tree_members` to share an existing person across trees. Membership removal affects only that tree; `remove_person` and `merge_people` affect every tree. `undo` reverses the last collection-wide transaction.
+5. Verify records with `get_tree` and `check_tree`, then `export_website` for local review. Only call `publish_site` after publication is requested; it publishes all trees, and subsequent tool edits update it automatically while the server runs. Use `get_website` to inspect update status.
+
+For a fresh start, preserve the previous data folder, configure a new empty **absolute** `FAMILY_TREE_DIR` in your MCP client, and restart the server. Don't delete the original records or remote photo storage until the rebuilt collection has been checked. New UUIDs mean old person links and photos need to be recreated.
+
 ## Local preview
 
 Call `export_website(hide_living=True)` and serve the returned folder:
