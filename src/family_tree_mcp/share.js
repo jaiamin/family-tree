@@ -94,6 +94,49 @@ document.querySelector(".tree-picker").addEventListener("keydown", (event) => {
 $("count").textContent = `${ids.length} ${ids.length === 1 ? "person" : "people"}`;
 document.title = `${tree.name} · ${tree.site_name}`;
 
+let shareNotice;
+async function shareLink(button, title, url) {
+  const focus = document.activeElement;
+  button.disabled = true;
+  const status = $("share-status");
+  clearTimeout(shareNotice);
+  status.textContent = "";
+  const notify = (message) => {
+    status.textContent = message;
+    shareNotice = setTimeout(() => { status.textContent = ""; }, 3000);
+  };
+  try {
+    if (navigator.share) {
+      try {
+        await navigator.share({ title, url });
+        return;
+      } catch (error) {
+        if (error.name === "AbortError") return;
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      const field = el("textarea", { readonly: "", style: "position:fixed;opacity:0" });
+      field.value = url;
+      document.body.append(field);
+      try {
+        field.select();
+        if (!document.execCommand("copy")) throw new Error("Copy failed");
+      } finally {
+        field.remove();
+      }
+    }
+    notify("Link copied");
+  } catch {
+    notify("Couldn't copy the link. Copy the address from your browser.");
+  } finally {
+    button.disabled = false;
+    if (document.activeElement === document.body) focus?.focus({ preventScroll: true });
+  }
+}
+$("share-tree").onclick = () => shareLink($("share-tree"), `${tree.name} · ${tree.site_name}`, location.href.split("#")[0]);
+
 // Tree
 
 let direction = "DOWN";
@@ -438,23 +481,8 @@ function select(id) {
   const partners = partnersOf(tree, id);
   const up = parentsOf(tree, id);
   const related = highlight(id);
-  const link = el("button", { class: "action" }, "Copy link");
-  link.onclick = async () => {
-    const url = `${location.href.split("#")[0]}#${id}`;
-    try {
-      await navigator.clipboard.writeText(url);
-    } catch {
-      // Older browsers: copy through a hidden field.
-      const field = el("textarea", { readonly: "", style: "position:fixed;opacity:0" });
-      field.value = url;
-      document.body.append(field);
-      field.select();
-      document.execCommand("copy");
-      field.remove();
-    }
-    link.textContent = "Link copied";
-    setTimeout(() => (link.textContent = "Copy link"), 1500);
-  };
+  const link = el("button", { class: "action" }, "Share person");
+  link.onclick = () => shareLink(link, `${displayName(id)} · ${tree.name}`, `${location.href.split("#")[0]}#${id}`);
   const facts = [
     ["Born", [p.birth_date, p.birth_place && `in ${p.birth_place}`].filter(Boolean).join(" ")],
     ["Died", p.death_date],

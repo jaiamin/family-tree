@@ -104,3 +104,14 @@ def test_home_and_tree_share_a_valid_svg_favicon(tmp_path) -> None:
     for path, page in pages.items():
         if path.endswith(".html"):
             assert '<link rel="icon" type="image/svg+xml" href="/favicon.svg">' in page
+
+
+def test_share_tree_action_is_only_on_tree_pages(tmp_path) -> None:
+    store = Store(tmp_path)
+    family = store.create("Family")
+    pages, _ = website_files(store.collection(), Site(name="Website", project="example", url=""))
+    assert 'id="share-tree"' not in pages["index.html"]
+    page = pages[f"trees/{family.id}/index.html"]
+    assert 'id="share-tree" aria-label="Share tree"' in page
+    assert 'id="share-status" role="status"' in page
+    assert "Share person" in page
