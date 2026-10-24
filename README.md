@@ -33,9 +33,11 @@ Trees are JSON files in `~/.family-tree-mcp/` (or `FAMILY_TREE_DIR`). Every chan
 
 | Tool | Purpose |
 | --- | --- |
-| `list_trees`, `create_tree`, `rename_tree`, `delete_tree`, `get_tree`, `undo` | Manage trees |
+| `list_trees`, `create_tree`, `rename_tree`, `delete_tree`, `get_tree`, `undo` | Manage trees; `list_trees` also shows when each site last updated |
 | `add_people` | Add a family and its links in one call |
 | `add_person`, `update_person`, `remove_person`, `merge_people` | Edit people |
+| `update_people` | Many renames, details and links at once, undone as one step |
+| `check_tree` | Review children linked to only one of a couple, same-name people and placeholders |
 | `add_relationship`, `remove_relationship` | Link people as parent, child, partner or sibling |
 | `find_people`, `get_person`, `get_ancestors`, `get_descendants` | Look people up |
 | `get_relationship` | e.g. "Sam is Ava's first cousin once removed" |

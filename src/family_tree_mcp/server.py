@@ -3,6 +3,7 @@
 import atexit
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -16,7 +17,17 @@ from family_tree_mcp.gedcom import to_gedcom
 from family_tree_mcp.publish import Updater, deploy, new_code, photo_store, site_files
 from family_tree_mcp.share import share_page
 from family_tree_mcp.store import Store, write_atomic
-from family_tree_mcp.tree import NewPerson, PartnerStatus, Relation, Sex, Site, Tree, slugify
+from family_tree_mcp.tree import (
+    LinkChange,
+    NewPerson,
+    PartnerStatus,
+    PersonChange,
+    Relation,
+    Sex,
+    Site,
+    Tree,
+    slugify,
+)
 
 INSTRUCTIONS = """\
 Manage family trees. Each tree holds people linked by two kinds of edges:
@@ -26,9 +37,13 @@ relation are derived from those edges.
 
 Building: call find_people first to avoid duplicates. Enter families with add_people
 (one call for many people and their links); use add_person and add_relationship for
-single changes. Linking two people as "sibling" gives them shared parents, adding a
-placeholder parent if neither has one. If someone was added twice, or a placeholder
-turns out to be a known person, use merge_people.
+single changes, and update_people for many changes to existing people (renames, details,
+links) as one undo step. A partner is never assumed to be a parent: when a child lists only
+one of a couple as a parent, edits return a "check" note; ask the user before linking the
+other. Run check_tree after large edits to review these, duplicates and placeholders.
+Linking two people as "sibling" gives them shared parents, adding a placeholder parent if
+neither has one. If someone was added twice, or a placeholder turns out to be a known
+person, use merge_people.
 
 Exploring: get_relationship names how two people are related; get_person,
 get_ancestors and get_descendants list family. Children and siblings are listed
@@ -90,7 +105,11 @@ def create_server(store: Store, publish_delay: float = 30) -> FastMCP:
 
     @mcp.tool(annotations=READ)
     def list_trees() -> list[dict]:
-        """List all family trees with their size, and the link where each is published."""
+        """List all family trees with their size, and where and when each was published.
+
+        site_status says whether automatic updates are waiting, publishing, published (with
+        published_at) or failed (with site_error).
+        """
         found = []
         for t in store.trees():
             if not isinstance(t, Tree):
@@ -99,8 +118,10 @@ def create_server(store: Store, publish_delay: float = 30) -> FastMCP:
             entry = {"name": t.name, "description": t.description, "people": len(t.people)}
             if t.site:
                 entry["site"] = t.site.url
-                if error := updater.errors.get(t.name):
-                    entry["site_error"] = error
+                if t.site.keep_updated:
+                    entry |= updater.status(t.name)
+                else:
+                    entry["site_status"] = "automatic updates off"
             found.append(entry)
         return found
 
@@ -169,12 +190,40 @@ def create_server(store: Store, publish_delay: float = 30) -> FastMCP:
         with store.edit(tree) as t:
             existing = {p.name.casefold(): p.id for p in t.people.values()}
             ids = t.add_people(people)
+            notes = checks(t, set(ids.values()))
         duplicates = [
             {"new_id": ids[p.ref or p.name], "existing_id": existing[p.name.casefold()]}
             for p in people
             if p.name.casefold() in existing
         ]
-        return {"ids": ids, "possible_duplicates": duplicates}
+        return {"ids": ids, "possible_duplicates": duplicates, **notes}
+
+    @mcp.tool(annotations=WRITE)
+    def update_people(
+        tree: TreeName,
+        changes: list[PersonChange] | None = None,
+        links: list[LinkChange] | None = None,
+    ) -> dict:
+        """Change many existing people at once: details and renames, then links to add or remove.
+
+        Use instead of repeated update_person, add_relationship or remove_relationship calls.
+        Each link reads "relative_id is person_id's relation", as in add_relationship; set
+        remove=true to remove it. Everything applies, or nothing does if any entry fails, and
+        undo reverts it all in one step. To add new people, use add_people.
+        """
+        changes, links = changes or [], links or []
+        with store.edit(tree) as t:
+            t.apply(changes, links)
+            touched = {c.id for c in changes}
+            touched |= {i for link in links for i in (link.person_id, link.relative_id)}
+            notes = checks(t, touched)
+        removed = sum(link.remove for link in links)
+        return {
+            "updated": len(changes),
+            "links_added": len(links) - removed,
+            "links_removed": removed,
+            **notes,
+        }
 
     @mcp.tool(annotations=WRITE)
     def update_person(
@@ -246,7 +295,7 @@ def create_server(store: Store, publish_delay: float = 30) -> FastMCP:
                 marriage_place=marriage_place,
                 divorce_date=divorce_date,
             )
-            return t.profile(person_id)
+            return t.profile(person_id) | checks(t, {person_id, relative_id})
 
     @mcp.tool(annotations=DELETE)
     def remove_relationship(
@@ -269,6 +318,14 @@ def create_server(store: Store, publish_delay: float = 30) -> FastMCP:
     def get_person(tree: TreeName, person_id: PersonId) -> dict:
         """Get a person's details with their parents, partners, children and siblings."""
         return store.load(tree).profile(person_id)
+
+    @mcp.tool(annotations=READ)
+    def check_tree(tree: TreeName) -> dict:
+        """List things to review: children linked to only one of a couple, people with the same
+        name, and placeholder parents. Report them to the user rather than fixing them unasked.
+        """
+        issues = store.load(tree).check()
+        return {"issues": issues, "summary": f"{len(issues)} to review" if issues else "All clear."}
 
     @mcp.tool(annotations=READ)
     def get_relationship(tree: TreeName, person_id: PersonId, relative_id: PersonId) -> dict:
@@ -352,6 +409,8 @@ def create_server(store: Store, publish_delay: float = 30) -> FastMCP:
         folder, contents, hidden = write_site(t, site)
         site.url = deploy(folder, project)
         deployed[project] = contents
+        updater.errors.pop(t.name, None)
+        updater.published[t.name] = datetime.now().astimezone()
         with store.edit(tree) as current:
             current.site = site
         return {
@@ -382,6 +441,11 @@ def create_server(store: Store, publish_delay: float = 30) -> FastMCP:
         with store.edit(tree) as current:
             current.site = site
         return {"url": site.url, "photo_code": code}
+
+    def checks(t: Tree, people: set[str]) -> dict:
+        """One-parent children involving these people, as notes for an edit's result."""
+        notes = [issue["summary"] for issue in t.check(people)]
+        return {"check": notes} if notes else {}
 
     def _export(filename: str, content: str) -> Path:
         path = store.root / "exports" / filename

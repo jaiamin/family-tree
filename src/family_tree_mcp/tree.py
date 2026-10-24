@@ -11,6 +11,7 @@ Relation = Literal["parent", "child", "partner", "sibling"]
 Direction = Literal["ancestors", "descendants"]
 PartnerStatus = Literal["married", "divorced", "partners"]
 DETAILS = ("sex", "birth_date", "death_date", "birth_place", "notes")
+PLACEHOLDER = "Unknown parent of "
 
 
 def _one_line(text: str) -> str:
@@ -62,6 +63,34 @@ class NewPerson(BaseModel):
     parents: list[str] = Field([], description="Refs in this batch or existing ids.")
     partners: list[str] = Field([], description="Refs in this batch or existing ids.")
     siblings: list[str] = Field([], description="Refs in this batch or existing ids.")
+
+
+Change = Field(None, description="Omit to leave unchanged; empty string clears.")
+
+
+class PersonChange(BaseModel):
+    """One entry for update_people: new details for an existing person."""
+
+    id: str
+    name: str | None = Field(None, description="Omit to leave unchanged.")
+    sex: Sex | Literal[""] | None = Change
+    birth_date: str | None = Change
+    death_date: str | None = Change
+    birth_place: str | None = Change
+    notes: str | None = Change
+
+
+class LinkChange(BaseModel):
+    """One entry for update_people: add (or remove) a link between two existing people."""
+
+    person_id: str
+    relation: Relation = Field(description="What relative_id is to person_id.")
+    relative_id: str
+    remove: bool = False
+    status: PartnerStatus | None = None
+    marriage_date: str | None = None
+    marriage_place: str | None = None
+    divorce_date: str | None = None
 
 
 class Site(BaseModel):
@@ -263,13 +292,72 @@ class Tree(BaseModel):
             )
         if not a.parents and not b.parents:
             placeholder = self.add_person(
-                f"Unknown parent of {a.name}",
+                f"{PLACEHOLDER}{a.name}",
                 notes="Placeholder linking siblings. Rename or replace when known.",
             )
             a.parents.append(placeholder.id)
         source, target = (a, b) if a.parents else (b, a)
         for parent_id in source.parents:
             self.link(target.id, "parent", parent_id)
+
+    def apply(self, changes: list[PersonChange], links: list[LinkChange]) -> None:
+        """Apply detail changes, then links, in order. On error the tree is left half-changed."""
+        for change in changes:
+            self.update_person(change.id, **change.model_dump(exclude={"id"}))
+        for link in links:
+            if link.remove:
+                self.unlink(link.person_id, link.relation, link.relative_id)
+            else:
+                details = link.model_dump(include=set(Partnership.model_fields))
+                self.link(link.person_id, link.relation, link.relative_id, **details)
+
+    def check(self, people: set[str] | None = None) -> list[dict]:
+        """Things worth reviewing; with people, only one-parent children involving them."""
+        issues = []
+        for parent in self.people.values():
+            alone = [c for c in self.children(parent.id) if len(self.people[c].parents) == 1]
+            partners = [p for p in parent.partners if p not in alone]
+            involved = {parent.id, *alone, *partners}
+            if not (alone and partners) or (people is not None and not people & involved):
+                continue
+            others = _join([self.people[p].name for p in partners], "or")
+            issues.append(
+                {
+                    "issue": "one parent",
+                    "parent": self.ref(parent.id),
+                    "children": [self.ref(c) for c in alone],
+                    "partners": [self.ref(p) for p in partners],
+                    "summary": f"{_join([self.people[c].name for c in alone])} "
+                    f"{'lists' if len(alone) == 1 else 'list'} only {parent.name} as a parent. "
+                    f"If {others} is the other parent, link them.",
+                }
+            )
+        if people is not None:
+            return issues
+        named: dict[str, list[str]] = {}
+        for person in self.people.values():
+            if person.name.startswith(PLACEHOLDER):
+                issues.append(
+                    {
+                        "issue": "placeholder",
+                        "person": self.ref(person.id),
+                        "summary": f"'{person.name}' is a placeholder. Rename it when known, "
+                        "or merge it with the real person.",
+                    }
+                )
+            else:
+                named.setdefault(person.name.casefold(), []).append(person.id)
+        for ids in named.values():
+            if len(ids) > 1:
+                issues.append(
+                    {
+                        "issue": "possible duplicate",
+                        "people": [self.ref(i) for i in ids],
+                        "summary": f"{len(ids)} people are named {self.people[ids[0]].name} "
+                        f"({', '.join(ids)}). If they are the same person, merge them.",
+                    }
+                )
+        return issues
 
     def unlink(self, person_id: str, relation: Relation, relative_id: str) -> None:
         person, relative = self.get(person_id), self.get(relative_id)
@@ -428,6 +516,10 @@ def in_law(da: int, db: int, sex: Sex | None) -> str | None:
         (0, 1): ("stepson", "stepdaughter", "stepchild"),
     }
     return _word(sex, *names[(da, db)]) if (da, db) in names else None
+
+
+def _join(names: list[str], word: str = "and") -> str:
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} {word} {names[-1]}"
 
 
 def _word(sex: Sex | None, male: str, female: str, neutral: str) -> str:

@@ -3,7 +3,9 @@ import hashlib
 import os
 import re
 import stat
+import threading
 import time
+from datetime import datetime
 
 import pytest
 from fastmcp import Client
@@ -103,6 +105,7 @@ async def test_publish_once_then_keep_updated(tmp_path, calls, monkeypatch) -> N
 
         listed = await client.call_tool("list_trees", {})
         assert listed.data[0]["site"] == "https://smiths-x9.pages.dev"
+        assert listed.data[0]["site_status"] == "published" and listed.data[0]["published_at"]
 
         # Republishing keeps the photo store and the code.
         again = await client.call_tool("publish_site", {**tree, "keep_updated": False})
@@ -112,6 +115,8 @@ async def test_publish_once_then_keep_updated(tmp_path, calls, monkeypatch) -> N
         await client.call_tool("add_person", {**tree, "name": "Cy"})
         await asyncio.to_thread(_wait, store)
         assert len(calls()) == count
+        listed = await client.call_tool("list_trees", {})
+        assert listed.data[0]["site_status"] == "automatic updates off"
 
         changed = await client.call_tool("change_photo_code", {**tree, "code": " Our-Family-1950 "})
         assert changed.data["photo_code"] == "our-family-1950"
@@ -170,6 +175,35 @@ def test_updates_wait_for_edits_to_pause() -> None:
     updater.schedule(tree)
     updater.flush()
     assert published == ["T", "T"]
+
+
+def test_status_follows_each_update() -> None:
+    started, release, fail = threading.Event(), threading.Event(), [False]
+
+    def publish(name: str) -> None:
+        started.set()
+        release.wait(5)
+        if fail[0]:
+            raise ValueError("Publishing failed: offline")
+
+    updater = Updater(publish, delay=0.05)
+    tree = Tree(name="T", site=Site(project="t", url="https://t.pages.dev"))
+    assert updater.status("T") == {"site_status": "no changes since the server started"}
+    updater.schedule(tree)
+    assert updater.status("T") == {"site_status": "waiting for edits to pause"}
+    assert started.wait(5) and updater.status("T") == {"site_status": "publishing"}
+    release.set()
+    updater.flush()
+    done = updater.status("T")
+    assert done["site_status"] == "published" and "site_error" not in done
+    assert datetime.fromisoformat(done["published_at"]).tzinfo
+
+    fail[0] = True
+    updater.schedule(tree)
+    updater.flush()
+    failed = updater.status("T")
+    assert failed["site_status"] == "failed" and failed["site_error"].endswith("offline")
+    assert failed["published_at"] == done["published_at"]  # the last update that worked
 
 
 def test_failures_keep_wranglers_error_and_path() -> None:
