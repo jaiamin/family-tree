@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 from collections.abc import Callable
+from datetime import datetime
 from importlib.resources import files
 from pathlib import Path
 
@@ -141,7 +142,28 @@ class Updater:
         self._due: dict[str, float] = {}
         self._wake = threading.Condition()
         self._thread: threading.Thread | None = None
+        self._publishing: str | None = None
         self.errors: dict[str, str] = {}
+        self.published: dict[str, datetime] = {}  # last successful update in this session
+
+    def status(self, name: str) -> dict[str, str]:
+        """Where a tree's automatic updates stand, for list_trees."""
+        with self._wake:
+            if name == self._publishing:
+                state = {"site_status": "publishing"}
+            elif name in self._due:
+                state = {"site_status": "waiting for edits to pause"}
+            elif name in self.errors:
+                state = {"site_status": "failed"}
+            elif name in self.published:
+                state = {"site_status": "published"}
+            else:
+                state = {"site_status": "no changes since the server started"}
+            if error := self.errors.get(name):
+                state["site_error"] = error
+            if when := self.published.get(name):
+                state["published_at"] = when.isoformat(timespec="seconds")
+            return state
 
     def schedule(self, tree: Tree) -> None:
         if not (tree.site and tree.site.keep_updated):
@@ -171,9 +193,14 @@ class Updater:
                     self._wake.wait(left)
                     continue
                 del self._due[name]
+                self._publishing = name
             try:
                 self._publish(name)
                 self.errors.pop(name, None)
+                self.published[name] = datetime.now().astimezone()
             except Exception as error:
                 self.errors[name] = str(error)
                 print(f"family-tree-mcp: updating '{name}' failed: {error}", file=sys.stderr)
+            finally:
+                with self._wake:
+                    self._publishing = None

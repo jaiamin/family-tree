@@ -1,6 +1,6 @@
 import pytest
 
-from family_tree_mcp.tree import NewPerson, Partnership, Tree, kinship
+from family_tree_mcp.tree import LinkChange, NewPerson, Partnership, PersonChange, Tree, kinship
 
 
 @pytest.mark.parametrize(
@@ -271,3 +271,53 @@ def test_single_line_fields_and_clearing() -> None:
         t.add_person(" \n")
     t.update_person("ann-lee", sex="")
     assert t.people["ann-lee"].sex is None
+
+
+def test_check_flags_one_parent_children_duplicates_and_placeholders(tree: Tree) -> None:
+    # Cousin lists only Aunt, whose partner is Uncle. Kid lists only Me, who has no partner.
+    tree.add_person("Dad")
+    tree.link("stranger", "sibling", "kid")  # Stranger shares Kid's parent: no placeholder.
+    tree.add_person("Lone")
+    tree.link("lone", "sibling", "half")  # Half already has parents, so Lone copies them.
+    tree.add_person("Solo")
+    tree.add_person("Solo Sib")
+    tree.link("solo", "sibling", "solo-sib")
+    issues = tree.check()
+    assert [i["summary"] for i in issues] == [
+        "Cousin lists only Aunt as a parent. If Uncle is the other parent, link them.",
+        "'Unknown parent of Solo' is a placeholder. Rename it when known, "
+        "or merge it with the real person.",
+        "2 people are named Dad (dad, dad-2). If they are the same person, merge them.",
+    ]
+    # Edits only hear about couples they touch.
+    assert len(tree.check({"uncle"})) == 1 and tree.check({"kid", "me"}) == []
+    tree.link("cousin", "parent", "uncle")
+    assert tree.check({"uncle"}) == []
+
+
+def test_check_lists_every_child_and_partner(tree: Tree) -> None:
+    for name in ("Nisha", "Hetal", "Nishi"):
+        tree.add_person(name)
+        tree.link(name.lower(), "parent", "stranger")
+    tree.add_person("Hemalata")
+    tree.add_person("Rina")
+    tree.link("stranger", "partner", "hemalata")
+    tree.link("stranger", "partner", "rina")
+    assert tree.check({"hemalata"})[0]["summary"] == (
+        "Nisha, Hetal and Nishi list only Stranger as a parent. "
+        "If Hemalata or Rina is the other parent, link them."
+    )
+
+
+def test_apply_changes_details_then_links(tree: Tree) -> None:
+    tree.apply(
+        [PersonChange(id="kid", name="Kiddo", birth_date="2001"), PersonChange(id="ex", notes="")],
+        [
+            LinkChange(person_id="kid", relation="parent", relative_id="stranger"),
+            LinkChange(person_id="aunt", relation="partner", relative_id="uncle", remove=True),
+            LinkChange(person_id="me", relation="partner", relative_id="ex", status="married"),
+        ],
+    )
+    assert tree.people["kid"].name == "Kiddo" and tree.people["kid"].parents == ["me", "stranger"]
+    assert tree.people["aunt"].partners == []
+    assert tree.partnership("me", "ex") == Partnership(status="married")
