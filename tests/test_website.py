@@ -62,7 +62,7 @@ def test_pages_contain_only_members_and_links_while_sharing_uuid(tmp_path) -> No
     assert 'aria-label="Switch family tree"' in pages[f"trees/{first.id}/index.html"]
     assert "<option" not in pages[f"trees/{first.id}/index.html"]
     assert f'href="/trees/{second.id}/"' in pages[f"trees/{first.id}/index.html"]
-    assert 'class="tree-total">(2)</span>' in pages["index.html"]
+    assert '<h2>Family trees (2)</h2>' in pages["index.html"]
     assert 'id="count"' not in pages["index.html"]
     assert "Family links" not in pages["index.html"]
     store.rename(first.id, "Renamed")
