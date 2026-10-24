@@ -3,6 +3,7 @@
 import re
 from collections import deque
 from typing import Annotated, Any, Literal
+from uuid import uuid4
 
 from pydantic import AfterValidator, BaseModel, Field, model_validator
 
@@ -94,7 +95,9 @@ class LinkChange(BaseModel):
 
 
 class Site(BaseModel):
-    """Where a tree is published, and how."""
+    """Website identity and publishing settings, independent of any tree."""
+
+    name: str
 
     project: str
     url: str
@@ -105,9 +108,9 @@ class Site(BaseModel):
 
 
 class Tree(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
     name: str
     description: str = ""
-    site: Site | None = None
     people: dict[str, Person] = {}
     partnerships: dict[str, Partnership] = {}
 
@@ -161,11 +164,7 @@ class Tree(BaseModel):
         return len(set(pa) & set(pb)) == 1 and max(len(pa), len(pb)) == 2
 
     def add_person(self, name: str, **fields: Any) -> Person:
-        base = slugify(name) or "person"
-        person_id, n = base, 1
-        while person_id in self.people:
-            n += 1
-            person_id = f"{base}-{n}"
+        person_id = str(uuid4())
         person = Person(id=person_id, name=name, **fields)
         self.people[person_id] = person
         return person

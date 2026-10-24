@@ -1,4 +1,5 @@
 import pytest
+from conftest import seed
 
 from family_tree_mcp.tree import LinkChange, NewPerson, Partnership, PersonChange, Tree, kinship
 
@@ -100,8 +101,14 @@ def test_remove_person_clears_references(tree: Tree) -> None:
     assert tree.get("mom").partners == []
 
 
-def test_ids_are_unique_slugs(tree: Tree) -> None:
-    assert tree.add_person("Me").id == "me-2"
+def test_ids_are_unique_uuids_and_survive_renames(tree: Tree) -> None:
+    from uuid import UUID
+
+    one, two = tree.add_person("Me"), tree.add_person("Me")
+    assert UUID(one.id).version == 4 and UUID(two.id).version == 4
+    assert one.id != two.id
+    tree.update_person(one.id, name="Different name")
+    assert tree.get(one.id).name == "Different name"
 
 
 def test_update_person(tree: Tree) -> None:
@@ -118,7 +125,7 @@ def test_find_matches_all_words_case_insensitively(tree: Tree) -> None:
 
 
 def test_sibling_link_shares_known_parents(tree: Tree) -> None:
-    tree.add_person("Late Sis", sex="female")
+    seed(tree, "Late Sis", sex="female")
     tree.link("late-sis", "sibling", "me")
     assert tree.get("late-sis").parents == ["dad", "mom"]
     assert tree.relationship("me", "late-sis")["relationship"] == "sister"
@@ -126,7 +133,7 @@ def test_sibling_link_shares_known_parents(tree: Tree) -> None:
 
 def test_sibling_link_without_parents_adds_placeholder(tree: Tree) -> None:
     for name in ("Shashank", "Mukul", "Nina"):
-        tree.add_person(name)
+        seed(tree, name)
     tree.link("shashank", "sibling", "mukul")
     tree.link("nina", "sibling", "shashank")
     [placeholder] = tree.get("shashank").parents
@@ -143,14 +150,14 @@ def test_sibling_link_rejects_people_with_different_parents(tree: Tree) -> None:
 
 def test_children_and_siblings_are_ordered_by_birth() -> None:
     t = Tree(name="T")
-    t.add_person("Parent")
+    seed(t, "Parent")
     for name, born in [
         ("Youngest", "2005-01-02"),
         ("Unknown", None),
         ("Eldest", "c. 1999"),
         ("Middle", "2005"),
     ]:
-        t.add_person(name, birth_date=born)
+        seed(t, name, birth_date=born)
         t.link(name.lower(), "parent", "parent")
     assert t.children("parent") == ["eldest", "middle", "youngest", "unknown"]
     assert t.siblings("unknown") == ["eldest", "middle", "youngest"]
@@ -165,10 +172,11 @@ def test_add_people_links_batch_refs_and_existing_ids(tree: Tree) -> None:
             NewPerson(name="Dev", parents=["Ravi", "cousin"]),
         ]
     )
-    assert ids == {"Ravi": "ravi", "kid1": "asha", "kid2": "asha-2", "Dev": "dev"}
+    assert set(ids) == {"Ravi", "kid1", "kid2", "Dev"}
+    assert len(set(ids.values())) == 4
     # Parents are linked before siblings, so Asha shares Dev's parents rather than a placeholder.
-    assert tree.get("asha").parents == ["ravi", "cousin"]
-    assert tree.relationship("me", "asha")["relationship"] == "first cousin once removed"
+    assert tree.get(ids["kid1"]).parents == [ids["Ravi"], "cousin"]
+    assert tree.relationship("me", ids["kid1"])["relationship"] == "first cousin once removed"
 
 
 def test_add_people_rejects_bad_batches(tree: Tree) -> None:
@@ -211,7 +219,7 @@ def test_profile_marks_half_siblings(tree: Tree) -> None:
 
 def test_merge_moves_links_and_fills_details(tree: Tree) -> None:
     tree.link("dad", "partner", "mom", status="married")
-    tree.add_person("Mother", birth_date="1962", notes="Loves chai")
+    seed(tree, "Mother", birth_date="1962", notes="Loves chai")
     tree.link("mother", "partner", "uncle")
     tree.link("cousin", "parent", "mother")
     tree.merge("mom", "mother")
@@ -224,8 +232,8 @@ def test_merge_moves_links_and_fills_details(tree: Tree) -> None:
 
 
 def test_merge_replaces_placeholder_parent(tree: Tree) -> None:
-    tree.add_person("Shashank")
-    tree.add_person("Mukul")
+    seed(tree, "Shashank")
+    seed(tree, "Mukul")
     tree.link("shashank", "sibling", "mukul")
     [placeholder] = tree.get("shashank").parents
     tree.merge("grandpa", placeholder)
@@ -263,24 +271,24 @@ def test_hand_edited_links_are_repaired_on_load() -> None:
 
 def test_single_line_fields_and_clearing() -> None:
     t = Tree(name="T")
-    person = t.add_person("  Ann\nLee ", sex="female", birth_place="Pune\nIndia", notes="a\nb")
+    person = seed(t, "  Ann\nLee ", sex="female", birth_place="Pune\nIndia", notes="a\nb")
     assert (person.name, person.birth_place, person.notes) == ("Ann Lee", "Pune India", "a\nb")
     with pytest.raises(ValueError, match="name can't be empty"):
         t.update_person("ann-lee", name="")
     with pytest.raises(ValueError, match="name can't be empty"):
-        t.add_person(" \n")
+        seed(t, " \n")
     t.update_person("ann-lee", sex="")
     assert t.people["ann-lee"].sex is None
 
 
 def test_check_flags_one_parent_children_duplicates_and_placeholders(tree: Tree) -> None:
     # Cousin lists only Aunt, whose partner is Uncle. Kid lists only Me, who has no partner.
-    tree.add_person("Dad")
+    seed(tree, "Dad")
     tree.link("stranger", "sibling", "kid")  # Stranger shares Kid's parent: no placeholder.
-    tree.add_person("Lone")
+    seed(tree, "Lone")
     tree.link("lone", "sibling", "half")  # Half already has parents, so Lone copies them.
-    tree.add_person("Solo")
-    tree.add_person("Solo Sib")
+    seed(tree, "Solo")
+    seed(tree, "Solo Sib")
     tree.link("solo", "sibling", "solo-sib")
     issues = tree.check()
     assert [i["summary"] for i in issues] == [
@@ -297,10 +305,10 @@ def test_check_flags_one_parent_children_duplicates_and_placeholders(tree: Tree)
 
 def test_check_lists_every_child_and_partner(tree: Tree) -> None:
     for name in ("Nisha", "Hetal", "Nishi"):
-        tree.add_person(name)
+        seed(tree, name)
         tree.link(name.lower(), "parent", "stranger")
-    tree.add_person("Hemalata")
-    tree.add_person("Rina")
+    seed(tree, "Hemalata")
+    seed(tree, "Rina")
     tree.link("stranger", "partner", "hemalata")
     tree.link("stranger", "partner", "rina")
     assert tree.check({"hemalata"})[0]["summary"] == (

@@ -13,8 +13,8 @@ from fastmcp.exceptions import ToolError
 
 from family_tree_mcp import create_server
 from family_tree_mcp.publish import Updater, _failure
-from family_tree_mcp.store import Store
-from family_tree_mcp.tree import Site, Tree
+from family_tree_mcp.store import Collection, Store
+from family_tree_mcp.tree import Site
 
 # Stands in for `npx --yes wrangler@4 ...`, recording each call and answering like wrangler.
 FAKE_NPX = """#!/bin/sh
@@ -72,9 +72,14 @@ async def test_publish_once_then_keep_updated(tmp_path, calls, monkeypatch) -> N
     async with Client(create_server(store, publish_delay=0)) as client:
         await client.call_tool("create_tree", {"name": "Smiths"})
         tree = {"tree": "Smiths"}
-        await client.call_tool("add_person", {**tree, "name": "Ann", "birth_date": "1990"})
+        await client.call_tool("create_tree", {"name": "Other"})
+        await client.call_tool("add_person", {"tree": "Other", "name": "Other Person"})
+        await client.call_tool("configure_website", {"name": "Website", "project": "example"})
+        tid = store.load("Smiths").id
+        other_id = store.load("Other").id
+        added = await client.call_tool("add_person", {**tree, "name": "Ann", "birth_date": "1990"})
 
-        site = await client.call_tool("publish_site", tree)
+        site = await client.call_tool("publish_site", {})
         assert site.data["url"] == "https://smiths-x9.pages.dev"
         assert site.data["hidden_living"] == 1
         assert calls() == [
@@ -87,62 +92,67 @@ async def test_publish_once_then_keep_updated(tmp_path, calls, monkeypatch) -> N
         # The page has photos; Cloudflare gets the code's hash and the photo store, not the code.
         code = site.data["photo_code"]
         assert re.fullmatch(r"[a-z]+-[a-z]+-[a-z]+-\d\d", code)
-        folder = tmp_path / "trees/exports/smiths-site"
+        folder = tmp_path / "trees/exports/website"
         config = (folder / "wrangler.toml").read_text()
         assert 'id = "kv123"' in config and hashlib.sha256(code.encode()).hexdigest() in config
-        page = (folder / "public/index.html").read_text()
+        page = (folder / f"public/trees/{tid}/index.html").read_text()
+        assert "Website" in (folder / "public/index.html").read_text()
+        assert "Other Person" in (folder / f"public/trees/{other_id}/index.html").read_text()
         assert code not in config and code not in page and '"photos": true' in page
 
         # Every change republishes in the background; a change the page doesn't show doesn't.
         monkeypatch.setenv("CREATED", "1")
         await client.call_tool("add_person", {**tree, "name": "Bo"})
         await asyncio.to_thread(_wait, store)
-        page = (folder / "public/index.html").read_text()
+        page = (folder / f"public/trees/{tid}/index.html").read_text()
         assert '"Bo"' in page and calls()[5:] == ["pages deploy public"]
-        await client.call_tool("update_person", {**tree, "person_id": "ann", "notes": "private"})
+        assert "Other Person" in (folder / f"public/trees/{other_id}/index.html").read_text()
+        await client.call_tool(
+            "update_person", {**tree, "person_id": added.data["id"], "notes": "private"}
+        )
         await asyncio.to_thread(_wait, store)
         assert len(calls()) == 6
 
-        listed = await client.call_tool("list_trees", {})
-        assert listed.data[0]["site"] == "https://smiths-x9.pages.dev"
-        assert listed.data[0]["site_status"] == "published" and listed.data[0]["published_at"]
+        listed = await client.call_tool("get_website", {})
+        assert listed.data["url"] == "https://smiths-x9.pages.dev"
+        assert listed.data["site_status"] == "published" and listed.data["published_at"]
 
         # Republishing keeps the photo store and the code.
-        again = await client.call_tool("publish_site", {**tree, "keep_updated": False})
+        again = await client.call_tool("publish_site", {"keep_updated": False})
         assert again.data["photo_code"] == code
         assert calls()[6:] == ["pages project create", "pages deploy public"]
         count = len(calls())
         await client.call_tool("add_person", {**tree, "name": "Cy"})
         await asyncio.to_thread(_wait, store)
         assert len(calls()) == count
-        listed = await client.call_tool("list_trees", {})
-        assert listed.data[0]["site_status"] == "automatic updates off"
+        listed = await client.call_tool("get_website", {})
+        assert listed.data["keep_updated"] is False
 
-        changed = await client.call_tool("change_photo_code", {**tree, "code": " Our-Family-1950 "})
+        changed = await client.call_tool("change_photo_code", {"code": " Our-Family-1950 "})
         assert changed.data["photo_code"] == "our-family-1950"
         config = (folder / "wrangler.toml").read_text()
         assert hashlib.sha256(b"our-family-1950").hexdigest() in config
         assert calls()[count:] == ["pages deploy public"]
         with pytest.raises(ToolError, match="at least 6"):
-            await client.call_tool("change_photo_code", {**tree, "code": "abc"})
+            await client.call_tool("change_photo_code", {"code": "abc"})
 
         monkeypatch.setenv("LOGGED_OUT", "1")
         with pytest.raises(ToolError, match="npx wrangler login"):
-            await client.call_tool("publish_site", tree)
+            await client.call_tool("publish_site", {})
 
 
 @pytest.mark.skipif(os.name == "nt", reason="fake npx is a shell script")
-async def test_sites_published_before_photos_keep_updating_without_them(tmp_path, calls) -> None:
+async def test_collection_without_photos_can_update(tmp_path, calls) -> None:
     store = Store(tmp_path / "trees")
     store.create("Smiths")
-    with store.edit("Smiths") as t:
-        t.site = Site(project="smiths", url="https://smiths.pages.dev")
+    with store.transaction() as data:
+        data.site = Site(name="Website", project="example", url="https://example.pages.dev")
     async with Client(create_server(store, publish_delay=0)) as client:
         await client.call_tool("add_person", {"tree": "Smiths", "name": "Ann"})
         await asyncio.to_thread(_wait, store)
         with pytest.raises(ToolError, match="publish_site first"):
-            await client.call_tool("change_photo_code", {"tree": "Smiths"})
-    folder = tmp_path / "trees/exports/smiths-site"
+            await client.call_tool("change_photo_code", {})
+    folder = tmp_path / "trees/exports/website"
     assert calls() == ["pages deploy public"]
     assert '"photos"' not in (folder / "public/index.html").read_text()
     assert not (folder / "wrangler.toml").exists()
@@ -165,16 +175,16 @@ def _wait(store: Store) -> None:
 def test_updates_wait_for_edits_to_pause() -> None:
     published = []
     updater = Updater(published.append, delay=0.2)
-    tree = Tree(name="T", site=Site(project="t", url="https://t.pages.dev"))
+    tree = Collection(site=Site(name="Website", project="t", url="https://t.pages.dev"))
     for _ in range(5):
         updater.schedule(tree)
         time.sleep(0.05)
     assert published == []
     time.sleep(0.4)
-    assert published == ["T"]
+    assert published == ["site"]
     updater.schedule(tree)
     updater.flush()
-    assert published == ["T", "T"]
+    assert published == ["site", "site"]
 
 
 def test_status_follows_each_update() -> None:
@@ -187,21 +197,21 @@ def test_status_follows_each_update() -> None:
             raise ValueError("Publishing failed: offline")
 
     updater = Updater(publish, delay=0.05)
-    tree = Tree(name="T", site=Site(project="t", url="https://t.pages.dev"))
-    assert updater.status("T") == {"site_status": "no changes since the server started"}
+    tree = Collection(site=Site(name="Website", project="t", url="https://t.pages.dev"))
+    assert updater.status("site") == {"site_status": "no changes since the server started"}
     updater.schedule(tree)
-    assert updater.status("T") == {"site_status": "waiting for edits to pause"}
-    assert started.wait(5) and updater.status("T") == {"site_status": "publishing"}
+    assert updater.status("site") == {"site_status": "waiting for edits to pause"}
+    assert started.wait(5) and updater.status("site") == {"site_status": "publishing"}
     release.set()
     updater.flush()
-    done = updater.status("T")
+    done = updater.status("site")
     assert done["site_status"] == "published" and "site_error" not in done
     assert datetime.fromisoformat(done["published_at"]).tzinfo
 
     fail[0] = True
     updater.schedule(tree)
     updater.flush()
-    failed = updater.status("T")
+    failed = updater.status("site")
     assert failed["site_status"] == "failed" and failed["site_error"].endswith("offline")
     assert failed["published_at"] == done["published_at"]  # the last update that worked
 

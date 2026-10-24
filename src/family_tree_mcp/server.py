@@ -15,8 +15,8 @@ from pydantic import Field
 from family_tree_mcp.diagram import View, mermaid
 from family_tree_mcp.gedcom import to_gedcom
 from family_tree_mcp.publish import Updater, deploy, new_code, photo_store, site_files
-from family_tree_mcp.share import share_page
-from family_tree_mcp.store import Store, write_atomic
+from family_tree_mcp.share import website_files
+from family_tree_mcp.store import Collection, Store, write_atomic
 from family_tree_mcp.tree import (
     LinkChange,
     NewPerson,
@@ -30,7 +30,16 @@ from family_tree_mcp.tree import (
 )
 
 INSTRUCTIONS = """\
-Manage family trees. Each tree holds people linked by two kinds of edges:
+Manage one collection of shared people and relationships. Trees are named membership lists;
+people and trees have immutable UUIDs. Search find_people WITHOUT tree before adding a person;
+use set_tree_members to reuse an existing person across trees. Editing people or relationships
+applies everywhere. Removing membership does not delete records. remove_person and merge_people
+are collection-wide; undo reverses the most recent collection transaction, across all trees.
+Relationships are visible in a tree only when both people are members. No automatic inclusion
+of relatives. The website always starts with a chooser and includes every collection tree.
+Configure its name/project with configure_website; publish_site publishes the whole site.
+
+People are linked by two kinds of edges:
 parent (at most two per person) and partner (optionally married or divorced, with
 dates). Children, siblings, cousins, in-laws, step-relations and every other
 relation are derived from those edges.
@@ -52,7 +61,7 @@ oldest first when birth dates are known.
 Sharing: get_diagram returns Mermaid to display in a ```mermaid block; export_gedcom
 writes a file for Ancestry, FamilySearch, MyHeritage, Gramps etc. To share with family,
 call publish_site once: it puts a read-only page online and then updates it automatically
-as the tree changes. Family can add photos on the page with the photo code publish_site
+as the collection changes. Family can add photos on the page with the photo code publish_site
 returns; change_photo_code replaces it.
 
 Dates are free text; prefer ISO format (YYYY, YYYY-MM or YYYY-MM-DD).
@@ -63,7 +72,9 @@ READ = ToolAnnotations(read_only_hint=True, open_world_hint=False)
 WRITE = ToolAnnotations(destructive_hint=False, open_world_hint=False)
 DELETE = ToolAnnotations(destructive_hint=True, open_world_hint=False)
 
-TreeName = Annotated[str, Field(description="Tree name, as shown by list_trees.")]
+TreeName = Annotated[
+    str, Field(description="Stable tree UUID (preferred) or exact name, as shown by list_trees.")
+]
 PersonId = Annotated[str, Field(description="Person id, as returned by add_person or find_people.")]
 DiagramFocus = Annotated[
     str | None, Field(description="Center the diagram on this person. Omit for everyone.")
@@ -78,26 +89,30 @@ def create_server(store: Store, publish_delay: float = 30) -> FastMCP:
     mcp = FastMCP("family-tree", instructions=INSTRUCTIONS)
     deployed: dict[str, str] = {}  # Pages project -> site files last deployed by this server
 
-    def write_site(t: Tree, site: Site) -> tuple[Path, str, int]:
-        """Write the Pages project folder; return it, its contents and how many were hidden."""
-        page, hidden = share_page(t, site.hide_living, photos=bool(site.photos))
-        written = site_files(page, site)
-        folder = store.root / "exports" / f"{slugify(t.name)}-site"
+    def write_site(data: Collection, site: Site) -> tuple[Path, str, int]:
+        pages, hidden = website_files(data, site)
+        written = site_files(pages, site)
+        folder = store.root / "exports" / "website"
+        # Remove only generated HTML, so deleted trees cannot linger in deployments.
+        public = folder / "public"
+        if public.exists():
+            for old in public.rglob("*.html"):
+                old.unlink()
         for name, content in written.items():
             path = folder / name
             path.parent.mkdir(parents=True, exist_ok=True)
-            # Background updates can rewrite these while a deploy reads them.
             write_atomic(path, content)
         return folder, json.dumps(written, sort_keys=True), hidden
 
-    def refresh(name: str) -> None:
-        t = store.load(name)
-        if not (t.site and t.site.keep_updated):
-            return
-        folder, contents, _ = write_site(t, t.site)
-        if deployed.get(t.site.project) != contents:
-            deploy(folder, t.site.project, create=False)
-            deployed[t.site.project] = contents
+    def refresh(_key: str) -> None:
+        with store.lock():
+            data = store.collection()
+            if not (data.site and data.site.keep_updated):
+                return
+            folder, contents, _ = write_site(data, data.site)
+            if deployed.get(data.site.project) != contents:
+                deploy(folder, data.site.project, create=False)
+                deployed[data.site.project] = contents
 
     updater = Updater(refresh, publish_delay)
     store.on_change = updater.schedule
@@ -105,52 +120,81 @@ def create_server(store: Store, publish_delay: float = 30) -> FastMCP:
 
     @mcp.tool(annotations=READ)
     def list_trees() -> list[dict]:
-        """List all family trees with their size, and where and when each was published.
+        """List all trees with stable UUIDs, descriptions and membership counts."""
+        return [
+            {"id": t.id, "name": t.name, "description": t.description, "people": len(t.people)}
+            for t in store.trees()
+        ]
 
-        site_status says whether automatic updates are waiting, publishing, published (with
-        published_at) or failed (with site_error).
+    @mcp.tool(annotations=READ)
+    def get_website() -> dict:
+        """Read site identity and publication status; never exposes the photo editing code."""
+        site = store.collection().site
+        return (
+            {**site.model_dump(exclude={"edit_code"}, exclude_none=True), **updater.status("site")}
+            if site
+            else {"configured": False}
+        )
+
+    @mcp.tool(annotations=WRITE)
+    def configure_website(name: str, project: str) -> dict:
+        """Set website title and Cloudflare project independently of tree names.
+
+        Choose project before the first publication. Changing a published project requires
+        a separate installation so its photo storage and URL cannot be reassigned by accident.
         """
-        found = []
-        for t in store.trees():
-            if not isinstance(t, Tree):
-                found.append({"file": t, "error": "Unreadable file. Fix it or restore with undo."})
-                continue
-            entry = {"name": t.name, "description": t.description, "people": len(t.people)}
-            if t.site:
-                entry["site"] = t.site.url
-                if t.site.keep_updated:
-                    entry |= updater.status(t.name)
-                else:
-                    entry["site_status"] = "automatic updates off"
-            found.append(entry)
-        return found
+        name = name.strip()
+        if not name or not project or slugify(project) != project or len(project) > 58:
+            raise ToolError(
+                "Supply a website name and a lowercase project slug (max 58 characters)."
+            )
+        with store.transaction() as data:
+            if data.site:
+                if data.site.project != project:
+                    raise ToolError(
+                        "The configured project cannot be changed. Use a new collection."
+                    )
+                data.site.name = name
+            else:
+                data.site = Site(name=name, project=project, url="", keep_updated=False)
+        return {"name": name, "project": project}
+
+    @mcp.tool(annotations=WRITE)
+    def set_tree_members(tree: TreeName, person_ids: list[str], remove: bool = False) -> dict:
+        """Add existing collection people to a tree, or remove membership only.
+
+        Reuse UUIDs found with find_people (omit tree to search all people). Relationships
+        are visible whenever both endpoints belong to the tree; no person is copied.
+        Removing membership preserves the person's record and all global relationships.
+        """
+        t = store.membership(tree, person_ids, remove)
+        return {"id": t.id, "name": t.name, "people": len(t.people)}
 
     @mcp.tool(annotations=WRITE)
     def create_tree(name: str, description: str = "") -> dict:
         """Create a new, empty family tree."""
         tree = store.create(name, description)
-        return {"name": tree.name, "description": tree.description}
+        return {"id": tree.id, "name": tree.name, "description": tree.description}
 
     @mcp.tool(annotations=WRITE)
     def rename_tree(tree: TreeName, new_name: str) -> dict:
         """Rename a tree. People, backups and relationships are kept."""
         renamed = store.rename(tree, new_name)
-        return {"name": renamed.name, "people": len(renamed.people)}
+        return {"id": renamed.id, "name": renamed.name, "people": len(renamed.people)}
 
     @mcp.tool(annotations=DELETE)
     def delete_tree(tree: TreeName) -> str:
-        """Delete a family tree and everyone in it. It can be restored with undo."""
+        """Delete only a tree definition. Shared people remain; undo restores the tree."""
         store.delete(tree)
-        return f"Deleted tree '{tree}'. Call undo with this tree name to restore it."
+        return f"Deleted tree '{tree}'. Call undo to restore it."
 
     @mcp.tool(annotations=DELETE)
-    def undo(tree: TreeName) -> dict:
-        """Revert the tree's most recent change, or restore it if it was deleted.
+    def undo() -> dict:
+        """Revert the last collection-wide transaction, including all affected trees.
 
-        Call repeatedly to step further back. Undone changes cannot be redone.
+        This is global history, not per-tree history. Undone changes cannot be redone.
         """
-        restored, remaining = store.undo(tree)
-        return {"tree": restored.name, "people": len(restored.people), "undos_left": remaining}
+        return {"undos_left": store.undo()}
 
     @mcp.tool(annotations=READ)
     def get_tree(tree: TreeName) -> dict:
@@ -188,7 +232,7 @@ def create_server(store: Store, publish_delay: float = 30) -> FastMCP:
         All entries are added, or none are if any link is invalid.
         """
         with store.edit(tree) as t:
-            existing = {p.name.casefold(): p.id for p in t.people.values()}
+            existing = {p.name.casefold(): p.id for p in store.collection().people.values()}
             ids = t.add_people(people)
             notes = checks(t, set(ids.values()))
         duplicates = [
@@ -253,20 +297,25 @@ def create_server(store: Store, publish_delay: float = 30) -> FastMCP:
     def merge_people(tree: TreeName, keep_id: PersonId, duplicate_id: PersonId) -> dict:
         """Merge a duplicate into keep_id, then remove the duplicate.
 
-        Fills keep_id's missing details from the duplicate and moves its parents, partners
-        and children. Also use it to replace a placeholder parent with the real person.
+        Applies across EVERY tree. Fills keep_id's missing details from the duplicate
+        and moves its parents, partners and children. Also use it to replace a placeholder
+        parent with the real person.
         """
-        with store.edit(tree) as t:
-            t.merge(keep_id, duplicate_id)
-            return t.profile(keep_id)
+        current = store.load(tree)
+        current.get(keep_id)
+        current.get(duplicate_id)
+        store.merge(keep_id, duplicate_id)
+        return store.load(tree).profile(keep_id)
 
     @mcp.tool(annotations=DELETE)
     def remove_person(tree: TreeName, person_id: PersonId) -> str:
-        """Remove a person and all of their relationships."""
-        with store.edit(tree) as t:
-            name = t.get(person_id).name
-            t.remove_person(person_id)
-        return f"Removed {name}."
+        """Delete a person and all relationships from EVERY tree.
+
+        To remove only their appearance in one tree, use set_tree_members(remove=True).
+        """
+        name = store.load(tree).get(person_id).name
+        store.remove_person(person_id)
+        return f"Deleted {name} from the collection and all trees."
 
     @mcp.tool(annotations=WRITE)
     def add_relationship(
@@ -307,11 +356,13 @@ def create_server(store: Store, publish_delay: float = 30) -> FastMCP:
             return t.profile(person_id)
 
     @mcp.tool(annotations=READ)
-    def find_people(tree: TreeName, query: str = "") -> list[dict]:
-        """Find people whose name contains every word in the query. Empty query lists everyone."""
+    def find_people(query: str = "", tree: TreeName | None = None) -> list[dict]:
+        """Find names matching every query word. Omit tree to search the shared collection.
+
+        Search globally before creating people; reuse existing UUIDs with set_tree_members."""
         return [
             p.model_dump(include={"id", "name", "birth_date", "death_date"}, exclude_none=True)
-            for p in store.load(tree).find(query)
+            for p in (store.load(tree) if tree else store.collection().graph()).find(query)
         ]
 
     @mcp.tool(annotations=READ)
@@ -372,75 +423,66 @@ def create_server(store: Store, publish_delay: float = 30) -> FastMCP:
         return {"path": str(path), "people": len(t.people)}
 
     @mcp.tool(annotations=WRITE)
-    def export_html(tree: TreeName, hide_living: bool = True) -> dict:
-        """Save a read-only, interactive web page of the tree as a local file, without publishing.
-
-        To put it online, use publish_site instead.
-        """
-        t = store.load(tree)
-        page, hidden = share_page(t, hide_living)
-        return {"file": str(_export(f"{slugify(t.name)}.html", page)), "hidden_living": hidden}
-
-    @mcp.tool(annotations=ToolAnnotations(destructive_hint=False, open_world_hint=True))
-    def publish_site(tree: TreeName, hide_living: bool = True, keep_updated: bool = True) -> dict:
-        """Publish a read-only, interactive page of the tree to a free link anyone can open.
-
-        Viewers can browse the tree, search, and tap anyone for their details and family.
-        The tree itself can't be edited there, but anyone with the returned photo_code can add,
-        change or remove photos; give the code to the user to share with family. hide_living
-        removes birth dates, places and notes of people who may be alive. With keep_updated, the
-        page is republished automatically once edits pause for 30 seconds; pass
-        keep_updated=False to publish once and stop updating. Uses Cloudflare Pages and Workers
-        KV: the first time, the user runs `npx wrangler login` in a terminal.
-        """
-        t = store.load(tree)
-        project = t.site.project if t.site else slugify(t.name)[:58].strip("-")
-        site = Site(
-            project=project,
-            url=t.site.url if t.site else "",
-            hide_living=hide_living,
-            keep_updated=keep_updated,
-            photos=t.site.photos if t.site else None,
-            edit_code=(t.site.edit_code if t.site else None) or new_code(),
-        )
-        folder = store.root / "exports" / f"{slugify(t.name)}-site"
-        folder.mkdir(parents=True, exist_ok=True)
-        site.photos = site.photos or photo_store(folder, project)
-        folder, contents, hidden = write_site(t, site)
-        site.url = deploy(folder, project)
-        deployed[project] = contents
-        updater.errors.pop(t.name, None)
-        updater.published[t.name] = datetime.now().astimezone()
-        with store.edit(tree) as current:
-            current.site = site
-        return {
-            "url": site.url,
-            "hidden_living": hidden,
-            "keep_updated": keep_updated,
-            "photo_code": site.edit_code,
-            "note": "Anyone with the link can view it; adding or removing photos needs the "
-            "photo code. To restrict viewing, see the README.",
-        }
+    def export_website(hide_living: bool = True) -> dict:
+        """Build the complete site locally, including chooser and every tree, without deploying."""
+        with store.lock():
+            data = store.collection()
+            if not data.site:
+                raise ToolError("Call configure_website first.")
+            site = data.site.model_copy(update={"hide_living": hide_living})
+            folder, _, hidden = write_site(data, site)
+            return {"folder": str(folder / "public"), "hidden_living": hidden}
 
     @mcp.tool(annotations=ToolAnnotations(destructive_hint=False, open_world_hint=True))
-    def change_photo_code(tree: TreeName, code: str | None = None) -> dict:
-        """Replace the code needed to add, change or remove photos on the published site.
+    def publish_site(hide_living: bool = True, keep_updated: bool = True) -> dict:
+        """Publish the ENTIRE configured website: chooser and all trees.
 
-        Omit code to generate a new one. The old code stops working once the site updates.
+        First call configure_website. All collection trees are public; living dates, places
+        and notes are hidden by default. Automatic updates rebuild the entire site after edits
+        pause. Publishing requires Cloudflare authentication; photos use a site-wide code.
         """
-        t = store.load(tree)
-        if not (t.site and t.site.photos):
-            raise ToolError("Publish the site with publish_site first.")
-        code = (code or new_code()).strip().lower()
-        if len(code) < 6:
-            raise ToolError("Use a code of at least 6 characters.")
-        site = t.site.model_copy(update={"edit_code": code})
-        folder, contents, _ = write_site(t, site)
-        deploy(folder, site.project, create=False)
-        deployed[site.project] = contents
-        with store.edit(tree) as current:
-            current.site = site
-        return {"url": site.url, "photo_code": code}
+        with store.lock():
+            data = store.collection()
+            if not data.site:
+                raise ToolError("Call configure_website first.")
+            site = data.site.model_copy(
+                update={"hide_living": hide_living, "keep_updated": keep_updated}
+            )
+            folder = store.root / "exports" / "website"
+            folder.mkdir(parents=True, exist_ok=True)
+            site.edit_code = site.edit_code or new_code()
+            site.photos = site.photos or photo_store(folder, site.project)
+            folder, contents, hidden = write_site(data, site)
+            site.url = deploy(folder, site.project)
+            deployed[site.project] = contents
+            updater.errors.pop("site", None)
+            updater.published["site"] = datetime.now().astimezone()
+            with store.transaction() as current:
+                current.site = site
+            return {
+                "url": site.url,
+                "hidden_living": hidden,
+                "keep_updated": keep_updated,
+                "photo_code": site.edit_code,
+            }
+
+    @mcp.tool(annotations=ToolAnnotations(destructive_hint=False, open_world_hint=True))
+    def change_photo_code(code: str | None = None) -> dict:
+        """Replace the site-wide photo editing code and republish the complete website."""
+        with store.lock():
+            data = store.collection()
+            if not (data.site and data.site.photos):
+                raise ToolError("Publish the site with publish_site first.")
+            code = (code or new_code()).strip().lower()
+            if len(code) < 6:
+                raise ToolError("Use a code of at least 6 characters.")
+            site = data.site.model_copy(update={"edit_code": code})
+            folder, contents, _ = write_site(data, site)
+            deploy(folder, site.project, create=False)
+            deployed[site.project] = contents
+            with store.transaction() as current:
+                current.site = site
+            return {"url": site.url, "photo_code": code}
 
     def checks(t: Tree, people: set[str]) -> dict:
         """One-parent children involving these people, as notes for an edit's result."""

@@ -1,4 +1,5 @@
 import pytest
+from conftest import seed
 
 from family_tree_mcp.gedcom import _date, to_gedcom
 from family_tree_mcp.tree import Tree
@@ -38,7 +39,7 @@ def test_families_link_couples_children_and_lone_parents() -> None:
         ("Cy Lee", None),
         ("Di", "female"),
     ]:
-        t.add_person(name, sex=sex)
+        seed(t, name, sex=sex)
     t.link("ann-lee", "partner", "bo-lee")
     t.link("cy-lee", "parent", "ann-lee")
     t.link("cy-lee", "parent", "bo-lee")
@@ -56,7 +57,7 @@ def test_families_link_couples_children_and_lone_parents() -> None:
 def test_long_notes_survive_line_limits() -> None:
     note = "First line\n" + "word " * 120 + "\n\nlast"
     t = Tree(name="T")
-    t.add_person("Ann", notes=note)
+    seed(t, "Ann", notes=note)
     lines = records(to_gedcom(t))["@I1@ INDI"]
 
     rebuilt = ""
@@ -77,7 +78,7 @@ def test_long_notes_survive_line_limits() -> None:
 def test_marriages_and_divorces_become_family_events() -> None:
     t = Tree(name="T")
     for name in ("Ann", "Bo", "Cy"):
-        t.add_person(name)
+        seed(t, name)
     t.link("ann", "partner", "bo", marriage_date="1950-06-01", marriage_place="Pune")
     t.link("ann", "partner", "cy", status="divorced", divorce_date="1970")
 
@@ -88,7 +89,7 @@ def test_marriages_and_divorces_become_family_events() -> None:
 
 def test_at_signs_are_escaped() -> None:
     t = Tree(name="T")
-    t.add_person("Ann @home", birth_place="Pune @ India", notes="x" * 199 + "@@ ann@example.com")
+    seed(t, "Ann @home", birth_place="Pune @ India", notes="x" * 199 + "@@ ann@example.com")
     text = to_gedcom(t)
     assert "1 NAME Ann /@@home/" in text and "2 PLAC Pune @@ India" in text
     for line in records(text)["@I1@ INDI"]:

@@ -53,9 +53,46 @@ $("theme").onclick = () => {
   dark ? (document.documentElement.dataset.theme = "dark") : delete document.documentElement.dataset.theme;
   try { localStorage.setItem("theme", dark ? "dark" : "light"); } catch {}
 };
-$("title").textContent = tree.name;
+const treeSwitch = $("tree-switch"), treeOptions = $("tree-options");
+function closeTreeOptions() {
+  treeOptions.hidden = true;
+  treeSwitch.setAttribute("aria-expanded", "false");
+}
+function openTreeOptions() {
+  treeOptions.hidden = false;
+  const anchor = treeSwitch.getBoundingClientRect();
+  treeOptions.style.left = `${Math.max(16, Math.min(anchor.left, innerWidth - treeOptions.offsetWidth - 16))}px`;
+  treeOptions.style.top = `${anchor.bottom + 6}px`;
+  treeSwitch.setAttribute("aria-expanded", "true");
+}
+window.addEventListener("resize", closeTreeOptions);
+treeSwitch.onclick = () => {
+  const open = treeOptions.hidden;
+  open ? openTreeOptions() : closeTreeOptions();
+};
+document.addEventListener("click", (event) => {
+  if (!event.target.closest(".tree-picker")) closeTreeOptions();
+});
+document.addEventListener("focusin", (event) => {
+  if (!event.target.closest(".tree-picker")) closeTreeOptions();
+});
+document.querySelector(".tree-picker").addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    closeTreeOptions();
+    treeSwitch.focus();
+    event.preventDefault();
+  } else if (["ArrowDown", "ArrowUp"].includes(event.key)) {
+    const links = [...treeOptions.querySelectorAll("a")];
+    const index = links.indexOf(document.activeElement);
+    const next = event.key === "ArrowDown" ? (index + 1) % links.length
+      : (index < 0 ? links.length - 1 : (index - 1 + links.length) % links.length);
+    openTreeOptions();
+    links[next].focus();
+    event.preventDefault();
+  }
+});
 $("count").textContent = `${ids.length} ${ids.length === 1 ? "person" : "people"}`;
-document.title = tree.name;
+document.title = `${tree.name} · ${tree.site_name}`;
 
 // Tree
 
@@ -392,6 +429,11 @@ function select(id) {
       group(partners.length > 1 ? "Partners" : "Partner", partners, (o) => partnerNote(id, o)),
       group("Siblings", siblings(tree, id), (o) => (halfSiblings(tree, id, o) ? "Half" : "")),
       group("Children", children(tree, id)),
+      p.other_trees?.length ? el("section", {}, el("h3", {}, "Other trees"),
+        ...p.other_trees.map((other) => el("a", {
+          class: "relative tree-link", href: `/trees/${other.id}/#${id}`,
+        }, other.name)),
+      ) : null,
       related.size === 1 ? el("p", { class: "none" }, "No family recorded yet.") : null,
     ),
     el("div", { class: "actions" }, link),

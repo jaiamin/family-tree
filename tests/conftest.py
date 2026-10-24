@@ -1,6 +1,18 @@
 import pytest
 
-from family_tree_mcp.tree import Tree
+from family_tree_mcp.tree import Person, Tree, slugify
+
+
+def seed(tree: Tree, name: str, **fields) -> Person:
+    """Explicit readable fixture IDs for kinship and routing assertions."""
+    base = slugify(name) or "person"
+    pid, n = base, 1
+    while pid in tree.people:
+        n += 1
+        pid = f"{base}-{n}"
+    person = Person(id=pid, name=name, **fields)
+    tree.people[pid] = person
+    return person
 
 
 @pytest.fixture
@@ -12,7 +24,7 @@ def tree() -> Tree:
         ("Sis", "female"), ("Half", "male"), ("Cousin", None), ("Cousin Kid", None),
         ("Kid", None), ("Stranger", None),
     ]:  # fmt: skip
-        t.add_person(name, sex=sex)
+        seed(t, name, sex=sex)
     for child, parents in {
         "dad": ["grandpa", "grandma"],
         "aunt": ["grandpa", "grandma"],

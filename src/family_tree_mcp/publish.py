@@ -15,7 +15,8 @@ from datetime import datetime
 from importlib.resources import files
 from pathlib import Path
 
-from family_tree_mcp.tree import Site, Tree
+from family_tree_mcp.store import Collection
+from family_tree_mcp.tree import Site
 
 WRANGLER = ["--yes", "wrangler@4"]
 # Desktop apps often start servers without the shell's PATH, so look where Node usually lives.
@@ -38,9 +39,9 @@ def new_code() -> str:
     return "-".join([*(secrets.choice(WORDS) for _ in range(3)), str(10 + secrets.randbelow(90))])
 
 
-def site_files(page: str, site: Site | None) -> dict[str, str]:
+def site_files(pages: dict[str, str], site: Site | None) -> dict[str, str]:
     """The files of the Pages project for a page: with photos, also their function and config."""
-    found = {"public/index.html": page}
+    found = {f"public/{path}": page for path, page in pages.items()}
     if site and site.photos and site.edit_code:
         code = hashlib.sha256(site.edit_code.encode()).hexdigest()
         function = files("family_tree_mcp").joinpath("photos.js").read_text(encoding="utf-8")
@@ -165,11 +166,11 @@ class Updater:
                 state["published_at"] = when.isoformat(timespec="seconds")
             return state
 
-    def schedule(self, tree: Tree) -> None:
-        if not (tree.site and tree.site.keep_updated):
+    def schedule(self, collection: Collection) -> None:
+        if not (collection.site and collection.site.url and collection.site.keep_updated):
             return
         with self._wake:
-            self._due[tree.name] = time.monotonic() + self._delay
+            self._due["site"] = time.monotonic() + self._delay
             if not (self._thread and self._thread.is_alive()):
                 self._thread = threading.Thread(target=self._run, daemon=True)
                 self._thread.start()
