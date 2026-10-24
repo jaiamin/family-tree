@@ -88,11 +88,12 @@
   .person.joined-top { border-radius: 10px 10px 0 0; border-bottom: 0; box-shadow: none; }
   .person.joined-bottom { border-radius: 0 0 10px 10px; box-shadow: none; }
   .person:hover { border-color: var(--border-strong); }
-  /* Keep the selection outline intact at every zoom level. */
-  .person.selected { z-index: 1; }
-  .person.selected::after {
-    content: ""; position: absolute; inset: -1px; border: 2px solid var(--fg); border-radius: inherit; pointer-events: none;
+  /* Draw above the shared edge so each joined card has a complete outline. */
+  .person:hover, .person.selected { z-index: 1; }
+  .person:hover::after, .person.selected::after {
+    content: ""; position: absolute; inset: -1px; border: 1px solid var(--border-strong); border-radius: inherit; pointer-events: none;
   }
+  .person.selected::after { border: 2px solid var(--fg); }
   .person.unknown { border-style: dashed; box-shadow: none; background: transparent; color: var(--muted); }
   .dim .person:not(.related) { opacity: .45; }
   .avatar {
