@@ -155,10 +155,11 @@
   #card section { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
   #card h3 { margin: 0 0 6px; font-size: 12px; font-weight: 500; color: var(--muted); }
   .relative {
-    display: flex; align-items: center; gap: 10px; padding: 7px 8px; margin: 0 -8px; width: calc(100% + 16px);
+    display: flex; align-items: center; gap: 10px; padding: 7px 8px; margin: 0; width: 100%;
     border: 0; border-radius: 8px; background: none; text-align: left; cursor: pointer;
   }
   .relative:hover { background: var(--chip); }
+  .relative:hover .avatar { background: var(--surface); }
   .relative .name { min-width: 0; }
   .relative .note { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; }
   #card .actions { display: flex; flex: none; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
