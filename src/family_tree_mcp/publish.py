@@ -20,11 +20,13 @@ NODE_DIRS = ["/opt/homebrew/bin", "/usr/local/bin", str(Path.home() / ".volta/bi
 def deploy(folder: Path, project: str, create: bool = True) -> str:
     """Deploy the folder to the Pages project, creating it first if asked; return its URL."""
     if create:
-        created = _wrangler("pages", "project", "create", project, "--production-branch", "main")
+        created = _wrangler(
+            folder, "pages", "project", "create", project, "--production-branch", "main"
+        )
         if created.returncode and "already exists" not in created.stdout:
             raise ValueError(_failure(created.stdout))
     deployed = _wrangler(
-        "pages", "deploy", str(folder), "--project-name", project, "--branch", "main",
+        folder, "pages", "deploy", str(folder), "--project-name", project, "--branch", "main",
         "--commit-dirty=true",
     )  # fmt: skip
     if deployed.returncode:
@@ -35,7 +37,7 @@ def deploy(folder: Path, project: str, create: bool = True) -> str:
     return f"https://{project}.pages.dev"
 
 
-def _wrangler(*args: str) -> subprocess.CompletedProcess[str]:
+def _wrangler(folder: Path, *args: str) -> subprocess.CompletedProcess[str]:
     path = os.pathsep.join([os.environ.get("PATH", ""), *NODE_DIRS])
     if not (npx := shutil.which("npx", path=path)):
         raise ValueError("Publishing needs Node.js (for npx). Install it from https://nodejs.org.")
@@ -43,6 +45,9 @@ def _wrangler(*args: str) -> subprocess.CompletedProcess[str]:
     try:
         return subprocess.run(
             [npx, *WRANGLER, *args],
+            # Wrangler writes .wrangler/tmp in its working directory, and apps often start
+            # servers in a read-only one like /.
+            cwd=folder.parent,
             env=env,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
@@ -57,8 +62,10 @@ def _wrangler(*args: str) -> subprocess.CompletedProcess[str]:
 def _failure(output: str) -> str:
     if re.search(r"log ?in|authenticat|CLOUDFLARE_API_TOKEN", output, re.IGNORECASE):
         return "Run `npx wrangler login` once in a terminal to connect Cloudflare, then try again."
-    lines = [line for line in output.strip().splitlines() if line.strip()]
-    return "Publishing failed: " + " ".join(lines[-3:])
+    lines = [line.strip() for line in re.sub(r"\x1b\[[0-9;]*m", "", output).splitlines()]
+    lines = [line for line in lines if line and not line.startswith("🪵")]
+    start = next((i for i, line in enumerate(lines) if "ERROR" in line), max(len(lines) - 3, 0))
+    return "Publishing failed: " + " ".join(lines[start : start + 2])
 
 
 class Updater:
