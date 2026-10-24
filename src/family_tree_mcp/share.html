@@ -37,20 +37,20 @@
   svg.icon { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 
   header {
-    display: flex; align-items: center; gap: 16px; padding: 12px max(16px, env(safe-area-inset-right)) 12px max(16px, env(safe-area-inset-left));
+    display: flex; align-items: center; gap: 8px; padding: 12px max(16px, env(safe-area-inset-right)) 12px max(16px, env(safe-area-inset-left));
     padding-top: max(12px, env(safe-area-inset-top)); border-bottom: 1px solid var(--border); background: var(--surface); z-index: 3;
   }
   .title { min-width: 0; flex: 1; }
   h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .count { color: var(--muted); font-size: 13px; }
   .search { position: relative; width: min(320px, 40vw); }
-  .actions { display: flex; gap: 4px; margin-right: -6px; }
+  .actions { display: flex; gap: 8px; }
   .icon-button {
-    display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 8px;
-    background: none; color: var(--muted); cursor: pointer; transition: background-color .15s, color .15s;
+    display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface); color: var(--muted); cursor: pointer; transition: background-color .15s, color .15s;
   }
   .icon-button:hover { background: var(--chip); color: var(--fg); }
-  .icon-button svg.icon { width: 18px; height: 18px; }
+  .icon-button svg.icon { width: 16px; height: 16px; }
   :root:not([data-theme="dark"]) .sun, :root[data-theme="dark"] .moon { display: none; }
   .search svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
   .search input {
@@ -138,7 +138,7 @@
   .empty-tree { display: grid; place-items: center; height: 100%; color: var(--muted); }
 
   @media (max-width: 640px) {
-    header { gap: 12px; }
+    header { gap: 8px; }
     .count { display: none; }
     #card {
       position: fixed; left: 0; right: 0; bottom: 0; top: auto !important; width: auto; max-height: 70vh;
