@@ -260,10 +260,11 @@ for (const id of ids) {
     // Partners in different branches and rows get a line only while one of them is selected.
     if (linked.has(key) || a.y !== b.y) continue;
     linked.add(key);
-    if (b.x - a.x <= card.w + 24) {
+    const between = ids.some((o) => at(o).y === a.y && at(o).x > a.x && at(o).x < b.x);
+    if (!between) {
       edge(`M${a.x + card.w},${a.y + card.h / 2}H${b.x}`, "couple", [id, other], ended(id, other));
       // A dot where the couple's children hang from.
-      if (children(tree, id).some((c) => parentsOf(tree, c).includes(other))) {
+      if (b.x - a.x <= card.w + 24 && children(tree, id).some((c) => parentsOf(tree, c).includes(other))) {
         const cx = (a.x + card.w + b.x) / 2;
         edge(`M${cx - 3.5},${a.y + card.h / 2}a3.5,3.5 0 1,0 7,0a3.5,3.5 0 1,0 -7,0`, "couple", [id, other], "dot");
       }
@@ -322,14 +323,35 @@ function fit(glide = false) {
   camera.y = Math.max(0, (view.clientHeight - h * camera.scale) / 2);
   apply(glide);
 }
-function centreOn(id) {
-  const scale = Math.max(camera.scale, Math.min(1, view.clientWidth / 640));
+// The part of the screen left free by the person's card: the top on phones, the left otherwise.
+function room() {
   const narrow = matchMedia("(max-width: 640px)").matches;
-  const p = at(id);
+  return { w: view.clientWidth * (narrow ? 1 : 0.68), h: view.clientHeight * (narrow ? 0.45 : 1) };
+}
+function bounds(group) {
+  const xs = group.map((g) => at(g).x);
+  const ys = group.map((g) => at(g).y);
+  return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs) + card.w, h: Math.max(...ys) - Math.min(...ys) + card.h };
+}
+function inView(group) {
+  const b = bounds(group);
+  const { w, h } = room();
+  const [x, y, s] = [camera.x, camera.y, camera.scale];
+  return x + b.x * s >= 0 && y + b.y * s >= 0 && x + (b.x + b.w) * s <= w && y + (b.y + b.h) * s <= h && s >= 0.6;
+}
+// Frames the person with their line, zooming out only as far as needed.
+function centreOn([id, ...group]) {
+  const b = bounds([id, ...group]);
+  const { w, h } = room();
+  const scale = Math.max(0.6, Math.min(1, (w - 48) / b.w, (h - 48) / b.h));
   camera.scale = scale;
-  // Leave room on the right for the person's card on wider screens.
-  camera.x = view.clientWidth * (narrow ? 0.5 : 0.36) - (p.x + card.w / 2) * scale;
-  camera.y = (narrow ? view.clientHeight * 0.22 : view.clientHeight / 2) - (p.y + card.h / 2) * scale;
+  camera.x = w / 2 - (b.x + b.w / 2) * scale;
+  camera.y = h / 2 - (b.y + b.h / 2) * scale;
+  // When the whole line can't fit at a readable size, keep the person in view.
+  const p = at(id);
+  const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+  camera.x = clamp(camera.x, 24 - p.x * scale, w - 24 - (p.x + card.w) * scale);
+  camera.y = clamp(camera.y, 24 - p.y * scale, h - 24 - (p.y + card.h) * scale);
   const before = stage.style.transform;
   apply(true);
   return stage.style.transform !== before;
@@ -418,7 +440,8 @@ function select(id, glide = false) {
   const p = person(id);
   const partners = partnersOf(tree, id);
   const down = walk(id, (x) => children(tree, x));
-  const line = new Set([id, ...walk(id, (x) => parentsOf(tree, x)), ...down]);
+  const up = walk(id, (x) => parentsOf(tree, x));
+  const line = new Set([id, ...up, ...down]);
   const related = new Set([...line, ...partners, ...siblings(tree, id), ...[...down].flatMap((d) => partnersOf(tree, d))]);
   stage.classList.add("dim");
   for (const other of ids) cards[other].classList.toggle("related", related.has(other));
@@ -426,6 +449,8 @@ function select(id, glide = false) {
   for (const { path, kind, people: [a, ...rest] } of edges) {
     const on = kind === "child" ? line.has(a) && rest.some((x) => line.has(x)) : related.has(a) && related.has(rest[0]) && (line.has(a) || line.has(rest[0]));
     path.classList.toggle("on", on);
+    // Shared bus segments: highlighted lines go on top so grey siblings can't cover them.
+    if (on) lines.append(path);
   }
   for (const other of partners) {
     if (linked.has([id, other].sort().join("+"))) continue;
@@ -461,7 +486,8 @@ function select(id, glide = false) {
   view.append(box);
 
   // While the tree glides to the person, the card waits at its final spot and appears on arrival.
-  if (glide) {
+  const frame = [id, ...up, ...children(tree, id), ...partners];
+  if (glide || !inView(frame)) {
     box.classList.add("waiting");
     const show = () => {
       box.classList.remove("waiting");
@@ -469,7 +495,7 @@ function select(id, glide = false) {
     };
     // Cards fade too; only the stage's own move counts as arriving.
     const arrived = (e) => e.target === stage && e.propertyName === "transform" && show();
-    if (centreOn(id)) {
+    if (centreOn(frame)) {
       stage.addEventListener("transitionend", arrived);
       setTimeout(show, 600);
     } else show();

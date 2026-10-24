@@ -100,9 +100,16 @@ function layout(tree, viewport = { width: 1280, height: 800 }) {
       });
     },
   });
+  // A child who married into a neighbouring family moves to that side of the row, so the
+  // couple sits next to each other instead of being joined by a line across the tree.
+  const side = (kid) => {
+    const here = ordered.indexOf(rootOf(kid));
+    const there = [kid, ...spouses(kid)].flatMap((m) => partnersOf(tree, m)).map((p) => ordered.indexOf(rootOf(p)));
+    return there.some((i) => i > here) ? 1 : there.some((i) => i < here) ? -1 : 0;
+  };
   const spread = (head, level, depth) => {
     const kids = [];
-    for (const kid of kidsOf[head] || []) {
+    for (const kid of [...(kidsOf[head] || [])].sort((a, b) => side(a) - side(b))) {
       const last = kids[kids.length - 1];
       if (leaf(kid) && last?.run) last.run.push(kid);
       else kids.push(leaf(kid) ? { run: [kid] } : { id: kid });
