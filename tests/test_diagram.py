@@ -1,0 +1,61 @@
+import re
+
+from family_tree_mcp.diagram import mermaid
+from family_tree_mcp.tree import Tree
+
+
+def family() -> Tree:
+    t = Tree(name='The "Smith" Family')
+    t.add_person("Gran", sex="female", birth_date="1930-05-01", death_date="2001")
+    t.add_person("Grandpa", sex="male")
+    t.add_person("Mum", sex="female", birth_date="1960")
+    t.add_person("Dad", sex="male")
+    t.add_person("Kid")
+    t.add_person("Uncle", sex="male")
+    t.add_person("Spouse")
+    t.add_person("Stranger")
+    t.link("gran", "partner", "grandpa")
+    t.link("mum", "partner", "dad")
+    t.link("uncle", "partner", "spouse")
+    for child, parents in {
+        "mum": ["gran", "grandpa"],
+        "uncle": ["gran"],
+        "kid": ["mum", "dad"],
+    }.items():
+        for parent in parents:
+            t.link(child, "parent", parent)
+    return t
+
+
+def nodes(src: str) -> dict[str, str]:
+    """Map person names to their Mermaid node ids."""
+    return {name: node for node, name in re.findall(r'(p\d+)\["([^"<]+)', src)}
+
+
+def test_couple_children_hang_from_shared_union_node() -> None:
+    src = mermaid(family())
+    n = nodes(src)
+    [union] = re.findall(rf"(u\d+) --> {n['Mum']}\n", src)
+    assert f"{n['Gran']} --- {union}" in src and f"{n['Grandpa']} --- {union}" in src
+    assert f"{n['Gran']} --> {n['Uncle']}" in src  # single known parent links directly
+
+
+def test_labels_styles_and_escaping() -> None:
+    src = mermaid(family(), "kid")
+    n = nodes(src)
+    assert 'title: "The \\"Smith\\" Family"' in src
+    assert "Gran<br/><small>1930–2001</small>" in src
+    assert "Mum<br/><small>b. 1960</small>" in src
+    assert f"class {n['Gran']} deceased" in src
+    assert f"class {n['Kid']} focus" in src
+
+
+def test_views_scope_the_diagram() -> None:
+    t = family()
+    assert set(nodes(mermaid(t, "kid", "ancestors"))) == {"Gran", "Grandpa", "Mum", "Dad", "Kid"}
+    assert set(nodes(mermaid(t, "kid", "ancestors", generations=1))) == {"Mum", "Dad", "Kid"}
+    # Descendants include their partners, so couples stay together.
+    assert set(nodes(mermaid(t, "gran", "descendants", generations=1))) == {
+        "Gran", "Grandpa", "Mum", "Dad", "Uncle", "Spouse"
+    }  # fmt: skip
+    assert "Stranger" in nodes(mermaid(t))

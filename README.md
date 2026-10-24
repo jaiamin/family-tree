@@ -45,6 +45,9 @@ Everything else (children, siblings, aunts, cousins, in-laws) is derived from th
 | `get_person` | Details with parents, partners, children and siblings |
 | `get_relationship` | Name the relation, e.g. "Sam is Ava's first cousin once removed." |
 | `get_ancestors`, `get_descendants` | Lineage grouped by generation |
+| `get_diagram` | Mermaid chart of the whole tree or one person's ancestors/descendants |
+
+`get_diagram` returns [Mermaid](https://mermaid.js.org) source, which Claude, ChatGPT, GitHub and most Markdown viewers render as a chart. Couples join at a dot above their children, boxes are colored by sex (blue, pink, gray when unknown), deceased people are dashed and faded, and the focus person has an orange border.
 
 Ask your agent something like *"Start a tree for my family: my parents are Maria and José, and my grandmother on my mom's side is Rosa"*, then *"How is Rosa related to my cousin Luis?"*
 

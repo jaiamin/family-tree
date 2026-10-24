@@ -29,6 +29,8 @@ async def test_build_and_query_tree(tmp_path) -> None:
             {**tree, "person_id": ids["Ben Smith"], "relative_id": ids["Cy Smith"]},
         )
         assert result.data["summary"] == "Cy Smith is Ben Smith's brother."
+        diagram = await client.call_tool("get_diagram", {**tree, "person_id": ids["Ada Smith"]})
+        assert diagram.data.startswith('---\ntitle: "The Smiths"')
 
     # A fresh server reads the same tree back from disk.
     async with Client(create_server(Store(tmp_path))) as client:
