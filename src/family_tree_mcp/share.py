@@ -84,12 +84,11 @@ def website_files(collection: Collection, site: Site) -> tuple[dict[str, str], i
         page, count = share_page(tree, site, list(collection.trees.values()))
         pages[f"trees/{tree.id}/index.html"] = page
         hidden += count
-        description = f"<p>{html.escape(tree.description)}</p>" if tree.description else ""
         links = sum(len(p.parents) for p in tree.people.values())
         links += sum(len(p.partners) for p in tree.people.values()) // 2
         entries.append(
             f'<li><a class="tree-card" href="/trees/{tree.id}/"><h3>{html.escape(tree.name)}</h3>'
-            f"{description}<dl><div><dt>People</dt><dd>{len(tree.people)}</dd></div>"
+            f"<dl><div><dt>People</dt><dd>{len(tree.people)}</dd></div>"
             f"<div><dt>Family links</dt><dd>{links}</dd></div></dl></a></li>"
         )
     listing = (

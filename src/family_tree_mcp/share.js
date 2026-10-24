@@ -58,10 +58,17 @@ function closeTreeOptions() {
   treeOptions.hidden = true;
   treeSwitch.setAttribute("aria-expanded", "false");
 }
+function openTreeOptions() {
+  treeOptions.hidden = false;
+  const anchor = treeSwitch.getBoundingClientRect();
+  treeOptions.style.left = `${Math.max(16, Math.min(anchor.left, innerWidth - treeOptions.offsetWidth - 16))}px`;
+  treeOptions.style.top = `${anchor.bottom + 6}px`;
+  treeSwitch.setAttribute("aria-expanded", "true");
+}
+window.addEventListener("resize", closeTreeOptions);
 treeSwitch.onclick = () => {
   const open = treeOptions.hidden;
-  treeOptions.hidden = !open;
-  treeSwitch.setAttribute("aria-expanded", String(open));
+  open ? openTreeOptions() : closeTreeOptions();
 };
 document.addEventListener("click", (event) => {
   if (!event.target.closest(".tree-picker")) closeTreeOptions();
@@ -79,8 +86,7 @@ document.querySelector(".tree-picker").addEventListener("keydown", (event) => {
     const index = links.indexOf(document.activeElement);
     const next = event.key === "ArrowDown" ? (index + 1) % links.length
       : (index < 0 ? links.length - 1 : (index - 1 + links.length) % links.length);
-    treeOptions.hidden = false;
-    treeSwitch.setAttribute("aria-expanded", "true");
+    openTreeOptions();
     links[next].focus();
     event.preventDefault();
   }
