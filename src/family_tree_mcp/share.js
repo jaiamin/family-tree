@@ -190,6 +190,105 @@ function layout(tree, viewport = { width: 1280, height: 800 }) {
   return { ...out, portrait, card: CARD, gap: GAP, width: best?.w || CARD.w, height: best?.h || CARD.h };
 }
 
+// Connection geometry is shared by the viewer and regression tests.
+function connections(tree, geometry, pad = 0) {
+  const { pos, spine, hang, pair, family, card, gap } = geometry;
+  const ids = Object.keys(tree.people);
+  const at = (id) => ({ x: Math.round(pos[id].x) + pad, y: Math.round(pos[id].y) + pad });
+  const PAD = pad;
+  const result = [];
+  const edge = (d, kind, people, className = "") => result.push({ d, kind, people, className });
+  const joins = new Map();
+  const adjacent = (a, b) => {
+    const [p, q] = [at(a), at(b)].sort((m, n) => m.x - n.x);
+    return p.y === q.y && !ids.some((o) => at(o).y === p.y && at(o).x > p.x && at(o).x < q.x);
+  };
+  const pairs = new Map();
+  for (const id of ids) {
+    for (const other of partnersOf(tree, id)) pairs.set(pairKey(id, other), [id, other]);
+    const parents = parentsOf(tree, id);
+    // Two known parents need a shared origin even if no partnership was entered.
+    if (parents.length === 2) pairs.set(pairKey(...parents), parents);
+  }
+  for (const [key, people] of pairs) {
+    const [id, other] = people;
+    const [a, b] = [at(id), at(other)].sort((p, q) => p.x - q.x || p.y - q.y);
+    const shared = ids.some((c) => parentsOf(tree, c).includes(id) && parentsOf(tree, c).includes(other));
+    let d, join;
+    if (pair[id] && pair[other] && a.x === b.x && Math.abs(a.y - b.y) === card.h) {
+      // Joined cards already show the partnership; put the child junction at their seam.
+      join = { x: a.x, y: Math.max(a.y, b.y) };
+    } else if (adjacent(id, other)) {
+      join = { x: (a.x + card.w + b.x) / 2, y: a.y + card.h / 2 };
+      d = `M${a.x + card.w},${join.y}H${b.x}`;
+    } else if (a.y === b.y) {
+      // Route below intervening cards so the shared child stem cannot cut through them.
+      const y = a.y + card.h + gap.row / 4;
+      join = { x: (a.x + b.x + card.w) / 2, y };
+      d = `M${a.x + card.w / 2},${a.y + card.h}V${y}H${b.x + card.w / 2}V${b.y + card.h}`;
+    } else if (b.x - a.x >= card.w + 24) {
+      // A bridge in the gap between branches stays visible regardless of row placement.
+      const x = (a.x + card.w + b.x) / 2;
+      const ay = a.y + card.h / 2, by = b.y + card.h / 2;
+      join = { x, y: Math.max(ay, by) };
+      d = `M${a.x + card.w},${ay}H${x}V${by}H${b.x}`;
+    } else {
+      // Overlapping columns: use their left gutter rather than passing through either card.
+      const x = Math.min(a.x, b.x) - 18;
+      const ay = a.y + card.h / 2, by = b.y + card.h / 2;
+      join = { x, y: Math.max(ay, by) };
+      d = `M${a.x},${ay}H${x}V${by}H${b.x}`;
+    }
+    joins.set(key, join);
+    if (d) edge(d, "couple", people);
+    if (shared) {
+      const { x, y } = join;
+      edge(`M${x - 3.5},${y}a3.5,3.5 0 1,0 7,0a3.5,3.5 0 1,0 -7,0`, "couple", people, "dot");
+    }
+  }
+
+  function origin(id) {
+    const parents = parentsOf(tree, id);
+    if (parents.length === 2) return joins.get(pairKey(...parents));
+    const parent = at(parents[0]);
+    return { x: parent.x + card.w / 2, y: parent.y + card.h };
+  }
+  // When one family has children from several couples, each couple's bus runs at its own height.
+  const lanes = {};
+  for (const id of ids) {
+    if (!parentsOf(tree, id).length || hang[id]) continue;
+    const o = origin(id);
+    const list = (lanes[family[id]] ||= []);
+    if (!list.some((x) => x === o.x)) list.push(o.x);
+  }
+  for (const list of Object.values(lanes)) list.sort((a, b) => a - b);
+
+  for (const id of ids) {
+    const parents = parentsOf(tree, id);
+    if (!parents.length) continue;
+    const kid = at(id);
+    const from = origin(id);
+    const mid = kid.y + card.h / 2;
+    if (hang[id]) {
+      // Nested branches: a line down the parent's left side, then across to the child. A child of
+      // a couple from two families leaves from the couple's join and turns into that line.
+      const h = { x: hang[id].x + PAD, y: hang[id].y + PAD };
+      const d = parents.length === 2
+        ? `M${from.x},${from.y}V${h.y + gap.stack / 2}H${h.x}V${mid}H${kid.x}`
+        : `M${h.x},${h.y}V${mid}H${kid.x}`;
+      edge(d, "child", [id, ...parents]);
+      continue;
+    }
+    const list = lanes[family[id]] || [from.x];
+    const busY = at(family[id] || parents[0]).y + card.h + gap.row / 2 + (list.indexOf(from.x) - (list.length - 1) / 2) * 10;
+    // Stacked children hang off a spine down their column's left side.
+    const end = spine[id] ? `H${spine[id].x + PAD}V${mid}H${kid.x}` : `H${kid.x + card.w / 2}V${kid.y}`;
+    edge(`M${from.x},${from.y}V${busY}${end}`, "child", [id, ...parents]);
+  }
+
+  return result;
+}
+
 if (typeof module !== "undefined") {
-  module.exports = { layout, children, siblings, halfSiblings, partnership, parentsOf, partnersOf };
+  module.exports = { connections, layout, children, siblings, halfSiblings, partnership, parentsOf, partnersOf };
 }

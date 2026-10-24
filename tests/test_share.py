@@ -17,6 +17,7 @@ console.log(JSON.stringify({
   siblings: ids.map((id) => lib.siblings(tree, id)),
   half: ids.map((a) => ids.map((b) => a !== b && lib.halfSiblings(tree, a, b))),
   layouts: viewports.map((v) => lib.layout(tree, v)),
+  connections: viewports.map((v) => lib.connections(tree, lib.layout(tree, v))),
 }));
 """
 
@@ -60,7 +61,7 @@ def test_page_logic_matches_python_and_lays_out_everyone(tree: Tree) -> None:
     assert js["children"] == [tree.children(i) for i in ids]
     assert js["siblings"] == [tree.siblings(i) for i in ids]
     assert js["half"] == [[a != b and tree.half_siblings(a, b) for b in ids] for a in ids]
-    for view, got in zip(viewports, js["layouts"], strict=True):
+    for view, got, edges in zip(viewports, js["layouts"], js["connections"], strict=True):
         pos, card = got["pos"], got["card"]
         assert set(pos) == set(ids)
         assert got["portrait"] == (view["height"] > view["width"])
@@ -73,6 +74,35 @@ def test_page_logic_matches_python_and_lays_out_everyone(tree: Tree) -> None:
         for pid in ids:
             if parents := tree.people[pid].parents:
                 assert any(pos[pid]["y"] > pos[p]["y"] for p in parents)
+        for pid in ids:
+            for partner in tree.people[pid].partners:
+                a, b = pos[pid], pos[partner]
+                joined_cards = (
+                    pid in got["pair"]
+                    and partner in got["pair"]
+                    and a["x"] == b["x"]
+                    and abs(a["y"] - b["y"]) == card["h"]
+                )
+                assert joined_cards or any(
+                    e["kind"] == "couple"
+                    and e["className"] != "dot"
+                    and set(e["people"]) == {pid, partner}
+                    for e in edges
+                ), "Partnership disappeared"
+        # Every parent pair has a visible junction, with all shared children leaving it.
+        for pid in ids:
+            parents = tree.people[pid].parents
+            if len(parents) != 2:
+                continue
+            dot = next(
+                e for e in edges if e["className"] == "dot" and set(e["people"]) == set(parents)
+            )
+            child = next(e for e in edges if e["kind"] == "child" and e["people"][0] == pid)
+            start = child["d"].split("V")[0][1:]
+            dot_start = dot["d"].split("a")[0][1:]
+            x, y = map(float, start.split(","))
+            dx, dy = map(float, dot_start.split(","))
+            assert x == dx + 3.5 and y == dy, "Child disconnected from its parents' junction"
         # Couples stacked in a column form one joined card.
         stacked = 0
         for pid in ids:
@@ -114,3 +144,46 @@ def test_share_page_hides_living_details_and_embeds_safely() -> None:
 
     page, hidden = share_page(t, hide_living=False)
     assert hidden == 0 and "Mumbai" in page and '"private"' not in page
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="needs Node.js")
+def test_couple_in_different_branches_has_visible_join_and_shared_children() -> None:
+    """Both parents have ancestry: their marriage must stay visible across rows."""
+    script = str(files("family_tree_mcp").joinpath("share.js"))
+    result = subprocess.run(
+        [
+            "node",
+            "-e",
+            """
+const { connections } = require(process.argv[1]);
+const tree = { people: {
+  divya: { parents: [], partners: ['shashank'] },
+  shashank: { parents: [], partners: ['divya'] },
+  nirav: { parents: ['divya', 'shashank'], partners: [] },
+  ami: { parents: ['divya', 'shashank'], partners: [] },
+} };
+const geometry = {
+  pos: {divya: {x: 0, y: 0}, shashank: {x: 238, y: 112},
+        nirav: {x: 256, y: 172}, ami: {x: 256, y: 300}},
+  hang: {nirav: {x: 247, y: 164}, ami: {x: 247, y: 164}},
+  spine: {}, pair: {}, family: {nirav: 'shashank', ami: 'shashank'},
+  card: {w: 172, h: 52}, gap: {stack: 8, row: 56},
+};
+console.log(JSON.stringify(connections(tree, geometry)));
+""",
+            script,
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    edges = json.loads(result.stdout)
+    couple = [e for e in edges if e["kind"] == "couple"]
+    assert len(couple) == 2, "Marriage needs a permanent line and a shared-parent dot"
+    dot = next(e for e in couple if e["className"] == "dot")
+    assert set(dot["people"]) == {"divya", "shashank"}
+    children = [e for e in edges if e["kind"] == "child"]
+    assert len(children) == 2
+    assert all(e["d"].startswith("M205,138") for e in children), (
+        "Children must leave the shared join"
+    )
