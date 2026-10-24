@@ -208,7 +208,7 @@ let selected = null;
 // Each relative's years tell apart people who share a name.
 function relativeRow(id, note = "") {
   const side = [note, years(person(id))].filter(Boolean).join(" · ");
-  const row = el("button", { class: "relative" }, el("span", { class: "name" }, displayName(id)), side && el("span", { class: "note" }, side));
+  const row = el("button", { class: "relative" }, avatar(id), el("span", { class: "name" }, displayName(id)), side && el("span", { class: "note" }, side));
   row.onclick = () => select(id);
   return row;
 }
