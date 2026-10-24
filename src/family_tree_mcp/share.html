@@ -8,6 +8,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap">
+<script>
+  try { if (localStorage.getItem("theme") === "dark") document.documentElement.dataset.theme = "dark"; } catch {}
+</script>
 <style>
   :root {
     --bg: #fafafa; --surface: #ffffff; --fg: #09090b; --muted: #71717a; --border: #e4e4e7;
@@ -15,13 +18,11 @@
     --shadow: 0 1px 2px rgb(0 0 0 / .05); --shadow-lg: 0 12px 32px -8px rgb(0 0 0 / .18), 0 2px 6px rgb(0 0 0 / .06);
     color-scheme: light;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #09090b; --surface: #18181b; --fg: #fafafa; --muted: #a1a1aa; --border: #27272a;
-      --border-strong: #52525b; --line: #3f3f46; --line-on: #fafafa; --chip: #27272a;
-      --shadow: none; --shadow-lg: 0 12px 32px -8px rgb(0 0 0 / .6);
-      color-scheme: dark;
-    }
+  :root[data-theme="dark"] {
+    --bg: #09090b; --surface: #18181b; --fg: #fafafa; --muted: #a1a1aa; --border: #27272a;
+    --border-strong: #52525b; --line: #3f3f46; --line-on: #fafafa; --chip: #27272a;
+    --shadow: none; --shadow-lg: 0 12px 32px -8px rgb(0 0 0 / .6);
+    color-scheme: dark;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
@@ -42,7 +43,15 @@
   .title { min-width: 0; flex: 1; }
   h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .count { color: var(--muted); font-size: 13px; }
-  .search { position: relative; width: min(320px, 46vw); }
+  .search { position: relative; width: min(320px, 40vw); }
+  .actions { display: flex; gap: 4px; margin-right: -6px; }
+  .icon-button {
+    display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 8px;
+    background: none; color: var(--muted); cursor: pointer; transition: background-color .15s, color .15s;
+  }
+  .icon-button:hover { background: var(--chip); color: var(--fg); }
+  .icon-button svg.icon { width: 18px; height: 18px; }
+  :root:not([data-theme="dark"]) .sun, :root[data-theme="dark"] .moon { display: none; }
   .search svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
   .search input {
     width: 100%; height: 36px; padding: 0 12px 0 34px; border: 1px solid var(--border); border-radius: 8px;
@@ -67,6 +76,8 @@
   #lines path { fill: none; stroke: var(--line); stroke-width: 1.5; }
   #lines path.ended { stroke-dasharray: 5 4; }
   #lines path.on { stroke: var(--line-on); stroke-width: 2; }
+  #lines path.dot { fill: var(--line); stroke: none; }
+  #lines path.dot.on { fill: var(--line-on); }
 
   .person {
     position: absolute; display: flex; align-items: center; gap: 10px; padding: 0 12px; text-align: left; cursor: pointer;
@@ -97,8 +108,9 @@
   #card {
     position: absolute; z-index: 4; width: 320px; max-height: calc(100% - 32px); overflow: auto; padding: 16px;
     background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-lg); cursor: auto; user-select: text; -webkit-user-select: text;
-    animation: rise .2s cubic-bezier(.16, 1, .3, 1);
   }
+  #card:not(.waiting) { animation: rise .2s cubic-bezier(.16, 1, .3, 1); }
+  #card.waiting { visibility: hidden; }
   @keyframes rise { from { opacity: 0; transform: translateY(4px); } }
   #card .top { display: flex; align-items: center; gap: 12px; padding-right: 28px; }
   #card h2 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
@@ -125,8 +137,9 @@
     .count { display: none; }
     #card {
       position: fixed; left: 0; right: 0; bottom: 0; top: auto !important; width: auto; max-height: 70vh;
-      border-radius: 16px 16px 0 0; padding-bottom: max(16px, env(safe-area-inset-bottom)); animation-name: sheet;
+      border-radius: 16px 16px 0 0; padding-bottom: max(16px, env(safe-area-inset-bottom));
     }
+    #card:not(.waiting) { animation-name: sheet; }
     @keyframes sheet { from { transform: translateY(24px); opacity: 0; } }
   }
   @media (prefers-reduced-motion: reduce) { #stage.glide, #card { transition: none; animation: none; } }
@@ -143,6 +156,15 @@
     <input id="search" type="search" placeholder="Find a person" autocomplete="off" aria-label="Find a person"
       role="combobox" aria-expanded="false" aria-controls="results">
     <ul class="results" id="results" role="listbox" hidden></ul>
+  </div>
+  <div class="actions">
+    <a class="icon-button" href="https://github.com/jaiamin/family-tree-mcp" target="_blank" rel="noopener" aria-label="family-tree-mcp on GitHub" title="GitHub">
+      <svg class="icon" viewBox="0 0 24 24"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>
+    </a>
+    <button class="icon-button" id="theme" aria-label="Switch light or dark mode" title="Light or dark">
+      <svg class="icon moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+      <svg class="icon sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+    </button>
   </div>
 </header>
 <main id="view" aria-label="Family tree">
@@ -185,6 +207,11 @@ function el(tag, attrs = {}, ...kids) {
 }
 const avatar = (id, size = "") => el("span", { class: `avatar ${size}`, "aria-hidden": "true" }, initials(id));
 
+$("theme").onclick = () => {
+  const dark = document.documentElement.dataset.theme !== "dark";
+  dark ? (document.documentElement.dataset.theme = "dark") : delete document.documentElement.dataset.theme;
+  try { localStorage.setItem("theme", dark ? "dark" : "light"); } catch {}
+};
 $("title").textContent = tree.name;
 $("count").textContent = `${ids.length} ${ids.length === 1 ? "person" : "people"}`;
 document.title = tree.name;
@@ -215,27 +242,34 @@ for (const id of ids) {
 }
 
 const edges = [];
-function edge(d, people, ended = false) {
+function edge(d, kind, people, className = "") {
   const path = document.createElementNS(svgNS, "path");
   path.setAttribute("d", d);
-  if (ended) path.classList.add("ended");
+  if (className) path.setAttribute("class", className);
   lines.append(path);
-  edges.push({ path, people });
+  edges.push({ path, kind, people });
+  return path;
 }
-const ended = (a, b) => partnership(tree, a, b)?.status === "divorced";
-const drawn = new Set();
+const ended = (a, b) => (partnership(tree, a, b)?.status === "divorced" ? "ended" : "");
+const arc = (a, b, lift) => `M${a.x + card.w / 2},${a.y}C${a.x + card.w / 2},${a.y - lift} ${b.x + card.w / 2},${b.y - lift} ${b.x + card.w / 2},${b.y}`;
+const linked = new Set();
 for (const id of ids) {
   for (const other of partnersOf(tree, id)) {
     const key = [id, other].sort().join("+");
-    if (drawn.has(key)) continue;
-    drawn.add(key);
     const [a, b] = [at(id), at(other)].sort((p, q) => p.x - q.x);
-    if (a.y !== b.y) continue; // partners in different branches and rows are linked in their cards
-    if (b.x - a.x <= card.w + 24) edge(`M${a.x + card.w},${a.y + card.h / 2}H${b.x}`, [id, other], ended(id, other));
-    else {
+    // Partners in different branches and rows get a line only while one of them is selected.
+    if (linked.has(key) || a.y !== b.y) continue;
+    linked.add(key);
+    if (b.x - a.x <= card.w + 24) {
+      edge(`M${a.x + card.w},${a.y + card.h / 2}H${b.x}`, "couple", [id, other], ended(id, other));
+      // A dot where the couple's children hang from.
+      if (children(tree, id).some((c) => parentsOf(tree, c).includes(other))) {
+        const cx = (a.x + card.w + b.x) / 2;
+        edge(`M${cx - 3.5},${a.y + card.h / 2}a3.5,3.5 0 1,0 7,0a3.5,3.5 0 1,0 -7,0`, "couple", [id, other], "dot");
+      }
+    } else {
       // Partners from different branches on one row: an arc over the cards between them.
-      const lift = Math.min(64, 24 + (b.x - a.x) / 20);
-      edge(`M${a.x + card.w / 2},${a.y}C${a.x + card.w / 2},${a.y - lift} ${b.x + card.w / 2},${b.y - lift} ${b.x + card.w / 2},${b.y}`, [id, other], ended(id, other));
+      edge(arc(a, b, Math.min(64, 24 + (b.x - a.x) / 20)), "couple", [id, other], ended(id, other));
     }
   }
 }
@@ -254,14 +288,14 @@ for (const id of ids) {
   }
   if (hang[id]) {
     // Nested branches: a line down the parent's left side, then across to the child.
-    edge(`M${hang[id].x + PAD},${hang[id].y + PAD}V${kid.y + card.h / 2}H${kid.x}`, [id, ...parents]);
+    edge(`M${hang[id].x + PAD},${hang[id].y + PAD}V${kid.y + card.h / 2}H${kid.x}`, "child", [id, ...parents]);
     continue;
   }
   // Stacked children hang off a spine down their column's left side.
   const end = spine[id]
     ? `H${spine[id].x + PAD}V${kid.y + card.h / 2}H${kid.x}`
     : `H${kid.x + card.w / 2}V${kid.y}`;
-  edge(`M${from.x},${from.y}V${busY}${end}`, [id, ...parents]);
+  edge(`M${from.x},${from.y}V${busY}${end}`, "child", [id, ...parents]);
 }
 
 // Pan and zoom
@@ -270,6 +304,7 @@ const camera = { x: 0, y: 0, scale: 1 };
 function apply(glide = false) {
   stage.classList.toggle("glide", glide);
   stage.style.transform = `translate(${camera.x}px, ${camera.y}px) scale(${camera.scale})`;
+  place();
 }
 function zoomAt(scale, cx = view.clientWidth / 2, cy = view.clientHeight / 2, glide = false) {
   scale = Math.min(2, Math.max(0.15, scale));
@@ -295,7 +330,9 @@ function centreOn(id) {
   // Leave room on the right for the person's card on wider screens.
   camera.x = view.clientWidth * (narrow ? 0.5 : 0.36) - (p.x + card.w / 2) * scale;
   camera.y = (narrow ? view.clientHeight * 0.22 : view.clientHeight / 2) - (p.y + card.h / 2) * scale;
+  const before = stage.style.transform;
   apply(true);
+  return stage.style.transform !== before;
 }
 
 const pointers = new Map();
@@ -366,18 +403,41 @@ function partnerNote(id, other) {
   return "";
 }
 
+const walk = (start, step) => {
+  const seen = new Set();
+  const queue = [start];
+  while (queue.length) for (const next of step(queue.shift())) if (!seen.has(next)) seen.add(next) && queue.push(next);
+  return seen;
+};
+
+// Selecting someone lights up their line, from the oldest ancestors down to their descendants,
+// and fades everyone who isn't close family.
 function select(id, glide = false) {
-  if (selected) cards[selected].classList.remove("selected");
+  clear();
   selected = id;
   const p = person(id);
   const partners = partnersOf(tree, id);
-  const related = new Set([id, ...parentsOf(tree, id), ...partners, ...children(tree, id), ...siblings(tree, id)]);
+  const down = walk(id, (x) => children(tree, x));
+  const line = new Set([id, ...walk(id, (x) => parentsOf(tree, x)), ...down]);
+  const related = new Set([...line, ...partners, ...siblings(tree, id), ...[...down].flatMap((d) => partnersOf(tree, d))]);
   stage.classList.add("dim");
   for (const other of ids) cards[other].classList.toggle("related", related.has(other));
   cards[id].classList.add("selected");
-  for (const { path, people } of edges) path.classList.toggle("on", people.includes(id) && people.every((x) => related.has(x)));
+  for (const { path, kind, people: [a, ...rest] } of edges) {
+    const on = kind === "child" ? line.has(a) && rest.some((x) => line.has(x)) : related.has(a) && related.has(rest[0]) && (line.has(a) || line.has(rest[0]));
+    path.classList.toggle("on", on);
+  }
+  for (const other of partners) {
+    if (linked.has([id, other].sort().join("+"))) continue;
+    // Side to side between the two cards, or around the left of a shared column.
+    const [a, b] = [at(id), at(other)].sort((p, q) => p.x - q.x);
+    const [ay, by] = [a.y + card.h / 2, b.y + card.h / 2];
+    const d = b.x - a.x >= card.w + 24
+      ? `M${a.x + card.w},${ay}C${(a.x + card.w + b.x) / 2},${ay} ${(a.x + card.w + b.x) / 2},${by} ${b.x},${by}`
+      : `M${a.x},${ay}C${a.x - 48},${ay} ${b.x - 48},${by} ${b.x},${by}`;
+    edge(d, "temp", [id, other], `on temp ${ended(id, other)}`);
+  }
 
-  $("card")?.remove();
   const facts = [
     ["Born", [p.birth_date, p.birth_place && `in ${p.birth_place}`].filter(Boolean).join(" ")],
     ["Died", p.death_date],
@@ -400,27 +460,46 @@ function select(id, glide = false) {
   box.append(shut);
   view.append(box);
 
-  if (glide) centreOn(id);
-  requestAnimationFrame(place);
-  setTimeout(place, 480);
+  // While the tree glides to the person, the card waits at its final spot and appears on arrival.
+  if (glide) {
+    box.classList.add("waiting");
+    const show = () => {
+      box.classList.remove("waiting");
+      stage.removeEventListener("transitionend", arrived);
+    };
+    // Cards fade too; only the stage's own move counts as arriving.
+    const arrived = (e) => e.target === stage && e.propertyName === "transform" && show();
+    if (centreOn(id)) {
+      stage.addEventListener("transitionend", arrived);
+      setTimeout(show, 600);
+    } else show();
+  }
+  place();
   history.replaceState(null, "", `#${id}`);
 }
+// Positions come from the camera, not the DOM, so the card never reads a half-finished glide.
 function place() {
   const box = $("card");
   if (!box || !selected || matchMedia("(max-width: 640px)").matches) return;
-  const r = cards[selected].getBoundingClientRect();
-  const v = view.getBoundingClientRect();
-  const right = r.right - v.left + 12;
-  const left = right + box.offsetWidth > v.width - 16 ? r.left - v.left - box.offsetWidth - 12 : right;
-  box.style.left = `${Math.max(16, left)}px`;
-  box.style.top = `${Math.min(Math.max(16, r.top - v.top), v.height - box.offsetHeight - 16)}px`;
+  const { x, y } = at(selected);
+  const s = camera.scale;
+  const [left, top, w] = [camera.x + x * s, camera.y + y * s, card.w * s];
+  const [vw, vh, bw, bh] = [view.clientWidth, view.clientHeight, box.offsetWidth, box.offsetHeight];
+  const side = left + w + 12 + bw > vw - 16 ? left - bw - 12 : left + w + 12;
+  box.style.left = `${Math.min(Math.max(16, side), vw - bw - 16)}px`;
+  box.style.top = `${Math.min(Math.max(16, top), vh - bh - 16)}px`;
 }
-function close() {
+function clear() {
   $("card")?.remove();
   if (selected) cards[selected].classList.remove("selected");
+  for (const { path } of edges) path.classList.remove("on");
+  edges.filter((e) => e.kind === "temp").forEach((e) => e.path.remove());
+  edges.splice(0, edges.length, ...edges.filter((e) => e.kind !== "temp"));
+}
+function close() {
+  clear();
   selected = null;
   stage.classList.remove("dim");
-  for (const { path } of edges) path.classList.remove("on");
   history.replaceState(null, "", location.pathname);
 }
 stage.addEventListener("click", (e) => {
@@ -429,8 +508,6 @@ stage.addEventListener("click", (e) => {
   node ? select(node.dataset.id) : close();
 });
 view.addEventListener("click", (e) => { if (!moved && e.target === view) close(); });
-const observer = new MutationObserver(() => requestAnimationFrame(place));
-observer.observe(stage, { attributes: true, attributeFilter: ["style"] });
 addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
 addEventListener("resize", place);
 
