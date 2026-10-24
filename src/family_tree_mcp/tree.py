@@ -25,7 +25,7 @@ def _name(text: str) -> str:
     return text
 
 
-# Names, dates and places are single-line in diagrams and GEDCOM; notes may span lines.
+# Names, dates and places are single-line; notes may span lines.
 Line = Annotated[str, AfterValidator(_one_line)]
 Name = Annotated[str, AfterValidator(_name)]
 
