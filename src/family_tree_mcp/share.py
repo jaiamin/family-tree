@@ -11,15 +11,21 @@ ASSETS = files("family_tree_mcp")
 
 
 def share_page(tree: Tree, hide_living: bool = True) -> tuple[str, int]:
-    """Return the page HTML and how many living people had their details hidden."""
+    """Return the page HTML and how many living people had their details hidden.
+
+    Hiding also drops marriage dates and places for couples where either may be living.
+    """
     public = tree.model_copy(deep=True)
     hidden = 0
     if hide_living:
+        living = {p.id for p in public.people.values() if _maybe_living(p.birth_date, p.death_date)}
         for person in public.people.values():
-            private = person.birth_date or person.birth_place or person.notes
-            if private and _maybe_living(person.birth_date, person.death_date):
+            if person.id in living and (person.birth_date or person.birth_place or person.notes):
                 person.birth_date = person.birth_place = person.notes = None
                 hidden += 1
+        for key, details in public.partnerships.items():
+            if living & set(key.split("+")):
+                details.marriage_date = details.marriage_place = details.divorce_date = None
     data = public.model_dump_json(exclude_none=True).replace("</", "<\\/")
     page = (
         ASSETS.joinpath("share.html")

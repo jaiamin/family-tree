@@ -69,3 +69,12 @@ def test_mermaid_live_url_round_trips() -> None:
     payload = mermaid_live_url(src).removeprefix("https://mermaid.live/edit#pako:")
     state = json.loads(zlib.decompress(base64.urlsafe_b64decode(payload + "==")))
     assert state["code"] == src
+
+
+def test_divorced_couples_use_dotted_links() -> None:
+    t = family()
+    t.link("mum", "partner", "dad", status="divorced")
+    src = mermaid(t)
+    n = nodes(src)
+    assert re.search(rf"{n['Mum']} -\.- u\d+", src) and re.search(rf"{n['Dad']} -\.- u\d+", src)
+    assert re.search(rf"{n['Gran']} --- u\d+", src)

@@ -119,27 +119,43 @@ function years(p) {
   return "";
 }
 
-function chips(title, list) {
-  if (!list.length) return "";
-  const items = list.map((id) => `<span class="chip" data-id="${id}"></span>`).join("");
-  return `<h3>${title}</h3><div class="chips">${items}</div>`;
+function chips(title, list, note = () => "") {
+  if (!list.length) return null;
+  const section = document.createElement("div");
+  section.innerHTML = '<h3></h3><div class="chips"></div>';
+  section.querySelector("h3").textContent = title;
+  list.forEach((other) => {
+    const chip = document.createElement("span");
+    chip.className = "chip";
+    chip.textContent = tree.people[other].name + note(other);
+    chip.onclick = () => focusOn(other);
+    section.querySelector(".chips").append(chip);
+  });
+  return section;
+}
+
+function partnerNote(id, other) {
+  const details = partnership(tree, id, other) || {};
+  const status = details.status === "married" && details.marriage_date
+    ? `married ${details.marriage_date}` : details.status;
+  return status ? ` · ${status}` : "";
 }
 
 function showPerson(id) {
   const p = tree.people[id];
   const box = $("person");
   box.innerHTML = `<h2></h2><div class="muted" data-f="years"></div><div class="muted" data-f="place"></div>
-    <p data-f="notes"></p>` +
-    chips("Parents", p.parents || []) + chips("Partners", p.partners || []) +
-    chips("Siblings", siblings(tree, id)) + chips("Children", children(tree, id));
+    <p data-f="notes"></p>`;
   box.querySelector("h2").textContent = p.name;
   box.querySelector('[data-f="years"]').textContent = years(p);
   box.querySelector('[data-f="place"]').textContent = p.birth_place ? `Born in ${p.birth_place}` : "";
   box.querySelector('[data-f="notes"]').textContent = p.notes || "";
-  box.querySelectorAll(".chip").forEach((chip) => {
-    chip.textContent = tree.people[chip.dataset.id].name;
-    chip.onclick = () => focusOn(chip.dataset.id);
-  });
+  box.append(...[
+    chips("Parents", p.parents || []),
+    chips("Partners", p.partners || [], (other) => partnerNote(id, other)),
+    chips("Siblings", siblings(tree, id), (other) => (halfSiblings(tree, id, other) ? " · half" : "")),
+    chips("Children", children(tree, id)),
+  ].filter(Boolean));
   $("rel-a").value ||= id;
 }
 
