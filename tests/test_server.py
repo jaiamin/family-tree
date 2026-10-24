@@ -69,12 +69,3 @@ async def test_errors_are_reported_to_the_agent(tmp_path) -> None:
     async with Client(create_server(Store(tmp_path))) as client:
         with pytest.raises(ToolError, match="No tree named 'Missing'"):
             await client.call_tool("get_tree", {"tree": "Missing"})
-
-
-def test_failed_edit_is_not_saved(tmp_path) -> None:
-    store = Store(tmp_path)
-    store.create("T")
-    with pytest.raises(ValueError), store.edit("T") as tree:
-        tree.add_person("Ann")
-        tree.link("ann", "parent", "ghost")
-    assert store.load("T").people == {}

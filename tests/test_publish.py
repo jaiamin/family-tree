@@ -1,13 +1,16 @@
 import asyncio
 import os
 import stat
+import time
 
 import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
 from family_tree_mcp import create_server
+from family_tree_mcp.publish import Updater
 from family_tree_mcp.store import Store
+from family_tree_mcp.tree import Site, Tree
 
 # Stands in for `npx --yes wrangler@4 ...`, recording each call and answering like wrangler.
 FAKE_NPX = """#!/bin/sh
@@ -40,7 +43,7 @@ def calls(tmp_path, monkeypatch):
 @pytest.mark.skipif(os.name == "nt", reason="fake npx is a shell script")
 async def test_publish_once_then_keep_updated(tmp_path, calls, monkeypatch) -> None:
     store = Store(tmp_path / "trees")
-    async with Client(create_server(store)) as client:
+    async with Client(create_server(store, publish_delay=0)) as client:
         await client.call_tool("create_tree", {"name": "Smiths"})
         tree = {"tree": "Smiths"}
         await client.call_tool("add_person", {**tree, "name": "Ann", "birth_date": "1990"})
@@ -85,4 +88,19 @@ async def test_parallel_tool_calls_keep_every_change(tmp_path) -> None:
 
 
 def _wait(store: Store) -> None:
-    store.on_change.__self__.wait()  # ty: ignore[unresolved-attribute]  # the server's Updater
+    store.on_change.__self__.flush()  # ty: ignore[unresolved-attribute]  # the server's Updater
+
+
+def test_updates_wait_for_edits_to_pause() -> None:
+    published = []
+    updater = Updater(published.append, delay=0.2)
+    tree = Tree(name="T", site=Site(project="t", url="https://t.pages.dev"))
+    for _ in range(5):
+        updater.schedule(tree)
+        time.sleep(0.05)
+    assert published == []
+    time.sleep(0.4)
+    assert published == ["T"]
+    updater.schedule(tree)
+    updater.flush()
+    assert published == ["T", "T"]
