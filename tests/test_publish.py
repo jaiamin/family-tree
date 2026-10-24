@@ -1,5 +1,7 @@
 import asyncio
+import hashlib
 import os
+import re
 import stat
 import time
 
@@ -15,15 +17,31 @@ from family_tree_mcp.tree import Site, Tree
 # Stands in for `npx --yes wrangler@4 ...`, recording each call and answering like wrangler.
 FAKE_NPX = """#!/bin/sh
 shift 2
-echo "$1 $2" >> "$CALLS"
+echo "$1 $2 $3" >> "$CALLS"
 mkdir -p .wrangler/tmp || exit 1
-case "$1 $2" in
-  "pages project")
+case "$1 $2 $3" in
+  "pages project create")
     [ -n "$CREATED" ] && { echo "A project with this name already exists"; exit 1; }
     echo "Successfully created the project." ;;
-  "pages deploy")
+  "pages deploy public")
     [ -n "$LOGGED_OUT" ] && { echo "You are not authenticated. Run wrangler login."; exit 1; }
+    [ -f public/index.html ] || { echo "[ERROR] No public/index.html"; exit 1; }
+    if [ -f "$KV" ]; then
+      [ -f wrangler.toml ] && [ -f "functions/api/photos/[[path]].js" ] \
+        || { echo "[ERROR] Missing photo files"; exit 1; }
+    fi
     echo "Take a peek over at https://1a2b3c.smiths-x9.pages.dev" ;;
+  "kv namespace list")
+    echo "[WARNING] Proxy environment variables detected."
+    if [ -f "$KV" ]; then
+      printf '[\n  {"id": "other", "title": "elsewhere"},\n  {"id": "kv123", "title": "%s"}\n]\n' \
+        "$(cat "$KV")"
+    else
+      echo "[]"
+    fi ;;
+  "kv namespace create")
+    echo "$4" > "$KV"
+    echo "Success!" ;;
 esac
 """
 
@@ -38,6 +56,7 @@ def calls(tmp_path, monkeypatch):
     log = tmp_path / "calls.log"
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
     monkeypatch.setenv("CALLS", str(log))
+    monkeypatch.setenv("KV", str(tmp_path / "kv"))
     return lambda: log.read_text().splitlines()
 
 
@@ -56,30 +75,72 @@ async def test_publish_once_then_keep_updated(tmp_path, calls, monkeypatch) -> N
         site = await client.call_tool("publish_site", tree)
         assert site.data["url"] == "https://smiths-x9.pages.dev"
         assert site.data["hidden_living"] == 1
-        assert calls() == ["pages project", "pages deploy"]
+        assert calls() == [
+            "kv namespace list",
+            "kv namespace create",
+            "kv namespace list",
+            "pages project create",
+            "pages deploy public",
+        ]
+        # The page has photos; Cloudflare gets the code's hash and the photo store, not the code.
+        code = site.data["photo_code"]
+        assert re.fullmatch(r"[a-z]+-[a-z]+-[a-z]+-\d\d", code)
+        folder = tmp_path / "trees/exports/smiths-site"
+        config = (folder / "wrangler.toml").read_text()
+        assert 'id = "kv123"' in config and hashlib.sha256(code.encode()).hexdigest() in config
+        page = (folder / "public/index.html").read_text()
+        assert code not in config and code not in page and '"photos": true' in page
 
         # Every change republishes in the background; a change the page doesn't show doesn't.
         monkeypatch.setenv("CREATED", "1")
         await client.call_tool("add_person", {**tree, "name": "Bo"})
         await asyncio.to_thread(_wait, store)
-        page = (tmp_path / "trees/exports/smiths-site/index.html").read_text()
-        assert '"Bo"' in page and calls()[2:] == ["pages deploy"]
+        page = (folder / "public/index.html").read_text()
+        assert '"Bo"' in page and calls()[5:] == ["pages deploy public"]
         await client.call_tool("update_person", {**tree, "person_id": "ann", "notes": "private"})
         await asyncio.to_thread(_wait, store)
-        assert len(calls()) == 3
+        assert len(calls()) == 6
 
         listed = await client.call_tool("list_trees", {})
         assert listed.data[0]["site"] == "https://smiths-x9.pages.dev"
 
-        await client.call_tool("publish_site", {**tree, "keep_updated": False})
+        # Republishing keeps the photo store and the code.
+        again = await client.call_tool("publish_site", {**tree, "keep_updated": False})
+        assert again.data["photo_code"] == code
+        assert calls()[6:] == ["pages project create", "pages deploy public"]
         count = len(calls())
         await client.call_tool("add_person", {**tree, "name": "Cy"})
         await asyncio.to_thread(_wait, store)
         assert len(calls()) == count
 
+        changed = await client.call_tool("change_photo_code", {**tree, "code": " Our-Family-1950 "})
+        assert changed.data["photo_code"] == "our-family-1950"
+        config = (folder / "wrangler.toml").read_text()
+        assert hashlib.sha256(b"our-family-1950").hexdigest() in config
+        assert calls()[count:] == ["pages deploy public"]
+        with pytest.raises(ToolError, match="at least 6"):
+            await client.call_tool("change_photo_code", {**tree, "code": "abc"})
+
         monkeypatch.setenv("LOGGED_OUT", "1")
         with pytest.raises(ToolError, match="npx wrangler login"):
             await client.call_tool("publish_site", tree)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="fake npx is a shell script")
+async def test_sites_published_before_photos_keep_updating_without_them(tmp_path, calls) -> None:
+    store = Store(tmp_path / "trees")
+    store.create("Smiths")
+    with store.edit("Smiths") as t:
+        t.site = Site(project="smiths", url="https://smiths.pages.dev")
+    async with Client(create_server(store, publish_delay=0)) as client:
+        await client.call_tool("add_person", {"tree": "Smiths", "name": "Ann"})
+        await asyncio.to_thread(_wait, store)
+        with pytest.raises(ToolError, match="publish_site first"):
+            await client.call_tool("change_photo_code", {"tree": "Smiths"})
+    folder = tmp_path / "trees/exports/smiths-site"
+    assert calls() == ["pages deploy public"]
+    assert '"photos"' not in (folder / "public/index.html").read_text()
+    assert not (folder / "wrangler.toml").exists()
 
 
 async def test_parallel_tool_calls_keep_every_change(tmp_path) -> None:

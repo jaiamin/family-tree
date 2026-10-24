@@ -83,7 +83,7 @@ class Store:
                     return
                 if backup:
                     self._backup(tree.name)
-            _write(path, content)
+            write_atomic(path, content)
         if self.on_change:
             self.on_change(tree)
 
@@ -128,7 +128,9 @@ class Store:
     def _backup(self, name: str) -> None:
         folder = self.root / "backups" / self._path(name).stem
         folder.mkdir(parents=True, exist_ok=True)
-        _write(folder / f"{time.time_ns()}.json", self._path(name).read_text(encoding="utf-8"))
+        write_atomic(
+            folder / f"{time.time_ns()}.json", self._path(name).read_text(encoding="utf-8")
+        )
         for old in self._backups(name)[:-MAX_BACKUPS]:
             old.unlink()
 
@@ -141,7 +143,7 @@ class Store:
             self.save(tree)
 
 
-def _write(path: Path, content: str) -> None:
+def write_atomic(path: Path, content: str) -> None:
     """Write atomically through a unique temporary file in the same folder."""
     fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
     with os.fdopen(fd, "w", encoding="utf-8") as handle:

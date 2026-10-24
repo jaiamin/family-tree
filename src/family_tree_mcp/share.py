@@ -11,11 +11,12 @@ from family_tree_mcp.tree import Tree
 ASSETS = files("family_tree_mcp")
 
 
-def share_page(tree: Tree, hide_living: bool = True) -> tuple[str, int]:
+def share_page(tree: Tree, hide_living: bool = True, photos: bool = False) -> tuple[str, int]:
     """Return the page HTML and how many living people had their details hidden.
 
     Hiding also drops marriage dates and places for couples where either may be living. People
-    whose details were hidden are marked `private` so the page can say so.
+    whose details were hidden are marked `private` so the page can say so. With photos, the page
+    shows and edits photos through the site's /api/photos function.
     """
     public = tree.model_copy(deep=True, update={"site": None})
     hidden: list[str] = []
@@ -31,6 +32,8 @@ def share_page(tree: Tree, hide_living: bool = True) -> tuple[str, int]:
     data = public.model_dump(mode="json", exclude_none=True)
     for pid in hidden:
         data["people"][pid]["private"] = True
+    if photos:
+        data["photos"] = True
     embedded = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
     page = (
         ASSETS.joinpath("share.html")

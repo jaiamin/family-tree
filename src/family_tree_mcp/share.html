@@ -99,7 +99,28 @@
     display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; flex: none;
     background: var(--chip); color: var(--fg); font-size: 12px; font-weight: 600; letter-spacing: .02em;
   }
-  .avatar.lg { width: 44px; height: 44px; font-size: 15px; }
+  .avatar.lg { width: 56px; height: 56px; font-size: 17px; }
+  .avatar { position: relative; overflow: hidden; }
+  .avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  #card .photo { position: relative; flex: none; padding: 0; border: 0; border-radius: 50%; background: none; cursor: pointer; }
+  #card .photo .badge {
+    position: absolute; right: -2px; bottom: -2px; display: grid; place-items: center; width: 22px; height: 22px;
+    border: 1px solid var(--border); border-radius: 50%; background: var(--surface); color: var(--fg);
+  }
+  #card .photo .badge svg.icon { width: 12px; height: 12px; }
+  #card .photo:hover .avatar { filter: brightness(.94); }
+  .photo-panel { display: grid; gap: 8px; margin-top: 12px; }
+  .photo-panel[hidden] { display: none; }
+  .photo-panel, .photo-panel form { grid-template-columns: minmax(0, 1fr); }
+  .photo-panel form { display: grid; gap: 8px; }
+  .photo-panel .row { display: flex; gap: 8px; }
+  .photo-panel input[type="text"] {
+    flex: 1; min-width: 0; height: 36px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface); outline: none; font-size: 14px;
+  }
+  .photo-panel input[type="text"]:focus { border-color: var(--border-strong); box-shadow: 0 0 0 3px var(--chip); }
+  .photo-panel .status { margin: 0; font-size: 13px; color: var(--muted); }
+  .photo-panel .status.error { color: var(--fg); font-weight: 500; }
   .name { display: block; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .years { display: block; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
   .person .text { min-width: 0; }
@@ -142,6 +163,8 @@
     background: var(--surface); font-size: 13px; font-weight: 500; cursor: pointer; transition: background-color .15s;
   }
   #card .action:hover, #card .action[aria-pressed="true"] { background: var(--chip); }
+  #card .action.primary { flex: none; border-color: var(--fg); background: var(--fg); color: var(--bg); }
+  #card .action:disabled { opacity: .6; cursor: default; }
   #card .who { min-width: 0; }
   #card .none { margin: 14px 0 0; color: var(--muted); font-size: 13px; }
   .empty-tree { display: grid; place-items: center; height: 100%; color: var(--muted); }
@@ -224,7 +247,24 @@ function el(tag, attrs = {}, ...kids) {
   node.append(...kids.filter((k) => k != null && k !== ""));
   return node;
 }
-const avatar = (id, size = "") => el("span", { class: `avatar ${size}`, "aria-hidden": "true" }, initials(id));
+// Photos: shown wherever a person's initials are, and changed from their card with the family
+// code. Only published sites have them, served by the site's /api/photos function.
+const PHOTOS = Boolean(tree.photos);
+let photos = {}; // person id -> photo version
+function paint(circle) {
+  circle.querySelector("img")?.remove();
+  const id = circle.dataset.avatar;
+  if (!photos[id]) return;
+  const img = el("img", { src: `/api/photos/${id}?v=${photos[id]}`, alt: "", decoding: "async" });
+  img.onerror = () => img.remove();
+  circle.append(img);
+}
+const repaint = (id) => document.querySelectorAll(`[data-avatar="${id}"]`).forEach(paint);
+function avatar(id, size = "") {
+  const circle = el("span", { class: `avatar ${size}`, "aria-hidden": "true", "data-avatar": id }, initials(id));
+  paint(circle);
+  return circle;
+}
 
 $("theme").onclick = () => {
   const dark = document.documentElement.dataset.theme !== "dark";
@@ -486,6 +526,115 @@ const walk = (start, step) => {
   return seen;
 };
 
+// The family code is kept on this device once it works.
+const CODE = "family-tree-photo-code";
+const savedCode = () => {
+  try { return localStorage.getItem(CODE) || ""; } catch { return ""; }
+};
+function saveCode(code) {
+  try { code ? localStorage.setItem(CODE, code) : localStorage.removeItem(CODE); } catch {}
+}
+async function send(method, id = "", body = null) {
+  const headers = { "x-edit-code": savedCode() };
+  if (body) headers["content-type"] = body.type;
+  const response = await fetch(`/api/photos${id && `/${id}`}`, { method, headers, body });
+  if (response.status === 403) saveCode("");
+  return response;
+}
+// Phones take large photos, so upload a 512px square crop from the middle.
+async function square(file) {
+  const image = await createImageBitmap(file);
+  const side = Math.min(image.width, image.height);
+  const size = Math.min(512, side);
+  const canvas = el("canvas", { width: size, height: size });
+  canvas.getContext("2d").drawImage(image, (image.width - side) / 2, (image.height - side) / 2, side, side, 0, 0, size, size);
+  return new Promise((done, fail) => canvas.toBlob((blob) => (blob ? done(blob) : fail(new Error())), "image/jpeg", 0.85));
+}
+const errorOf = async (response) => (await response.json().catch(() => ({}))).error || "Something went wrong. Try again.";
+
+// The big circle in a person's card: tap it to add, change or remove their photo.
+function photoEditor(id) {
+  const circle = avatar(id, "lg");
+  if (!PHOTOS || PLACEHOLDER.test(person(id).name)) return { circle, panel: null };
+  const badge = el("span", { class: "badge", "aria-hidden": "true" });
+  badge.innerHTML = '<svg class="icon" viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3"/></svg>';
+  const button = el("button", { class: "photo", "aria-label": "Photo", "aria-expanded": "false" }, circle, badge);
+  const panel = el("div", { class: "photo-panel", hidden: "" });
+  const picker = el("input", { type: "file", accept: "image/*", hidden: "" });
+  const show = (...kids) => {
+    panel.replaceChildren(...kids.filter(Boolean), picker);
+    panel.hidden = false;
+    button.setAttribute("aria-expanded", "true");
+  };
+  const hide = () => {
+    panel.hidden = true;
+    button.setAttribute("aria-expanded", "false");
+  };
+  const note = (text, error = false) => text && el("p", { class: `status${error ? " error" : ""}` }, text);
+
+  function menu(message = "", error = false) {
+    const choose = el("button", { class: "action" }, photos[id] ? "Change photo" : "Add photo");
+    choose.onclick = () => (savedCode() ? picker.click() : askCode(menu));
+    const remove = photos[id] && el("button", { class: "action" }, "Remove photo");
+    if (remove) {
+      remove.onclick = () => {
+        if (!remove.dataset.sure) return Object.assign(remove.dataset, { sure: "1" }), (remove.textContent = "Tap again to remove");
+        savedCode() ? removePhoto() : askCode(removePhoto);
+      };
+    }
+    show(note(message, error), el("div", { class: "row" }, choose, remove));
+  }
+  // Asks once per device. Phones only open the photo picker straight from a tap, so after the
+  // code is accepted the person taps Add photo again.
+  function askCode(then, message = "") {
+    const input = el("input", { type: "text", placeholder: "Family code", autocomplete: "off", autocapitalize: "none", spellcheck: "false", "aria-label": "Family code" });
+    const go = el("button", { class: "action primary", type: "submit" }, "Continue");
+    const form = el("form", {}, el("p", { class: "status" }, "Enter the family code to change photos."), el("div", { class: "row" }, input, go), note(message, true));
+    form.onsubmit = async (event) => {
+      event.preventDefault();
+      if (!input.value.trim()) return;
+      saveCode(input.value.trim().toLowerCase());
+      go.disabled = true;
+      const response = await send("POST").catch(() => null);
+      if (response?.status === 204) then === menu ? menu("Code saved on this device.") : then();
+      else askCode(then, response?.status === 403 ? "That code isn't right." : "Couldn't connect. Try again.");
+    };
+    show(form);
+    input.focus();
+  }
+  async function removePhoto() {
+    show(note("Removing…"));
+    const response = await send("DELETE", id).catch(() => null);
+    if (response?.ok) {
+      delete photos[id];
+      repaint(id);
+      return hide();
+    }
+    response?.status === 403 ? askCode(removePhoto, "That code isn't right.") : menu(response ? await errorOf(response) : "Couldn't connect. Try again.", true);
+  }
+  picker.onchange = async () => {
+    const chosen = picker.files[0];
+    picker.value = "";
+    if (!chosen) return;
+    show(note("Uploading…"));
+    let body;
+    try {
+      body = await square(chosen);
+    } catch {
+      return menu("Couldn't read that image. Try a JPEG or PNG.", true);
+    }
+    const response = await send("PUT", id, body).catch(() => null);
+    if (response?.ok) {
+      photos[id] = (await response.json()).v;
+      repaint(id);
+      return hide();
+    }
+    response?.status === 403 ? askCode(menu, "That code isn't right.") : menu(response ? await errorOf(response) : "Couldn't connect. Try again.", true);
+  };
+  button.onclick = () => (panel.hidden ? menu() : hide());
+  return { circle: button, panel };
+}
+
 // Lights up someone's line from the oldest ancestors down to their children (or, with branch,
 // all their descendants) and fades everyone who isn't close family.
 function highlight(id, branch = false) {
@@ -557,11 +706,13 @@ function select(id, glide = false) {
     ["Born", [p.birth_date, p.birth_place && `in ${p.birth_place}`].filter(Boolean).join(" ")],
     ["Died", p.death_date],
   ].filter(([, v]) => v);
+  const photo = photoEditor(id);
   const box = el(
     "div",
     { id: "card", role: "dialog", "aria-label": p.name },
-    el("div", { class: "top" }, avatar(id, "lg"), el("div", { class: "who" }, el("h2", {}, displayName(id)), lifespan(p) && el("span", { class: "years" }, lifespan(p)))),
+    el("div", { class: "top" }, photo.circle, el("div", { class: "who" }, el("h2", {}, displayName(id)), lifespan(p) && el("span", { class: "years" }, lifespan(p)))),
     facts.length ? el("dl", {}, ...facts.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)])) : null,
+    photo.panel,
     p.notes && el("p", { class: "notes" }, p.notes),
     p.private && el("p", { class: "none" }, "Details are hidden for living people."),
     group("Parents", parentsOf(tree, id)),
@@ -686,6 +837,15 @@ else {
   if (tree.people[start]) select(start, true);
 }
 addEventListener("resize", () => { if (!selected) fit(); });
+if (PHOTOS) {
+  fetch("/api/photos")
+    .then((response) => (response.ok ? response.json() : {}))
+    .then((found) => {
+      photos = found;
+      Object.keys(found).forEach(repaint);
+    })
+    .catch(() => {});
+}
 </script>
 </body>
 </html>
