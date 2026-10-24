@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
@@ -10,9 +10,10 @@ from pydantic import Field
 
 from family_tree_mcp.diagram import View, mermaid, mermaid_live_url
 from family_tree_mcp.gedcom import to_gedcom
+from family_tree_mcp.publish import Updater, deploy
 from family_tree_mcp.share import share_page
 from family_tree_mcp.store import Store
-from family_tree_mcp.tree import NewPerson, PartnerStatus, Relation, Sex, slugify
+from family_tree_mcp.tree import NewPerson, PartnerStatus, Relation, Sex, Site, Tree, slugify
 
 INSTRUCTIONS = """\
 Manage family trees. Each tree holds people linked by two kinds of edges:
@@ -32,7 +33,8 @@ oldest first when birth dates are known.
 
 Sharing: get_diagram returns Mermaid to display in a ```mermaid block; export_diagram
 saves it with a mermaid.live link; export_gedcom writes a file for Ancestry,
-FamilySearch, MyHeritage, Gramps etc.; export_html builds a read-only web page.
+FamilySearch, MyHeritage, Gramps etc. To share with family, call publish_site once: it
+puts a read-only page online and then updates it automatically after every change.
 
 Dates are free text; prefer ISO format (YYYY, YYYY-MM or YYYY-MM-DD).
 Every change is backed up: if you make a mistake, or the user asks to revert, use undo.
@@ -48,18 +50,47 @@ DiagramFocus = Annotated[
     str | None, Field(description="Center the diagram on this person. Omit for everyone.")
 ]
 Text = Annotated[str | None, Field(description="Omit to leave unchanged; empty string clears.")]
+SexChange = Annotated[
+    Sex | Literal[""] | None, Field(description="Omit to leave unchanged; empty string clears.")
+]
 
 
 def create_server(store: Store) -> FastMCP:
     mcp = FastMCP("family-tree", instructions=INSTRUCTIONS)
+    deployed: dict[str, str] = {}  # tree name -> page last deployed by this server
+
+    def write_site(t: Tree, hide_living: bool) -> tuple[Path, str, int]:
+        page, hidden = share_page(t, hide_living)
+        path = _export(f"{slugify(t.name)}-site/index.html", page)
+        return path.parent, page, hidden
+
+    def refresh(name: str) -> None:
+        t = store.load(name)
+        if not (t.site and t.site.keep_updated):
+            return
+        folder, page, _ = write_site(t, t.site.hide_living)
+        if deployed.get(t.site.project) != page:
+            deploy(folder, t.site.project, create=False)
+            deployed[t.site.project] = page
+
+    updater = Updater(refresh)
+    store.on_change = updater.schedule
 
     @mcp.tool(annotations=READ)
     def list_trees() -> list[dict]:
-        """List all family trees with their size."""
-        return [
-            {"name": t.name, "description": t.description, "people": len(t.people)}
-            for t in store.trees()
-        ]
+        """List all family trees with their size, and the link where each is published."""
+        found = []
+        for t in store.trees():
+            if not isinstance(t, Tree):
+                found.append({"file": t, "error": "Unreadable file. Fix it or restore with undo."})
+                continue
+            entry = {"name": t.name, "description": t.description, "people": len(t.people)}
+            if t.site:
+                entry["site"] = t.site.url
+                if error := updater.errors.get(t.name):
+                    entry["site_error"] = error
+            found.append(entry)
+        return found
 
     @mcp.tool(annotations=WRITE)
     def create_tree(name: str, description: str = "") -> dict:
@@ -138,7 +169,7 @@ def create_server(store: Store) -> FastMCP:
         tree: TreeName,
         person_id: PersonId,
         name: str | None = None,
-        sex: Sex | None = None,
+        sex: SexChange = None,
         birth_date: Text = None,
         death_date: Text = None,
         birth_place: Text = None,
@@ -289,20 +320,39 @@ def create_server(store: Store) -> FastMCP:
 
     @mcp.tool(annotations=WRITE)
     def export_html(tree: TreeName, hide_living: bool = True) -> dict:
-        """Save a read-only, interactive web page of the tree that can be shared as a link.
+        """Save a read-only, interactive web page of the tree as a local file, without publishing.
 
-        Viewers can browse the chart, see each person's details and ask how two people are
-        related. hide_living removes birth dates, places and notes of people who may be alive.
-        Give the user the folder and the publish command, which hosts it free on Cloudflare Pages.
+        To put it online, use publish_site instead.
         """
         t = store.load(tree)
-        page, hidden = share_page(t, hide_living)
-        slug = slugify(t.name)
-        path = _export(f"{slug}-site/index.html", page)
+        folder, _, hidden = write_site(t, hide_living)
+        return {"file": str(folder / "index.html"), "hidden_living": hidden}
+
+    @mcp.tool(annotations=ToolAnnotations(destructive_hint=False, open_world_hint=True))
+    def publish_site(tree: TreeName, hide_living: bool = True, keep_updated: bool = True) -> dict:
+        """Publish a read-only, interactive page of the tree to a free link anyone can open.
+
+        Viewers can browse the chart, see each person's details and ask how two people are
+        related; nothing can be edited. hide_living removes birth dates, places and notes of
+        people who may be alive. With keep_updated, the page is republished automatically after
+        every change to the tree; pass keep_updated=False to publish once and stop updating.
+        Uses Cloudflare Pages: the first time, the user runs `npx wrangler login` in a terminal.
+        """
+        t = store.load(tree)
+        project = t.site.project if t.site else slugify(t.name)[:58].strip("-")
+        folder, page, hidden = write_site(t, hide_living)
+        url = deploy(folder, project)
+        deployed[project] = page
+        with store.edit(tree) as current:
+            current.site = Site(
+                project=project, url=url, hide_living=hide_living, keep_updated=keep_updated
+            )
+        updater.wait()
         return {
-            "folder": str(path.parent),
+            "url": url,
             "hidden_living": hidden,
-            "publish": f'npx wrangler pages deploy "{path.parent}" --project-name {slug[:58]}',
+            "keep_updated": keep_updated,
+            "note": "Anyone with the link can view it. To restrict access, see the README.",
         }
 
     def _export(filename: str, content: str) -> Path:

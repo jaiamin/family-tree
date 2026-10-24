@@ -2,9 +2,9 @@
 
 import re
 from collections import deque
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AfterValidator, BaseModel, Field, model_validator
 
 Sex = Literal["male", "female"]
 Relation = Literal["parent", "child", "partner", "sibling"]
@@ -13,13 +13,28 @@ PartnerStatus = Literal["married", "divorced", "partners"]
 DETAILS = ("sex", "birth_date", "death_date", "birth_place", "notes")
 
 
+def _one_line(text: str) -> str:
+    return " ".join(text.split())
+
+
+def _name(text: str) -> str:
+    if not (text := _one_line(text)):
+        raise ValueError("A person's name can't be empty.")
+    return text
+
+
+# Names, dates and places are single-line in diagrams and GEDCOM; notes may span lines.
+Line = Annotated[str, AfterValidator(_one_line)]
+Name = Annotated[str, AfterValidator(_name)]
+
+
 class Person(BaseModel, validate_assignment=True):
     id: str
-    name: str
+    name: Name
     sex: Sex | None = None
-    birth_date: str | None = None
-    death_date: str | None = None
-    birth_place: str | None = None
+    birth_date: Line | None = None
+    death_date: Line | None = None
+    birth_place: Line | None = None
     notes: str | None = None
     parents: list[str] = []
     partners: list[str] = []
@@ -27,9 +42,9 @@ class Person(BaseModel, validate_assignment=True):
 
 class Partnership(BaseModel, validate_assignment=True):
     status: PartnerStatus | None = None
-    marriage_date: str | None = None
-    marriage_place: str | None = None
-    divorce_date: str | None = None
+    marriage_date: Line | None = None
+    marriage_place: Line | None = None
+    divorce_date: Line | None = None
 
 
 class NewPerson(BaseModel):
@@ -49,11 +64,43 @@ class NewPerson(BaseModel):
     siblings: list[str] = Field([], description="Refs in this batch or existing ids.")
 
 
+class Site(BaseModel):
+    """Where a tree is published, and how."""
+
+    project: str
+    url: str
+    hide_living: bool = True
+    keep_updated: bool = True
+
+
 class Tree(BaseModel):
     name: str
     description: str = ""
+    site: Site | None = None
     people: dict[str, Person] = {}
     partnerships: dict[str, Partnership] = {}
+
+    @model_validator(mode="after")
+    def _repair(self) -> "Tree":
+        """Drop links to missing people and make partner links two-way, e.g. after hand edits."""
+        for key, person in self.people.items():
+            person.id = key
+            person.parents = [p for p in dict.fromkeys(person.parents) if p in self.people][:2]
+            person.parents = [p for p in person.parents if p != key]
+            person.partners = [p for p in dict.fromkeys(person.partners) if p in self.people]
+            person.partners = [p for p in person.partners if p != key]
+        for person in self.people.values():
+            for partner in person.partners:
+                if person.id not in self.people[partner].partners:
+                    self.people[partner].partners.append(person.id)
+        self.partnerships = {
+            key: details
+            for key, details in self.partnerships.items()
+            if (pair := key.split("+"))[0] in self.people
+            and len(pair) == 2
+            and pair[1] in self.people[pair[0]].partners
+        }
+        return self
 
     def get(self, person_id: str) -> Person:
         if person_id not in self.people:
@@ -122,6 +169,8 @@ class Tree(BaseModel):
 
     def update_person(self, person_id: str, **fields: Any) -> Person:
         person = self.get(person_id)
+        if fields.get("name") == "":
+            raise ValueError("A person's name can't be empty.")
         for key, value in fields.items():
             if value is not None:
                 setattr(person, key, value or None)
