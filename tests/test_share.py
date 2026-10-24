@@ -331,3 +331,31 @@ def assert_family_paths_connected(geometry: dict, edges: list[dict]) -> None:
                     and p["y"] - 0.001 <= y <= p["y"] + geometry["card"]["h"] + 0.001
                     for x, y in connected
                 ), f"{child}'s line is disconnected from {parent}"
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="needs Node.js")
+@pytest.mark.parametrize("direction", ["DOWN", "RIGHT"])
+def test_single_parent_exit_follows_layout_direction(direction: str) -> None:
+    t = Tree(name="Single parent")
+    for name in ("Parent", "Child One", "Child Two"):
+        seed(t, name)
+    t.link("child-one", "parent", "parent")
+    t.link("child-two", "parent", "parent")
+    got = run_graph(t, direction)
+    geometry = got["geometry"]
+    p, card = geometry["pos"]["parent"], geometry["card"]
+    expected = (
+        {"x": p["x"] + card["w"] / 2, "y": p["y"] + card["h"]}
+        if direction == "DOWN"
+        else {"x": p["x"] + card["w"], "y": p["y"] + card["h"] / 2}
+    )
+    for route in geometry["routes"]:
+        assert route["points"][0] == pytest.approx(expected)
+        next_point = route["points"][1]
+        if direction == "DOWN":
+            assert next_point["x"] == pytest.approx(expected["x"])
+            assert next_point["y"] > expected["y"]
+        else:
+            assert next_point["y"] == pytest.approx(expected["y"])
+            assert next_point["x"] > expected["x"]
+    assert_clean_connections(geometry, got["edges"])
