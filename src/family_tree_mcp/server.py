@@ -9,7 +9,7 @@ from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from family_tree_mcp.diagram import View, mermaid, mermaid_live_url
+from family_tree_mcp.diagram import View, mermaid
 from family_tree_mcp.gedcom import to_gedcom
 from family_tree_mcp.publish import Updater, deploy
 from family_tree_mcp.share import share_page
@@ -32,10 +32,10 @@ Exploring: get_relationship names how two people are related; get_person,
 get_ancestors and get_descendants list family. Children and siblings are listed
 oldest first when birth dates are known.
 
-Sharing: get_diagram returns Mermaid to display in a ```mermaid block; export_diagram
-saves it with a mermaid.live link; export_gedcom writes a file for Ancestry,
-FamilySearch, MyHeritage, Gramps etc. To share with family, call publish_site once: it
-puts a read-only page online and then updates it automatically as the tree changes.
+Sharing: get_diagram returns Mermaid to display in a ```mermaid block; export_gedcom
+writes a file for Ancestry, FamilySearch, MyHeritage, Gramps etc. To share with family,
+call publish_site once: it puts a read-only page online and then updates it automatically
+as the tree changes.
 
 Dates are free text; prefer ISO format (YYYY, YYYY-MM or YYYY-MM-DD).
 Every change is backed up: if you make a mistake, or the user asks to revert, use undo.
@@ -295,22 +295,6 @@ def create_server(store: Store, publish_delay: float = 30) -> FastMCP:
         return mermaid(store.load(tree), person_id, view, generations)
 
     @mcp.tool(annotations=WRITE)
-    def export_diagram(
-        tree: TreeName,
-        person_id: DiagramFocus = None,
-        view: View = "both",
-        generations: int | None = None,
-    ) -> dict:
-        """Save the get_diagram chart as a .mmd file and return a mermaid.live link to open it.
-
-        Give both to the user: mermaid.live can download the chart as PNG, SVG or PDF.
-        """
-        t = store.load(tree)
-        source = mermaid(t, person_id, view, generations)
-        name = slugify(t.name) + (f"-{person_id}-{view}" if person_id else "")
-        return {"path": str(_export(name + ".mmd", source)), "url": mermaid_live_url(source)}
-
-    @mcp.tool(annotations=WRITE)
     def export_gedcom(tree: TreeName) -> dict:
         """Save the tree as a GEDCOM 5.5.1 (.ged) file for import into other genealogy apps.
 
@@ -334,8 +318,8 @@ def create_server(store: Store, publish_delay: float = 30) -> FastMCP:
     def publish_site(tree: TreeName, hide_living: bool = True, keep_updated: bool = True) -> dict:
         """Publish a read-only, interactive page of the tree to a free link anyone can open.
 
-        Viewers can browse the chart, see each person's details and ask how two people are
-        related; nothing can be edited. hide_living removes birth dates, places and notes of
+        Viewers can browse the tree, search, and tap anyone for their details and family;
+        nothing can be edited. hide_living removes birth dates, places and notes of
         people who may be alive. With keep_updated, the page is republished automatically once
         edits pause for 30 seconds; pass keep_updated=False to publish once and stop updating.
         Uses Cloudflare Pages: the first time, the user runs `npx wrangler login` in a terminal.

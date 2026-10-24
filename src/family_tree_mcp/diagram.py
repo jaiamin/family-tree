@@ -1,9 +1,7 @@
 """Render a family tree, or one person's part of it, as a Mermaid flowchart."""
 
-import base64
 import json
 import re
-import zlib
 from typing import Literal
 
 from family_tree_mcp.tree import Person, Tree
@@ -57,18 +55,6 @@ def mermaid(
         if members := [node[pid] for pid in ids if cls in _classes(tree.people[pid], person_id)]:
             lines.append(f"    class {','.join(members)} {cls}")
     return "\n".join(lines)
-
-
-def mermaid_live_url(source: str) -> str:
-    """Link that opens the diagram in the mermaid.live editor, using its pako URL format."""
-    state = {
-        "code": source,
-        "mermaid": '{"theme": "default"}',
-        "updateDiagram": True,
-        "rough": False,
-    }
-    packed = zlib.compress(json.dumps(state).encode(), 9)
-    return "https://mermaid.live/edit#pako:" + base64.urlsafe_b64encode(packed).decode().rstrip("=")
 
 
 def _select(tree: Tree, person_id: str | None, view: View, generations: int | None) -> list[str]:
