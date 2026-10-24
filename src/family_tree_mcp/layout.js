@@ -193,7 +193,7 @@ async function layout(tree) {
 
 // Shared buses are drawn once. Keep ownership on every segment so sibling selection highlights
 // their common trunk correctly; this also prevents overlapping copies of the same line.
-function connections(tree, geometry, pad = 0) {
+function connections(geometry, pad = 0) {
   const lines = new Map(), result = [];
   for (const r of geometry.routes) for (let i = 1; i < r.points.length; i++) {
     const a = r.points[i - 1], b = r.points[i];

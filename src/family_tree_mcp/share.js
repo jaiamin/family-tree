@@ -93,7 +93,7 @@ function edge(e) {
   edges.push({ ...e, path });
   return path;
 }
-for (const e of connections(tree, geometry, PAD)) {
+for (const e of connections(geometry, PAD)) {
   edge(e);
 }
 
@@ -470,7 +470,6 @@ function showResults() {
     ? ids.filter((id) => !PLACEHOLDER.test(person(id).name) && terms.every((t) => name(id).includes(t)))
         .sort((a, b) => starts(b) - starts(a)).slice(0, 8)
     : [];
-  active = 0;
   results.replaceChildren(
     ...(matches.length
       ? matches.map((id, i) => {
@@ -515,7 +514,6 @@ else {
   const start = decodeURIComponent(location.hash.slice(1));
   if (tree.people[start]) select(start);
 }
-// Resizing changes the viewport, never the graph or the current zoom.
 if (PHOTOS) {
   fetch("/api/photos")
     .then((response) => (response.ok ? response.json() : {}))

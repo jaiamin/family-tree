@@ -11,16 +11,16 @@ from family_tree_mcp.tree import Tree
 RUNNER = """
 const lib = require(process.argv[1]);
 const input = JSON.parse(require("fs").readFileSync(0, "utf8"));
-const { tree, viewports } = input;
+const { tree } = input;
 (async () => {
 const ids = Object.keys(tree.people);
-const layouts = await Promise.all(viewports.map((v) => lib.layout(tree)));
+const geometry = await lib.layout(tree);
 console.log(JSON.stringify({
   children: ids.map((id) => lib.children(tree, id)),
   siblings: ids.map((id) => lib.siblings(tree, id)),
   half: ids.map((a) => ids.map((b) => a !== b && lib.halfSiblings(tree, a, b))),
-  layouts,
-  connections: layouts.map((g) => lib.connections(tree, g)),
+  geometry,
+  edges: lib.connections(geometry),
 }));
 })().catch((e) => { console.error(e); process.exitCode = 1; });
 """
@@ -53,32 +53,24 @@ def test_page_logic_matches_python_and_lays_out_everyone(tree: Tree) -> None:
     tree.link("sis", "partner", "sis-husband")
     tree.link("kid-a", "parent", "sis-husband")
     ids = list(tree.people)
-    viewports = [{"width": w, "height": h} for w, h in ((1440, 800), (390, 760), (4000, 1200))]
-    data = {"tree": tree.model_dump(exclude_none=True), "viewports": viewports}
-    script = str(files("family_tree_mcp").joinpath("layout.js"))
-    result = subprocess.run(
-        ["node", "-e", RUNNER, script], input=json.dumps(data), capture_output=True, text=True
-    )
-    assert result.returncode == 0, result.stderr
-    js = json.loads(result.stdout)
+    js = run_graph(tree)
 
     assert js["children"] == [tree.children(i) for i in ids]
     assert js["siblings"] == [tree.siblings(i) for i in ids]
     assert js["half"] == [[a != b and tree.half_siblings(a, b) for b in ids] for a in ids]
-    for _view, got, edges in zip(viewports, js["layouts"], js["connections"], strict=True):
-        pos, card = got["pos"], got["card"]
-        assert set(pos) == set(ids)
-        boxes = sorted((p["x"], p["y"]) for p in got["nodes"])
-        for i, (x, y) in enumerate(boxes):
-            assert x >= 0 and x + card["w"] <= got["width"] + 0.5
-            assert y >= 0 and y + card["h"] <= got["height"] + 0.5
-            for x2, y2 in boxes[i + 1 :]:
-                assert abs(x - x2) >= card["w"] or abs(y - y2) >= card["h"], "cards overlap"
-        assert_clean_connections(got, edges)
-        assert any(len(e["children"]) > 1 for e in edges if e["kind"] == "child")
-        assert len(got["nodes"]) == len(ids)
-        assert len({c["personId"] for c in got["nodes"]}) == len(ids)
-    assert js["layouts"][0] == js["layouts"][1], "Mobile must use the same graph as desktop"
+    got, edges = js["geometry"], js["edges"]
+    pos, card = got["pos"], got["card"]
+    assert set(pos) == set(ids)
+    boxes = sorted((p["x"], p["y"]) for p in got["nodes"])
+    for i, (x, y) in enumerate(boxes):
+        assert x >= 0 and x + card["w"] <= got["width"] + 0.5
+        assert y >= 0 and y + card["h"] <= got["height"] + 0.5
+        for x2, y2 in boxes[i + 1 :]:
+            assert abs(x - x2) >= card["w"] or abs(y - y2) >= card["h"], "cards overlap"
+    assert_clean_connections(got, edges)
+    assert any(len(e["children"]) > 1 for e in edges if e["kind"] == "child")
+    assert len(got["nodes"]) == len(ids)
+    assert len({c["personId"] for c in got["nodes"]}) == len(ids)
 
 
 def test_share_page_hides_living_details_and_embeds_safely() -> None:
@@ -112,8 +104,7 @@ def test_share_page_hides_living_details_and_embeds_safely() -> None:
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="needs Node.js")
-@pytest.mark.parametrize("width,height", [(1440, 800), (390, 760), (4000, 1200)])
-def test_parent_units_stay_together_with_ancestry_on_both_sides(width, height) -> None:
+def test_parent_units_stay_together_with_ancestry_on_both_sides() -> None:
     t = Tree(name="Two families")
     for name in (
         "Maternal Grandparent",
@@ -136,21 +127,8 @@ def test_parent_units_stay_together_with_ancestry_on_both_sides(width, height) -
     ):
         t.link(child, "parent", parent)
     t.link("mother", "partner", "father")
-    script = str(files("family_tree_mcp").joinpath("layout.js"))
-    result = subprocess.run(
-        ["node", "-e", RUNNER, script],
-        input=json.dumps(
-            {
-                "tree": t.model_dump(exclude_none=True),
-                "viewports": [{"width": width, "height": height}],
-            }
-        ),
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, result.stderr
-    got = json.loads(result.stdout)
-    geometry = got["layouts"][0]
+    got = run_graph(t)
+    geometry = got["geometry"]
     a, b = (geometry["pos"][p] for p in ("mother", "father"))
     card = geometry["card"]
     adjacent = a["x"] == b["x"] and abs(a["y"] - b["y"]) == card["h"] + geometry["coupleGap"]
@@ -159,11 +137,11 @@ def test_parent_units_stay_together_with_ancestry_on_both_sides(width, height) -
         assert geometry["pos"][child]["y"] > max(a["y"], b["y"]) + card["h"]
     dots = [
         e
-        for e in got["connections"][0]
+        for e in got["edges"]
         if e["className"] == "dot" and set(e["people"]) == {"mother", "father"}
     ]
     assert len(dots) == 1, "Parents need one shared junction"
-    assert_clean_connections(geometry, got["connections"][0])
+    assert_clean_connections(geometry, got["edges"])
 
 
 def assert_clean_connections(geometry: dict, edges: list[dict]) -> None:
@@ -216,18 +194,12 @@ def run_graph(tree: Tree) -> dict:
     script = str(files("family_tree_mcp").joinpath("layout.js"))
     result = subprocess.run(
         ["node", "-e", RUNNER, script],
-        input=json.dumps(
-            {
-                "tree": tree.model_dump(exclude_none=True),
-                "viewports": [{"width": 1280, "height": 800}],
-            }
-        ),
+        input=json.dumps({"tree": tree.model_dump(exclude_none=True)}),
         capture_output=True,
         text=True,
     )
     assert result.returncode == 0, result.stderr
-    got = json.loads(result.stdout)
-    return {"geometry": got["layouts"][0], "edges": got["connections"][0]}
+    return json.loads(result.stdout)
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="needs Node.js")
