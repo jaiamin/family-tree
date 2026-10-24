@@ -63,7 +63,7 @@ def _event(tag: str, date: str | None, place: str | None) -> list[str]:
     return (
         [f"1 {tag}"]
         + ([f"2 DATE {_date(date)}"] if date else [])
-        + ([f"2 PLAC {place}"] if place else [])
+        + ([f"2 PLAC {_escape(place)}"] if place else [])
     )
 
 
@@ -80,7 +80,7 @@ def _spouses(tree: Tree, couple: frozenset[str]) -> list[tuple[str, str]]:
 
 
 def _name(name: str) -> str:
-    *given, surname = name.replace("/", " ").split() or ["Unknown"]
+    *given, surname = _escape(name).replace("/", " ").split() or ["Unknown"]
     return f"{' '.join(given)} /{surname}/" if given else surname
 
 
@@ -92,16 +92,21 @@ def _date(date: str) -> str:
         try:
             datetime.date(int(year), int(month or 1), int(day or 1))
         except ValueError:
-            return f"({date})"
+            return f"({_escape(date)})"
         parts = [str(int(day)) if day else "", MONTHS[int(month) - 1] if month else "", year]
         return " ".join(p for p in parts if p)
-    return f"({date})"
+    return f"({_escape(date)})"
+
+
+def _escape(value: str) -> str:
+    """A lone @ marks a cross-reference in GEDCOM, so literal ones are doubled."""
+    return value.replace("@", "@@")
 
 
 def _text(level: int, tag: str, text: str) -> list[str]:
     """Split text into CONT lines at newlines and CONC lines to stay under the line limit."""
     lines = []
-    for i, line in enumerate(text.splitlines() or [""]):
+    for i, line in enumerate(_escape(text).splitlines() or [""]):
         prefix = f"{level} {tag}" if i == 0 else f"{level + 1} CONT"
         first, *rest = _chunks(line)
         lines.append(f"{prefix} {first}" if first else prefix)
@@ -110,11 +115,11 @@ def _text(level: int, tag: str, text: str) -> list[str]:
 
 
 def _chunks(line: str, size: int = 200) -> list[str]:
-    """Readers may trim spaces around CONC breaks, so never split next to a space."""
+    """Readers may trim spaces around CONC breaks, so never split next to a space (or an @@)."""
     chunks = []
     while len(line) > size:
         cut = size
-        while cut > 1 and " " in (line[cut - 1], line[cut]):
+        while cut > 1 and {line[cut - 1], line[cut]} & {" ", "@"}:
             cut -= 1
         chunks.append(line[:cut])
         line = line[cut:]

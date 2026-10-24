@@ -243,3 +243,31 @@ def test_remove_person_drops_partnership_details(tree: Tree) -> None:
     tree.link("dad", "partner", "mom", status="married")
     tree.remove_person("mom")
     assert tree.partnerships == {}
+
+
+def test_hand_edited_links_are_repaired_on_load() -> None:
+    data = {
+        "name": "T",
+        "people": {
+            "a": {"id": "a", "name": "A", "parents": ["ghost", "a", "b"], "partners": ["b", "b"]},
+            "b": {"id": "wrong", "name": "B"},
+        },
+        "partnerships": {"a+b": {"status": "married"}, "a+ghost": {"status": "married"}},
+    }
+    t = Tree.model_validate(data)
+    assert t.people["a"].parents == ["b"] and t.people["a"].partners == ["b"]
+    assert t.people["b"].id == "b" and t.people["b"].partners == ["a"]
+    assert list(t.partnerships) == ["a+b"]
+    assert t.profile("a")["partners"][0]["name"] == "B"
+
+
+def test_single_line_fields_and_clearing() -> None:
+    t = Tree(name="T")
+    person = t.add_person("  Ann\nLee ", sex="female", birth_place="Pune\nIndia", notes="a\nb")
+    assert (person.name, person.birth_place, person.notes) == ("Ann Lee", "Pune India", "a\nb")
+    with pytest.raises(ValueError, match="name can't be empty"):
+        t.update_person("ann-lee", name="")
+    with pytest.raises(ValueError, match="name can't be empty"):
+        t.add_person(" \n")
+    t.update_person("ann-lee", sex="")
+    assert t.people["ann-lee"].sex is None

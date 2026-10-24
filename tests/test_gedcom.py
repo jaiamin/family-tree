@@ -84,3 +84,13 @@ def test_marriages_and_divorces_become_family_events() -> None:
     recs = records(to_gedcom(t))
     assert recs["@F1@ FAM"][2:] == ["1 MARR", "2 DATE 1 JUN 1950", "2 PLAC Pune"]
     assert recs["@F2@ FAM"][2:] == ["1 DIV", "2 DATE 1970"]
+
+
+def test_at_signs_are_escaped() -> None:
+    t = Tree(name="T")
+    t.add_person("Ann @home", birth_place="Pune @ India", notes="x" * 199 + "@@ ann@example.com")
+    text = to_gedcom(t)
+    assert "1 NAME Ann /@@home/" in text and "2 PLAC Pune @@ India" in text
+    for line in records(text)["@I1@ INDI"]:
+        value = line.split(" ", 2)[2] if line.count(" ") > 1 else ""
+        assert "@" not in value.replace("@@", "")

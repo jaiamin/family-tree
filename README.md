@@ -23,7 +23,7 @@ For Claude Code:
 claude mcp add family-tree -- uvx --from git+https://github.com/jaiamin/family-tree-mcp family-tree-mcp
 ```
 
-Trees are saved as JSON files in `~/.family-tree-mcp/`. Set `FAMILY_TREE_DIR` to store them elsewhere. Every change keeps a backup of the previous version (the last 50 per tree), so `undo` can revert mistakes or restore a deleted tree.
+Trees are saved as JSON files in `~/.family-tree-mcp/`. Set `FAMILY_TREE_DIR` to store them elsewhere. Several apps or agents can use the same folder at once; changes are applied one at a time. Every change keeps a backup of the previous version (the last 50 per tree), so `undo` can revert mistakes or restore a deleted tree.
 
 ## Model
 
@@ -51,7 +51,8 @@ Everything else (children, siblings, aunts, cousins, in-laws, step-relations) is
 | `get_diagram` | Mermaid chart of the whole tree or one person's ancestors/descendants |
 | `export_diagram` | Save that chart as a `.mmd` file plus a [mermaid.live](https://mermaid.live) link for PNG/SVG/PDF download |
 | `export_gedcom` | Save the tree as a GEDCOM file for other genealogy apps |
-| `export_html` | Save a read-only, interactive web page of the tree to share as a link |
+| `publish_site` | Put a read-only, interactive page of the tree online and keep it updated after every change |
+| `export_html` | Save that page as a local file without publishing |
 
 `get_diagram` returns [Mermaid](https://mermaid.js.org) source, which Claude, ChatGPT, GitHub and most Markdown viewers render as a chart. Couples join at a dot above their children (with dotted lines once divorced), boxes are colored by sex (blue, pink, gray when unknown), deceased people are dashed and faded, and the focus person has an orange border.
 
@@ -61,15 +62,13 @@ Ask your agent something like *"Start a tree for my family: my parents are Maria
 
 ## Sharing a tree
 
-`export_html` writes a single `index.html` to `~/.family-tree-mcp/exports/<tree>-site/`. Viewers can browse the chart, tap anyone for their details, and pick two people to see how they're related. Nothing can be edited. By default, birth dates, birthplaces and notes are hidden for anyone who may be living: no death date, and not born over 100 years ago. The page also asks search engines not to index it.
+Ask your agent to *"publish the family tree"*. `publish_site` puts a read-only page on a free [Cloudflare Pages](https://pages.cloudflare.com) link such as `https://amin-patel-family.pages.dev`, then republishes it in the background after every change, so the link always shows the latest tree. Viewers can browse the chart, tap anyone for their details, and pick two people to see how they're related. Nothing can be edited, and the page asks search engines not to index it.
 
-To get a free, permanent link, publish the folder to [Cloudflare Pages](https://pages.cloudflare.com). This needs a free Cloudflare account, and you run the same command again after each re-export:
+By default, birth dates, birthplaces, notes and marriage dates are hidden for anyone who may be living: no death date, and not born over 100 years ago.
 
-```sh
-npx wrangler pages deploy ~/.family-tree-mcp/exports/<tree>-site --project-name <tree>
-```
+Setup, once: create a free Cloudflare account, install [Node.js](https://nodejs.org), and run `npx wrangler login` in a terminal. To stop automatic updates, ask the agent to publish with `keep_updated` off; to take the page down, run `npx wrangler pages project delete <project>`.
 
-The page is then at `https://<tree>.pages.dev`. Anyone with the link can view it. To limit it to specific people, turn on [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/) for the project (free for up to 50 users).
+Anyone with the link can view the page. To limit it to specific people, turn on [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/) for the project (free for up to 50 users).
 
 ## Updating
 

@@ -1,7 +1,10 @@
+import threading
+
 import pytest
 
 from family_tree_mcp import store as store_module
 from family_tree_mcp.store import Store
+from family_tree_mcp.tree import Site, Tree
 
 
 def names(store: Store) -> list[str]:
@@ -70,8 +73,35 @@ def test_rename_moves_tree_and_history(tmp_path) -> None:
     with pytest.raises(ValueError, match="already exists"):
         store.rename("T", "Taken")
 
+    with store.edit("T") as tree:
+        tree.site = Site(project="t", url="https://t.pages.dev")
     store.rename("T", "Amin-Patel Family")
-    assert [t.name for t in store.trees()] == ["Amin-Patel Family", "Taken"]
+    assert [t.name for t in store.trees() if isinstance(t, Tree)] == ["Amin-Patel Family", "Taken"]
     store.undo("amin-patel-family")
     assert store.load("Amin-Patel Family").name == "Amin-Patel Family"
+    store.undo("amin-patel-family")
     assert store.load("Amin-Patel Family").people == {}
+    assert store.load("Amin-Patel Family").site == Site(project="t", url="https://t.pages.dev")
+
+
+def test_concurrent_edits_are_not_lost(tmp_path) -> None:
+    Store(tmp_path).create("T")
+    # Two stores on one folder stand in for two apps sharing the trees.
+    stores = [Store(tmp_path), Store(tmp_path)]
+    workers = [threading.Thread(target=add, args=(stores[i % 2], f"P{i}")) for i in range(20)]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join()
+    assert len(names(stores[0])) == 20
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_unreadable_tree_files_are_reported_not_fatal(tmp_path) -> None:
+    store = Store(tmp_path)
+    store.create("Good")
+    (tmp_path / "broken.json").write_text("{not json")
+    assert [t if isinstance(t, str) else t.name for t in store.trees()] == ["broken.json", "Good"]
+    (tmp_path / "bad.json").write_text('{"people": {}}')
+    with pytest.raises(ValueError, match="not a valid tree file"):
+        store.load("Bad")

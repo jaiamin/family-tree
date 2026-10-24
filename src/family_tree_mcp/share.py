@@ -15,7 +15,7 @@ def share_page(tree: Tree, hide_living: bool = True) -> tuple[str, int]:
 
     Hiding also drops marriage dates and places for couples where either may be living.
     """
-    public = tree.model_copy(deep=True)
+    public = tree.model_copy(deep=True, update={"site": None})
     hidden = 0
     if hide_living:
         living = {p.id for p in public.people.values() if _maybe_living(p.birth_date, p.death_date)}
