@@ -84,8 +84,11 @@
     transition: border-color .15s, box-shadow .15s, opacity .2s;
   }
   .person:hover { border-color: var(--border-strong); }
-  .person.selected { border-color: var(--fg); box-shadow: 0 0 0 1px var(--fg), var(--shadow); }
+  /* A ring of its own, so joined couple cards (which drop a border) and zoom rounding can't eat an edge. */
   .person.selected { z-index: 1; }
+  .person.selected::after {
+    content: ""; position: absolute; inset: -1px; border: 2px solid var(--fg); border-radius: inherit; pointer-events: none;
+  }
   .person.pair-top { border-bottom-width: 0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
   .person.pair-middle { border-bottom-width: 0; border-radius: 0; box-shadow: none; }
   .person.pair-bottom { border-top-left-radius: 0; border-top-right-radius: 0; }
@@ -241,7 +244,7 @@ stage.style.height = `${height + PAD * 2}px`;
 const lines = $("lines");
 lines.setAttribute("width", width + PAD * 2);
 lines.setAttribute("height", height + PAD * 2);
-const at = (id) => ({ x: pos[id].x + PAD, y: pos[id].y + PAD });
+const at = (id) => ({ x: Math.round(pos[id].x) + PAD, y: Math.round(pos[id].y) + PAD });
 
 const cards = {};
 for (const id of ids) {
