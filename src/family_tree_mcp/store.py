@@ -20,30 +20,23 @@ class Store:
         self.root = root
         root.mkdir(parents=True, exist_ok=True)
         self._thread_lock = threading.RLock()
-        self._depth = 0
+        self._locked = False
         self.on_change: Callable[[Tree], None] | None = None  # called after each saved change
 
     @contextmanager
     def lock(self) -> Generator[None, None, None]:
-        """Serialize writes across threads and across processes sharing this folder.
-
-        Re-entrant: only the outermost call takes the file lock.
-        """
+        """Serialize writes across threads and processes sharing this folder. Re-entrant."""
         with self._thread_lock:
-            if self._depth:
-                self._depth += 1
-                try:
-                    yield
-                finally:
-                    self._depth -= 1
+            if self._locked:
+                yield
                 return
             with open(self.root / ".lock", "a+b") as handle:
                 _lock_file(handle, True)
-                self._depth = 1
+                self._locked = True
                 try:
                     yield
                 finally:
-                    self._depth = 0
+                    self._locked = False
                     _lock_file(handle, False)
 
     def _path(self, name: str) -> Path:
@@ -57,7 +50,7 @@ class Store:
         for path in sorted(self.root.glob("*.json")):
             try:
                 found.append(Tree.model_validate_json(path.read_text(encoding="utf-8")))
-            except (OSError, ValueError, ValidationError):
+            except (OSError, ValueError):
                 found.append(path.name)
         return found
 

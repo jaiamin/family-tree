@@ -105,3 +105,12 @@ def test_unreadable_tree_files_are_reported_not_fatal(tmp_path) -> None:
     (tmp_path / "bad.json").write_text('{"people": {}}')
     with pytest.raises(ValueError, match="not a valid tree file"):
         store.load("Bad")
+
+
+def test_failed_edit_is_not_saved(tmp_path) -> None:
+    store = Store(tmp_path)
+    store.create("T")
+    with pytest.raises(ValueError), store.edit("T") as tree:
+        tree.add_person("Ann")
+        tree.link("ann", "parent", "ghost")
+    assert store.load("T").people == {}

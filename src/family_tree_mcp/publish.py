@@ -14,7 +14,6 @@ from family_tree_mcp.tree import Tree
 WRANGLER = ["--yes", "wrangler@4"]
 # Desktop apps often start servers without the shell's PATH, so look where Node usually lives.
 NODE_DIRS = ["/opt/homebrew/bin", "/usr/local/bin", str(Path.home() / ".volta/bin")]
-LOGIN_HINT = "Run `npx wrangler login` once in a terminal to connect Cloudflare, then try again."
 
 
 def deploy(folder: Path, project: str, create: bool = True) -> str:
@@ -56,7 +55,7 @@ def _wrangler(*args: str) -> subprocess.CompletedProcess[str]:
 
 def _failure(output: str) -> str:
     if re.search(r"log ?in|authenticat|CLOUDFLARE_API_TOKEN", output, re.IGNORECASE):
-        return LOGIN_HINT
+        return "Run `npx wrangler login` once in a terminal to connect Cloudflare, then try again."
     lines = [line for line in output.strip().splitlines() if line.strip()]
     return "Publishing failed: " + " ".join(lines[-3:])
 
@@ -74,10 +73,9 @@ class Updater:
     def schedule(self, tree: Tree) -> None:
         if not (tree.site and tree.site.keep_updated):
             return
-        name = tree.name
         with self._lock:
-            if name not in self._pending:
-                self._pending.append(name)
+            if tree.name not in self._pending:
+                self._pending.append(tree.name)
             if not (self._thread and self._thread.is_alive()):
                 self._thread = threading.Thread(target=self._run, daemon=True)
                 self._thread.start()

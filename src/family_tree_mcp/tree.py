@@ -84,11 +84,10 @@ class Tree(BaseModel):
     def _repair(self) -> "Tree":
         """Drop links to missing people and make partner links two-way, e.g. after hand edits."""
         for key, person in self.people.items():
+            valid = self.people.keys() - {key}
             person.id = key
-            person.parents = [p for p in dict.fromkeys(person.parents) if p in self.people][:2]
-            person.parents = [p for p in person.parents if p != key]
-            person.partners = [p for p in dict.fromkeys(person.partners) if p in self.people]
-            person.partners = [p for p in person.partners if p != key]
+            person.parents = [p for p in dict.fromkeys(person.parents) if p in valid][:2]
+            person.partners = [p for p in dict.fromkeys(person.partners) if p in valid]
         for person in self.people.values():
             for partner in person.partners:
                 if person.id not in self.people[partner].partners:
@@ -129,8 +128,6 @@ class Tree(BaseModel):
     def half_siblings(self, a: str, b: str) -> bool:
         pa, pb = self.people[a].parents, self.people[b].parents
         return len(set(pa) & set(pb)) == 1 and max(len(pa), len(pb)) == 2
-
-    # Editing
 
     def add_person(self, name: str, **fields: Any) -> Person:
         base = slugify(name) or "person"
@@ -284,8 +281,6 @@ class Tree(BaseModel):
             person.parents = [i for i in person.parents if i != relative_id]
         else:
             relative.parents = [i for i in relative.parents if i != person_id]
-
-    # Queries
 
     def find(self, query: str) -> list[Person]:
         terms = query.lower().split()
