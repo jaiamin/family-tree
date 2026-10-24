@@ -33,6 +33,12 @@ def share_page(tree: Tree, site: Site, families: list[Family]) -> tuple[str, int
     data = public.model_dump(mode="json", exclude_none=True)
     for pid in hidden:
         data["people"][pid]["private"] = True
+    for family in sorted(families, key=lambda t: t.name.casefold()):
+        if family.id != tree.id:
+            for pid in set(family.members) & data["people"].keys():
+                data["people"][pid].setdefault("other_trees", []).append(
+                    {"id": family.id, "name": family.name}
+                )
     data["site_name"] = site.name
     if site.photos:
         data["photos"] = True

@@ -429,6 +429,11 @@ function select(id) {
       group(partners.length > 1 ? "Partners" : "Partner", partners, (o) => partnerNote(id, o)),
       group("Siblings", siblings(tree, id), (o) => (halfSiblings(tree, id, o) ? "Half" : "")),
       group("Children", children(tree, id)),
+      p.other_trees?.length ? el("section", {}, el("h3", {}, "Other trees"),
+        ...p.other_trees.map((other) => el("a", {
+          class: "relative tree-link", href: `/trees/${other.id}/#${id}`,
+        }, other.name)),
+      ) : null,
       related.size === 1 ? el("p", { class: "none" }, "No family recorded yet.") : null,
     ),
     el("div", { class: "actions" }, link),

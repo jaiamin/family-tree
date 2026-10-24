@@ -50,6 +50,9 @@ def test_pages_contain_only_members_and_links_while_sharing_uuid(tmp_path) -> No
     pages, hidden = website_files(store.collection(), site)
     a = embedded(pages[f"trees/{first.id}/index.html"])
     b = embedded(pages[f"trees/{second.id}/index.html"])
+    assert a["people"][shared.id]["other_trees"] == [{"id": second.id, "name": "Second"}]
+    assert b["people"][shared.id]["other_trees"] == [{"id": first.id, "name": "First"}]
+    assert "other_trees" not in a["people"][relative.id]
     assert set(b["people"]) == {shared.id}
     assert b["people"][shared.id]["parents"] == b["people"][shared.id]["partners"] == []
     assert b["partnerships"] == {}
@@ -62,7 +65,7 @@ def test_pages_contain_only_members_and_links_while_sharing_uuid(tmp_path) -> No
     assert 'aria-label="Switch family tree"' in pages[f"trees/{first.id}/index.html"]
     assert "<option" not in pages[f"trees/{first.id}/index.html"]
     assert f'href="/trees/{second.id}/"' in pages[f"trees/{first.id}/index.html"]
-    assert '<h2>Family trees (2)</h2>' in pages["index.html"]
+    assert "<h2>Family trees (2)</h2>" in pages["index.html"]
     assert 'id="count"' not in pages["index.html"]
     assert "Family links" not in pages["index.html"]
     store.rename(first.id, "Renamed")
@@ -70,6 +73,14 @@ def test_pages_contain_only_members_and_links_while_sharing_uuid(tmp_path) -> No
     assert set(pages) == set(renamed)
     assert embedded(renamed[f"trees/{first.id}/index.html"])["name"] == "Renamed"
     assert store.collection().people[shared.id].notes == "Secret"
+    assert embedded(renamed[f"trees/{second.id}/index.html"])["people"][shared.id][
+        "other_trees"
+    ] == [{"id": first.id, "name": "Renamed"}]
+    store.membership(second.id, [shared.id], remove=True)
+    removed, _ = website_files(store.collection(), site)
+    assert (
+        "other_trees" not in embedded(removed[f"trees/{first.id}/index.html"])["people"][shared.id]
+    )
 
 
 def test_template_tokens_in_user_names_remain_literal(tmp_path) -> None:
