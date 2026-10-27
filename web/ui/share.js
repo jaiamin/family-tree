@@ -46,8 +46,12 @@ function paint(circle) {
   circle.append(img);
 }
 const repaint = (id) => document.querySelectorAll(`[data-avatar="${id}"]`).forEach(paint);
+const genderLabel = id => person(id).sex === "male" ? "Male" : person(id).sex === "female" ? "Female" : "";
 function avatar(id, size = "") {
-  const circle = el("span", { class: `avatar ${size}`, "aria-hidden": "true", "data-avatar": id }, initials(id));
+  const gender = person(id).sex, label = genderLabel(id);
+  const circle = el("span", { class: `avatar ${size}`, "data-avatar": id,
+    ...label ? { "data-gender": gender, role: "img", "aria-label": label, title: label } : { "aria-hidden": "true" },
+  }, initials(id));
   paint(circle);
   return circle;
 }
@@ -161,7 +165,7 @@ for (const c of geometry.nodes) {
   const caption = years(p);
   const node = el("button", {
     class: `person${c.joined ? ` joined-${c.joined}` : ""}${PLACEHOLDER.test(p.name) ? " unknown" : ""}`,
-    "data-id": id, "aria-label": `${p.name}${caption ? `, ${caption}` : ""}`,
+    "data-id": id, "aria-label": [p.name, caption, genderLabel(id)].filter(Boolean).join(", "),
   }, avatar(id), el("span", { class: "text" }, el("span", { class: "name" }, displayName(id)),
     caption && el("span", { class: "years" }, caption)));
   Object.assign(node.style, { left: `${c.x + PAD}px`, top: `${c.y + PAD}px`, width: `${card.w}px`, height: `${card.h}px` });
@@ -471,7 +475,7 @@ function photoEditor(id) {
   if (PLACEHOLDER.test(person(id).name)) return { circle, panel: null };
   const badge = el("span", { class: "badge", "aria-hidden": "true" });
   badge.innerHTML = '<svg class="icon" viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3"/></svg>';
-  const button = el("button", { class: "photo", "aria-label": "Photo", "aria-expanded": "false" }, circle, badge);
+  const button = el("button", { class: "photo", "aria-label": ["Photo", genderLabel(id)].filter(Boolean).join(", "), "aria-expanded": "false" }, circle, badge);
   const panel = el("div", { class: "photo-panel", hidden: "" });
   const picker = el("input", { type: "file", accept: "image/*", hidden: "" });
   const show = (...kids) => {
