@@ -297,7 +297,8 @@
   async function manageAccess() {
     const panel = dialog("Editor access");
     if (!panel) return;
-    const list = el("div");
+    panel.box.classList.add("editor-access");
+    const list = el("div", { class: "editor-access-list" });
     panel.body.append(el("p", { class: "form-note" }, `Owner: ${session.email}. Editors sign in with their own Google account.`), list);
     let input;
     const { form, status, finish } = formIn(panel, "Add editor", async () => { await api("/editors", { email: input.value }); input.value = ""; await refresh(); });
@@ -309,6 +310,7 @@
       }, "text-button"))));
     }
     try { await refresh(); } catch (error) { status.classList.add("is-error"); status.textContent = error.message; }
+    if (panel.box.isConnected) input.focus();
   }
   function mountHeader() {
     const actions = document.querySelector("header > .actions");

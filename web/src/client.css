@@ -128,3 +128,8 @@ header > .actions:empty { display: none; }
 .picker-person { min-width: 0; overflow-wrap: anywhere; }
 .picker-person strong { display: block; font-weight: 500; }
 .picker-person > span { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+
+.editor-access-list:not(:empty) { margin-bottom: 12px; }
+.editor-access-list .connection-row:first-child { padding-top: 0; }
+.editor-access-list .connection-row:last-child { border-bottom: 0; }
+.editor-access-list:not(:empty) + form { padding-top: 20px; border-top: 1px solid var(--border); }
