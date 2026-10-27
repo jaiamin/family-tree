@@ -45,7 +45,9 @@ import { administration } from "./admin.js";
     box.append(el("div", { class: "dialog-top" }, el("h2", {}, title), shut), body, footer);
     box.dirty = false;
     box.dismiss = () => {
-      if (box.saving || box.dirty && !confirm("Discard your unsaved changes?")) return false;
+      if (box.saving) return false;
+      const warning = box.confirmClose || (box.dirty ? "Discard your unsaved changes?" : "");
+      if (warning && !confirm(warning)) return false;
       box.close(); return true;
     };
     box.addEventListener("cancel", event => { event.preventDefault(); box.dismiss(); });
@@ -57,9 +59,13 @@ import { administration } from "./admin.js";
     return { box, body, footer };
   }
   addEventListener("beforeunload", event => {
-    if (activeDialog?.dirty) { event.preventDefault(); event.returnValue = ""; }
+    if (activeDialog?.dirty || activeDialog?.confirmClose) { event.preventDefault(); event.returnValue = ""; }
   });
-  const reload = () => { if (activeDialog) activeDialog.dirty = false; document.dispatchEvent(new Event("family-tree-before-reload")); location.reload(); };
+  const reload = (message = "") => {
+    if (typeof message === "string" && message) { try { sessionStorage.setItem("family-saved", message); } catch {} }
+    if (activeDialog) activeDialog.dirty = false;
+    document.dispatchEvent(new Event("family-tree-before-reload")); location.reload();
+  };
   function field(parent, label, value = "", options = {}) {
     const id = `field-${crypto.randomUUID()}`;
     const input = options.choices ? el("select", { id, name: options.name || label }, ...options.choices.map(([value, label]) => el("option", { value }, label)))
@@ -82,7 +88,7 @@ import { administration } from "./admin.js";
     form.addEventListener("input", changed);
     form.addEventListener("change", changed);
     form.onsubmit = async event => {
-      event.preventDefault(); if (!form.reportValidity()) return;
+      event.preventDefault(); if (panel.box.saving || !form.reportValidity()) return;
       save.disabled = true; save.textContent = submitLabel.startsWith("Send") ? "Sending…" : "Saving…"; panel.box.saving = true; status.classList.remove("is-error"); status.textContent = "";
       try { await onsubmit(); panel.box.dirty = false; initial = snapshot(); }
       catch (error) { status.classList.add("is-error"); status.textContent = error.message; status.scrollIntoView({ block: "nearest" }); }
@@ -389,7 +395,7 @@ import { administration } from "./admin.js";
     }
     updateDetails(); form.append(summary); finish(); relation.focus();
   }
-  const admin = administration({ api, dialog, field, formIn, el, button, base, reload, get session() { return session; } });
+  const admin = administration({ api, dialog, field, formIn, el, button, base, reload, toast });
   function mountHeader() {
     const actions = document.querySelector("header > .actions");
     const signOut = async () => { await api("/logout", {}); location.reload(); };
@@ -412,19 +418,20 @@ import { administration } from "./admin.js";
     const treeShortId = location.pathname.slice(base.length).match(/^\/t\/([1-9A-HJ-NP-Za-km-z]{12})\/?$/)?.[1];
     item("Send a suggestion", ["M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9H13a8.5 8.5 0 0 1 8 8v.5Z"], () => suggest());
     if (session.role !== "viewer") item("Family suggestions", ["M4 4h16v16H4zM4 13h4l2 3h4l2-3h4"], inbox);
+    if (treeShortId) items.append(el("a", { href: `${base}/api/t/${treeShortId}/gedcom`, download: "" }, icon(["M12 3v12m-4-4 4 4 4-4M5 16v5h14v-5"]), el("span", {}, "Download GEDCOM")));
     if (session.role === "owner") {
-      item("Editor access", ["M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M16 3a4 4 0 0 1 0 8M22 21v-2a4 4 0 0 0-3-3.87", "M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z"], admin.accounts);
+      items.append(el("hr", { class: "menu-divider" }));
       item("Trees and settings", ["M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"], admin.trees);
-      item("Import GEDCOM", ["M12 3v12m-4-4 4 4 4-4M5 16v5h14v-5"], admin.importGedcom);
+      item("Editor access", ["M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M16 3a4 4 0 0 1 0 8M22 21v-2a4 4 0 0 0-3-3.87", "M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z"], admin.accounts);
       item("Agent access", ["M9 3v3m6-3v3M4 8h16v12H4zM8 12h.01M16 12h.01M8 16h8"], admin.automation);
-      item("Backups", ["M12 3v12m-4-4 4 4 4-4M5 16v5h14v-5"], admin.backups);
+      item("Import GEDCOM", ["M12 16V3m-4 4 4-4 4 4M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"], admin.importGedcom);
+      item("Backups", ["M3 7v14h18V7M2 3h20v4H2zM9 11h6"], admin.backups);
       item("Recent activity", ["M3 12a9 9 0 1 0 3-7M3 3v6h6M12 7v5l3 2"], admin.activity);
       if (session.backup?.error) {
         const notice = el("p", { class: "backup-notice", role: "status" }, session.backup.error);
         items.append(notice);
       }
     }
-    if (treeShortId) items.append(el("a", { href: `${base}/api/t/${treeShortId}/gedcom`, download: "" }, icon(["M12 3v12m-4-4 4 4 4-4M5 16v5h14v-5"]), el("span", {}, "Download GEDCOM")));
     items.append(el("hr", { class: "menu-divider" }));
     const themeLabel = () => document.documentElement.dataset.theme === "dark" ? "Use light mode" : "Use dark mode";
     const theme = item(themeLabel(), ["M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"], () => {
@@ -479,7 +486,7 @@ import { administration } from "./admin.js";
       }));
     } else {
       $("family-heading").textContent = `Family trees (${data.trees.length})`;
-      if (session.role === "owner") $("family-heading").append(button("Create tree", admin.trees, "text-button"));
+      if (session.role === "owner") $("family-heading").append(button("Create tree", admin.createTree, "text-button"));
       $("family-list").replaceChildren(...data.trees.map(tree => el("li", {}, el("a", { class: "tree-card", href: `${base}/t/${tree.short_id}` }, el("div", {}, el("h3", {}, tree.name), el("p", {}, `${tree.people} ${tree.people === 1 ? "person" : "people"}`)), icon(["m9 6 6 6-6 6"])))));
     }
     if (data.tree && !Object.keys(data.tree.people).length && session.role === "owner") document.querySelector("main").append(button("Add the first person", () => admin.firstPerson(data.tree.id)));
@@ -535,7 +542,9 @@ import { administration } from "./admin.js";
         try {
           const signedIn = sessionStorage.getItem("family-signed-in");
           sessionStorage.removeItem("family-signed-in");
-          if (signedIn) toast("Signed in.", "success");
+          const saved = sessionStorage.getItem("family-saved");
+          sessionStorage.removeItem("family-saved");
+          if (signedIn || saved) toast(signedIn ? "Signed in." : saved, "success");
         } catch {}
         if ($("family-list")) await loadTree();
       }

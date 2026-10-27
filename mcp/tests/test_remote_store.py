@@ -111,3 +111,34 @@ def test_http_authentication_error_is_actionable(remote):
 def test_remote_store_rejects_insecure_or_credential_bearing_urls(url):
     with pytest.raises(ValueError):
         Store(url, "test-token")
+
+
+@pytest.mark.parametrize("status", [301, 302, 303, 307, 308])
+def test_redirects_never_forward_the_owner_token_to_another_origin(remote, status):
+    destination, state = remote
+    received = []
+
+    class Redirect(BaseHTTPRequestHandler):
+        def log_message(self, format: str, *args):
+            pass
+
+        def do_GET(self):
+            received.append(self.headers.get("Authorization"))
+            self.send_response(status)
+            self.send_header("Location", f"{destination.url}/api/collection")
+            self.end_headers()
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Redirect)
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    try:
+        source = Store(f"http://127.0.0.1:{server.server_port}/family-tree", "test-owner-token")
+        # Python 3.10 refuses 308 redirects; newer versions follow without credentials.
+        with pytest.raises(ValueError, match=r"^(Please sign in\.|Website request failed\.)$"):
+            source.collection()
+        assert received == ["Bearer test-owner-token"]
+        assert state["writes"] == 0
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join()
