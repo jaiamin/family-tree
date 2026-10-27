@@ -1,65 +1,39 @@
-# family-tree-mcp
+# Family Tree
 
-Build family trees through your AI agent and share a website with search, photos, two layouts, and person links. Records stay local; visitors can view trees and update photos with a family code.
+A private family-tree web app with photos, search, relationship comparison, and sharing. People can belong to multiple trees. The website and local MCP edit the same hosted data.
 
-## Setup
+- **Family password:** view, upload/replace photos, send private suggestions.
+- **Approved Google editors:** edit details, add relatives, connect existing people, remove displayed photos, review suggestions.
+- **Owner:** manage editors and trees, permanently delete people. No public signup or tree creation.
 
-Install [uv](https://docs.astral.sh/uv/) and add to your MCP client:
+## Develop
 
-```json
-{
-  "mcpServers": {
-    "family-tree": {
-      "command": "uvx",
-      "args": ["--from", "git+https://github.com/jaiamin/family-tree-mcp", "family-tree-mcp"]
-    }
-  }
-}
-```
-
-Tell your agent which people and relationships to add; tool instructions are built in. People have stable UUIDs shared across trees; search before creating duplicates.
-
-**Update:** quit your client, run this, press Ctrl+C after startup, then reopen the client:
+Requires Node.js 26, pnpm, Python 3.10+, and [uv](https://docs.astral.sh/uv/).
 
 ```sh
-uvx --refresh --from git+https://github.com/jaiamin/family-tree-mcp family-tree-mcp
+git clone https://github.com/jaiamin/family-tree.git
+cd family-tree
+pnpm --dir web install --frozen-lockfile
+pnpm --dir web build
+pnpm --dir web dev
 ```
 
-## Website
+Open **http://localhost:8000/family-tree/**; forward **8000 → 8000** in a sandbox. The local-only password is `local-preview-only`. Preview data stays in ignored `web/.local/`; production data lives in Cloudflare D1/R2.
 
-Ask your agent to:
+## MCP
 
-1. Configure with `configure_website(name="Your website", project="your-project")`. The project is fixed afterward.
-2. Preview with `export_website`, then serve its returned folder:
+Run `uv run family-tree-mcp` with `FAMILY_TREE_URL` set to your website's `/family-tree` URL and `FAMILY_TREE_TOKEN` set through your client's secret/environment settings. The token grants owner access; never commit it. Successful changes appear immediately—no export or publish step.
 
-   ```sh
-   uv run python -m http.server 8000 --bind 0.0.0.0 --directory /returned/folder
-   ```
+Search all people before creating someone: UUIDs and photos are shared across trees. Stale edits fail instead of overwriting another relative's work.
 
-   Open **http://localhost:8000/**; map **8000 → 8000** in a sandbox. Re-export after edits.
-3. Publish with `publish_site`. Requires [Node.js](https://nodejs.org), a [Cloudflare](https://pages.cloudflare.com) account, and `npx wrangler login` in your terminal.
-
-**Every tree is published.** Names, relationships, and photos are public; living dates, places, and notes are hidden by default. Use [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/) for private viewing.
-
-MCP edits auto-publish after 30 seconds while the server runs. **Code updates require `publish_site` again**; merging or exporting does not deploy. `get_website` reports status/errors.
-
-Publishing returns the photo code; `change_photo_code` replaces it. Photos live separately in Cloudflare KV; uploads require the published site.
-
-## Data and recovery
-
-Back up `~/.family-tree-mcp/`. Its `collection.json` holds records and settings; configure an absolute `FAMILY_TREE_DIR` and restart to use another folder.
-
-Shared-person edits, `remove_person`, and `merge_people` affect every tree. Removing membership or deleting a tree preserves people. `undo` restores the latest collection-wide change; 50 transaction backups are retained.
-
-Old per-tree JSON is unsupported. Preserve originals; rebuilding with new UUIDs requires new person links and photo uploads.
-
-## Development
-
-Requires uv and Node.js.
+## Verify
 
 ```sh
-uv sync
+pnpm --dir web build && pnpm --dir web check && pnpm --dir web test
+uv sync --locked
 uv run ruff format --check . && uv run ruff check . && uv run ty check && uv run pytest
 ```
 
-[MIT](LICENSE); bundled [ELK.js](src/family_tree_mcp/vendor/README.md): [EPL-2.0](src/family_tree_mcp/vendor/ELK-LICENSE.md).
+Code: `web/src` (app/API), `web/ui` (graph), `mcp/src` (local tools). [Deployment and recovery →](docs/operations.md)
+
+[MIT](LICENSE) · [ELK.js license](web/ui/vendor/README.md)

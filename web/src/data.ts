@@ -1,0 +1,84 @@
+import { assert, emptyCollection, pair, validateCollection, type Collection, type Person, type Family } from "./model";
+import type { Env, Identity } from "./types";
+export interface Snapshot { collection: Collection; revision: number }
+export const collectionQueries = (env: Env) => [
+    env.DB.prepare("SELECT site, revision FROM collections WHERE id = 'main'"),
+    env.DB.prepare("SELECT * FROM people ORDER BY rowid"),
+    env.DB.prepare("SELECT * FROM parents ORDER BY rowid"),
+    env.DB.prepare("SELECT * FROM partnerships ORDER BY rowid"),
+    env.DB.prepare("SELECT * FROM trees ORDER BY rowid"),
+    env.DB.prepare("SELECT * FROM tree_members ORDER BY position"),
+  ];
+export function collectionFromRows(rows: D1Result<Record<string, unknown>>[]): Snapshot {
+  const c = emptyCollection();
+  const meta = rows[0].results[0];
+  c.site = meta?.site ? JSON.parse(String(meta.site)) : null;
+  for (const row of rows[1].results) c.people[String(row.id)] = { ...row, parents: [], partners: [] } as unknown as Person;
+  for (const row of rows[2].results) c.people[String(row.child_id)].parents.push(String(row.parent_id));
+  for (const row of rows[3].results) {
+    const a = String(row.person_a), b = String(row.person_b);
+    c.people[a].partners.push(b); c.people[b].partners.push(a);
+    if (row.has_details) c.partnerships[pair(a,b)] = {
+      status: row.status as string | null, marriage_date: row.marriage_date as string | null,
+      marriage_place: row.marriage_place as string | null, divorce_date: row.divorce_date as string | null,
+    };
+  }
+  for (const row of rows[4].results) c.trees[String(row.id)] = { ...row, members: [] } as unknown as Family;
+  for (const row of rows[5].results) c.trees[String(row.tree_id)].members.push(String(row.person_id));
+  return { collection: c, revision: Number(meta?.revision || 0) };
+}
+export async function readCollection(env: Env): Promise<Snapshot> {
+  return collectionFromRows(await env.DB.batch<Record<string, unknown>>(collectionQueries(env)));
+}
+export async function saveCollection(env: Env, collection: unknown, revision: unknown, user: Identity, reason: string) {
+  validateCollection(collection);
+  assert(typeof revision === "number" && Number.isSafeInteger(revision) && revision >= 0, "A current revision is required.", 409);
+  const previous = await readCollection(env);
+  assert(previous.revision === revision, "Someone else updated the family tree. Reload before saving.", 409);
+  const operation = crypto.randomUUID(), actor = user.email || "Family member";
+  const people = JSON.stringify(collection.people), trees = JSON.stringify(collection.trees);
+  const parents = JSON.stringify(Object.values(collection.people).flatMap(p => p.parents.map(parent => [p.id, parent])));
+  const partnerships = JSON.stringify(Object.values(collection.people).flatMap(p => p.partners.filter(other => p.id < other).map(other => ({ a: p.id, b: other, ...collection.partnerships[pair(p.id, other)], has_details: collection.partnerships[pair(p.id, other)] ? 1 : 0 }))));
+  const members = JSON.stringify(Object.values(collection.trees).flatMap(t => t.members.map((id, position) => [t.id, id, position])));
+  const guard = "(SELECT operation FROM collections WHERE id = 'main') = ?";
+  const statement = (sql: string, ...values: (string | number | null)[]) => env.DB.prepare(sql).bind(...values);
+  const results = await env.DB.batch([
+    statement("INSERT OR IGNORE INTO collections(id, site, operation, actor, reason) VALUES ('main', NULL, 'initial', 'setup', 'Initial collection')"),
+    statement("UPDATE collections SET site = ?, revision = revision + 1, operation = ?, actor = ?, reason = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 'main' AND revision = ? RETURNING revision", JSON.stringify(collection.site), operation, actor, reason, revision),
+    statement(`DELETE FROM parents WHERE ${guard} AND (child_id, parent_id) NOT IN (SELECT json_extract(value,'$[0]'),json_extract(value,'$[1]') FROM json_each(?))`, operation, parents),
+    statement(`DELETE FROM partnerships WHERE ${guard} AND (person_a, person_b) NOT IN (SELECT json_extract(value,'$.a'),json_extract(value,'$.b') FROM json_each(?))`, operation, partnerships),
+    statement(`DELETE FROM tree_members WHERE ${guard} AND (tree_id, person_id) NOT IN (SELECT json_extract(value,'$[0]'),json_extract(value,'$[1]') FROM json_each(?))`, operation, members),
+    statement(`DELETE FROM people WHERE ${guard} AND id NOT IN (SELECT key FROM json_each(?))`, operation, people),
+    statement(`DELETE FROM photos WHERE ${guard} AND person_id NOT IN (SELECT key FROM json_each(?))`, operation, people),
+    statement(`DELETE FROM trees WHERE ${guard} AND id NOT IN (SELECT key FROM json_each(?))`, operation, trees),
+    statement(`INSERT INTO people(id,name,sex,birth_date,death_date,birth_place,notes)
+      SELECT key,json_extract(value,'$.name'),json_extract(value,'$.sex'),json_extract(value,'$.birth_date'),json_extract(value,'$.death_date'),json_extract(value,'$.birth_place'),json_extract(value,'$.notes') FROM json_each(?) WHERE ${guard}
+      ON CONFLICT(id) DO UPDATE SET name=excluded.name,sex=excluded.sex,birth_date=excluded.birth_date,death_date=excluded.death_date,birth_place=excluded.birth_place,notes=excluded.notes
+      WHERE name IS NOT excluded.name OR sex IS NOT excluded.sex OR birth_date IS NOT excluded.birth_date OR death_date IS NOT excluded.death_date OR birth_place IS NOT excluded.birth_place OR notes IS NOT excluded.notes`, people, operation),
+    statement(`INSERT INTO trees(id,name,description) SELECT key,json_extract(value,'$.name'),coalesce(json_extract(value,'$.description'),'') FROM json_each(?) WHERE ${guard}
+      ON CONFLICT(id) DO UPDATE SET name=excluded.name,description=excluded.description WHERE name IS NOT excluded.name OR description IS NOT excluded.description`, trees, operation),
+    statement(`INSERT OR IGNORE INTO parents(child_id,parent_id) SELECT json_extract(value,'$[0]'),json_extract(value,'$[1]') FROM json_each(?) WHERE ${guard}`, parents, operation),
+    statement(`INSERT INTO partnerships(person_a,person_b,status,marriage_date,marriage_place,divorce_date,has_details)
+      SELECT json_extract(value,'$.a'),json_extract(value,'$.b'),json_extract(value,'$.status'),json_extract(value,'$.marriage_date'),json_extract(value,'$.marriage_place'),json_extract(value,'$.divorce_date'),json_extract(value,'$.has_details') FROM json_each(?) WHERE ${guard}
+      ON CONFLICT(person_a,person_b) DO UPDATE SET status=excluded.status,marriage_date=excluded.marriage_date,marriage_place=excluded.marriage_place,divorce_date=excluded.divorce_date,has_details=excluded.has_details
+      WHERE status IS NOT excluded.status OR marriage_date IS NOT excluded.marriage_date OR marriage_place IS NOT excluded.marriage_place OR divorce_date IS NOT excluded.divorce_date OR has_details != excluded.has_details`, partnerships, operation),
+    statement(`INSERT INTO tree_members(tree_id,person_id,position) SELECT json_extract(value,'$[0]'),json_extract(value,'$[1]'),json_extract(value,'$[2]') FROM json_each(?) WHERE ${guard}
+      ON CONFLICT(tree_id,person_id) DO UPDATE SET position=excluded.position WHERE position != excluded.position`, members, operation),
+  ]);
+  assert(results[1].results.length === 1, "Someone else updated the family tree. Reload before saving.", 409);
+  return revision + 1;
+}
+export function treeView(c: Collection, id: string, siteName: string) {
+  const family = c.trees[id];
+  assert(family, "Family tree not found.", 404);
+  const members = new Set(family.members);
+  const people = Object.fromEntries(family.members.map(id => {
+    const p = structuredClone(c.people[id]);
+    p.parents = p.parents.filter(id => members.has(id));
+    p.partners = p.partners.filter(id => members.has(id));
+    const other_trees = Object.values(c.trees).filter(t => t.id !== family.id && t.members.includes(id)).map(t => ({ id: t.id, name: t.name }));
+    return [id, { ...p, other_trees }];
+  }));
+  return { id, name: family.name, description: family.description || "", people, photos: true, site_name: c.site?.name || siteName,
+    partnerships: Object.fromEntries(Object.entries(c.partnerships).filter(([key]) => key.split("+").every(id => members.has(id)))) };
+}

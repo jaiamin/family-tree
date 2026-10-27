@@ -1,0 +1,29 @@
+{
+  "name": "family-tree-website",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/dev.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "check": "tsc --noEmit",
+    "deploy": "pnpm build && vite build && cf deploy --prebuilt --mode production"
+  },
+  "dependencies": {
+    "jose": "^6.2.13"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "2.0.0-beta.v.5",
+    "@cloudflare/workers-types": "^5.20261026.1",
+    "@types/node": "^26.6.5",
+    "cf": "1.0.0-beta.21",
+    "esbuild": "^0.28.2",
+    "miniflare": "^4.20260730.0",
+    "typescript": "^7.0.2",
+    "vite": "8.3.5"
+  },
+  "engines": {
+    "node": ">=24.22.0"
+  },
+  "packageManager": "pnpm@12.15.0"
+}
