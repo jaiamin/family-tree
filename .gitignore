@@ -6,3 +6,16 @@ dist/
 
 # Disposable local family-tree preview
 .preview/
+
+# Private website build and local runtime
+web/node_modules/
+web/.cloudflare/
+web/.wrangler/
+web/.local/
+web/public/
+web/dist/
+web/.dev.vars
+web/.env
+web/generated/
+
+.wrangler/
