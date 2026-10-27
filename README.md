@@ -27,7 +27,7 @@ Search all people before creating someone: UUIDs and photos are shared across tr
 ## Verify
 
 ```sh
-pnpm --dir web check && pnpm --dir web build && pnpm --dir web test
+pnpm --dir web build && pnpm --dir web check && pnpm --dir web test
 uv sync --locked
 uv run ruff format --check . && uv run ruff check . && uv run ty check && uv run pytest
 ```
