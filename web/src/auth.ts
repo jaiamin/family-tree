@@ -60,6 +60,7 @@ export async function rateLimit(request: Request, env: Env, action: string, limi
     expires = CASE WHEN expires <= ? THEN excluded.expires ELSE expires END RETURNING count`)
     .bind(key, now() + seconds, now(), now()).first<{ count: number }>();
   assert(row && row.count <= limit, "Too many attempts. Please try again later.", 429);
+  return key;
 }
 export async function newSession(request: Request, env: Env, userId: string) {
   const user = await env.DB.prepare("SELECT auth_version FROM users WHERE id=? AND enabled=1").bind(userId).first<{ auth_version: number }>();

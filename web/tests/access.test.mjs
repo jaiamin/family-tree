@@ -84,3 +84,12 @@ test("rotating the shared password revokes old viewing sessions", async () => {
     assert.equal((await viewer.call("/view")).status,200);
   } finally { await mf.dispose(); }
 });
+
+test("successful family logins do not exhaust the failed-attempt budget behind a shared proxy", async () => {
+  const mf=await runtime(), viewer=browser(mf);
+  try {
+    for(let count=0;count<15;count++) assert.equal((await viewer.call("/login",{password:"local-preview-only"})).status,200);
+    for(let count=0;count<10;count++) assert.equal((await viewer.call("/login",{password:"incorrect"})).status,403);
+    assert.equal((await viewer.call("/login",{password:"local-preview-only"})).status,429,"the lockout still applies after repeated failed guesses");
+  } finally {await mf.dispose();}
+});

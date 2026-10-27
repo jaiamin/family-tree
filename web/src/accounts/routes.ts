@@ -9,10 +9,11 @@ const json = Response.json;
 export async function accountRoute(request: Request, env: Env, user: Identity | null, path: string): Promise<Response | null> {
   const method = request.method;
   if (path === "/api/login" && method === "POST") {
-    await rateLimit(request, env, "password", 10, 900);
+    const attempt = await rateLimit(request, env, "password", 10, 900);
     const body = await bodyOf(request);
     assert(env.FAMILY_PASSWORD, "The family password hasn't been configured.", 503);
     assert(typeof body.password === "string" && body.password.length <= 200 && await secretMatches(body.password,env.FAMILY_PASSWORD), "The password isn't right.", 403);
+    await env.DB.prepare("DELETE FROM rate_limits WHERE key=?").bind(attempt).run();
     return json({ ok:true }, { headers: { "set-cookie": await newViewerSession(request,env) } });
   }
   if ((path === "/api/logout" || path === "/api/logout/editing") && method === "POST") {
