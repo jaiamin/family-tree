@@ -42,6 +42,15 @@ test("Google approval, subject binding, revocation and two-stage logout preserve
     assert.equal((await google(relative,"unapproved@example.com")).status,403);
     assert.equal((await relative.call("/view")).status,200);
     assert.equal((await google(owner,"owner@example.com")).status,200,"configured owner bootstraps without an account password");
+    const backup = await mf.getR2Bucket("BACKUP");
+    let snapshot;
+    for (let attempt=0;attempt<40;attempt++) {
+      const saved=await backup.get("collection.json");
+      snapshot=saved ? await saved.json() : null;
+      if (snapshot?.tables.identities.some(identity=>identity.subject === "owner@example.com")) break;
+      await new Promise(resolve=>setTimeout(resolve,25));
+    }
+    assert.ok(snapshot?.tables.identities.some(identity=>identity.subject === "owner@example.com"),"a successful Google login backs up its bound identity without waiting for another edit");
     const approved = await owner.call("/users",{email:"relative@example.com"});assert.equal(approved.status,201);
     const { id } = await approved.json();
     assert.equal((await google(relative,"relative@example.com","original-google-subject")).status,200);

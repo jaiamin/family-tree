@@ -7,6 +7,7 @@ test("owners manage trees and relatives browse privately without accounts", asyn
   await page.goto(`${basePath}/`);
   await page.getByLabel("Password",{exact:true}).fill("local-preview-only");
   await page.getByRole("button",{name:"Continue",exact:true}).click();
+  await expect(page.locator('summary[aria-label="Family menu"]')).toBeVisible();
   await page.context().addCookies([{name:"family_session",value:"synthetic-browser-owner",url:"http://localhost:8002",httpOnly:true}]);
   await page.reload();
   await page.getByRole("button",{name:"Create tree",exact:true}).click();

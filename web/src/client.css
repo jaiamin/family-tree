@@ -180,8 +180,5 @@ header .share-tree-button { display: flex; gap: 6px; width: auto; padding: 0 10p
 .admin-row small { display:block; color:var(--muted); }
 .admin-row p { margin:4px 0 0; }
 .admin-settings { margin-top:24px; }
-.auth-field { display:grid; gap:8px; margin-bottom:16px; }
-.auth-field[hidden] { display:none; }
-.recovery-code { display:block; overflow-wrap:anywhere; margin:20px 0; }
 
 .admin-row strong, .admin-row small { overflow-wrap: anywhere; }
