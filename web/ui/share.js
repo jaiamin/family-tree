@@ -1,7 +1,7 @@
 (async () => {
 const tree = await window.familySite.loadTree();
 const apiUrl = path => window.familySite.base + path;
-const treeUrl = new URL(apiUrl(`/trees/${tree.id}`), location.origin).href;
+const treeUrl = new URL(apiUrl(`/t/${tree.short_id}`), location.origin).href;
 const ids = Object.keys(tree.people);
 const $ = (id) => document.getElementById(id);
 const view = $("canvas");
@@ -628,7 +628,7 @@ function select(id, preserveComparison = false) {
   const up = parentsOf(tree, id);
   const related = highlight(id);
   const link = el("button", { class: "action", "aria-label": "Share person" }, "Share");
-  link.onclick = () => shareLink(link, `${displayName(id)} · ${tree.name}`, `${treeUrl}#${id}`);
+  link.onclick = () => shareLink(link, `${displayName(id)} · ${tree.name}`, `${treeUrl}#${person(id).short_id}`);
   const compare = el("button", { class: "action", "aria-label": "Compare relationship" }, "Compare");
   compare.onclick = () => startComparison(id);
   const facts = [
@@ -651,7 +651,7 @@ function select(id, preserveComparison = false) {
       group("Children", children(tree, id)),
       p.other_trees?.length ? el("section", {}, el("h3", {}, "Other trees"),
         ...p.other_trees.map((other) => el("a", {
-          class: "relative tree-link", href: apiUrl(`/trees/${other.id}#${id}`),
+          class: "relative tree-link", href: apiUrl(`/t/${other.short_id}#${p.short_id}`),
         }, other.name)),
       ) : null,
       related.size === 1 ? el("p", { class: "none" }, "No family recorded yet.") : null,
@@ -687,7 +687,7 @@ function select(id, preserveComparison = false) {
     highlightComparison();
     box.querySelector(".compare-summary").focus({ preventScroll: true });
   }
-  history.replaceState(null, "", `#${id}`);
+  history.replaceState(null, "", `#${person(id).short_id}`);
 }
 document.addEventListener("family-person-select", event => select(event.detail));
 function clear() {
@@ -809,7 +809,8 @@ else {
   camera.x = view.clientWidth / 2 - (at(anchor).x + card.w / 2) * camera.scale;
   camera.y = 24 - at(anchor).y * camera.scale;
   apply();
-  const start = decodeURIComponent(location.hash.slice(1));
+  const start = ids.find(id => person(id).short_id === location.hash.slice(1));
+  if (location.hash && !start) history.replaceState(null, "", location.pathname);
   if (tree.people[start]) {
     select(start);
     stage.getAnimations().forEach(animation => animation.finish());

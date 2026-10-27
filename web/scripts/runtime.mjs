@@ -1,3 +1,4 @@
+import { migratePublicIds } from "../dist/public-ids.mjs";
 import { Miniflare } from "miniflare";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -16,6 +17,8 @@ export async function runtime(options = {}) {
   });
   const db = await mf.getD1Database("DB");
   await db.exec((await readFile(`${root}/schema.sql`, "utf8")).replace(/\n/g, " "));
+  await db.exec((await readFile(`${root}/migrations/0001_public_ids.sql`, "utf8")).replace(/\n/g, " "));
+  await migratePublicIds({ DB: db });
   await db.prepare("INSERT OR IGNORE INTO editors(email) VALUES (?)").bind("mehul@mehulamin.com").run();
   return mf;
 }

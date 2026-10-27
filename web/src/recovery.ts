@@ -1,3 +1,4 @@
+import { isShortId } from "./public-ids";
 import type { Env } from "./types";
 import { assert, validateCollection } from "./model";
 
@@ -11,8 +12,19 @@ export async function recoverBackup(env: Env) {
     tables: Record<string, Record<string, string | number | null>[]>;
     uploads: { object_key: string; content_type: string }[];
   }>();
-  assert(snapshot.format === 1 && snapshot.tables, "Unsupported backup format.");
+  assert(snapshot.format === 2 && snapshot.tables, "Unsupported backup format.");
   validateCollection(snapshot.collection);
+  const mappings = snapshot.tables.public_ids;
+  assert(Array.isArray(mappings), "Backup is missing public IDs.");
+  const keys = new Set(), shortIds = new Set();
+  for (const row of mappings) {
+    assert((row.kind === "person" || row.kind === "tree") && isShortId(row.short_id), "Invalid backup public IDs.");
+    const entity = row.kind === "person" ? snapshot.collection.people : snapshot.collection.trees;
+    const key = `${row.kind}:${row.entity_id}`;
+    assert(entity[String(row.entity_id)] && !keys.has(key) && !shortIds.has(row.short_id), "Invalid backup public IDs.");
+    keys.add(key); shortIds.add(row.short_id);
+  }
+  assert(keys.size === Object.keys(snapshot.collection.people).length + Object.keys(snapshot.collection.trees).length, "Backup public IDs are incomplete.");
   const columns: Record<string, string[]> = {
     collections: ["id", "site", "revision", "operation", "actor", "reason"],
     people: ["id", "name", "sex", "birth_date", "death_date", "birth_place", "notes"],
@@ -22,7 +34,7 @@ export async function recoverBackup(env: Env) {
     photos: ["person_id", "object_key", "version"],
     photo_uploads: ["id", "person_id", "object_key", "content_type", "uploaded_at"],
     suggestions: ["id", "person_id", "person_name", "sender_name", "contact", "message", "status", "created_at"],
-    editors: ["email"],
+    editors: ["email"], public_ids: ["kind", "entity_id", "short_id"],
   };
   const tables = Object.keys(columns);
   const counts = await env.DB.batch<{ n: number }>(tables.map(table => env.DB.prepare(`SELECT count(*) AS n FROM ${table}`)));

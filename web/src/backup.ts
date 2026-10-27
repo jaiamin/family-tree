@@ -12,22 +12,24 @@ export async function refreshBackup(env: Env) {
       env.DB.prepare("SELECT * FROM suggestions"),
       env.DB.prepare("SELECT * FROM editors"),
       env.DB.prepare("SELECT generation, saved_generation FROM backup_state WHERE id = 1"),
+      env.DB.prepare("SELECT * FROM public_ids"),
     ]);
     const state = rows[10].results[0];
     const generation = Number(state.generation);
-    if (generation <= Number(state.saved_generation)) return;
-    const snapshot = { format: 1, generation, exported_at: new Date().toISOString(), ...collectionFromRows(rows),
-      tables: Object.fromEntries(["collections", "people", "parents", "partnerships", "trees", "tree_members", "photos", "photo_uploads", "suggestions", "editors"].map((table, index) => [table, index === 0 ? [{ id: "main", site: rows[0].results[0]?.site ?? null, revision: Number(rows[0].results[0]?.revision || 0), operation: "recovery", actor: "recovery", reason: "Recovered from backup" }] : rows[index].results])),
+    const latest = await env.BACKUP.head("collection.json");
+    if (generation <= Number(state.saved_generation) && latest?.customMetadata?.format === "2") return;
+    const snapshot = { format: 2, generation, exported_at: new Date().toISOString(), ...collectionFromRows(rows),
+      tables: Object.fromEntries(["collections", "people", "parents", "partnerships", "trees", "tree_members", "photos", "photo_uploads", "suggestions", "editors"].map((table, index) => [table, index === 0 ? [{ id: "main", site: rows[0].results[0]?.site ?? null, revision: Number(rows[0].results[0]?.revision || 0), operation: "recovery", actor: "recovery", reason: "Recovered from backup" }] : rows[index].results]).concat([["public_ids", rows[11].results]])),
       photos: rows[6].results, uploads: rows[7].results, suggestions: rows[8].results, editors: rows[9].results };
     for (let attempt = 0; attempt < 3; attempt++) {
       const existing = await env.BACKUP.head("collection.json");
-      if (Number(existing?.customMetadata?.generation ?? -1) >= generation) {
+      if (existing?.customMetadata?.format === "2" && Number(existing.customMetadata.generation ?? -1) >= generation) {
         await markSaved(env, generation);
         return;
       }
       const saved = await env.BACKUP.put("collection.json", JSON.stringify(snapshot), {
         onlyIf: existing ? { etagMatches: existing.etag } : { etagDoesNotMatch: "*" },
-        httpMetadata: { contentType: "application/json" }, customMetadata: { generation: String(generation) },
+        httpMetadata: { contentType: "application/json" }, customMetadata: { generation: String(generation), format: "2" },
       });
       if (!saved) continue;
       await markSaved(env, generation);

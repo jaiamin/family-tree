@@ -1,3 +1,4 @@
+import { planPublicIds, publicIdCollision, isShortId, type PublicId } from "./public-ids";
 import { assert, emptyCollection, pair, validateCollection, type Collection, type Person, type Family } from "./model";
 import type { Env, Identity } from "./types";
 export interface Snapshot { collection: Collection; revision: number }
@@ -35,26 +36,42 @@ export async function readView(env: Env, id: string | null) {
   if (!id) {
     const [meta, trees] = await env.DB.batch<Record<string, unknown>>([
       env.DB.prepare("SELECT site, revision FROM collections WHERE id = 'main'"),
-      env.DB.prepare("SELECT t.id, t.name, count(m.person_id) AS people FROM trees t LEFT JOIN tree_members m ON m.tree_id = t.id GROUP BY t.id ORDER BY t.rowid"),
+      env.DB.prepare("SELECT t.id, t.name, p.short_id, count(m.person_id) AS people FROM trees t LEFT JOIN public_ids p ON p.kind = 'tree' AND p.entity_id = t.id LEFT JOIN tree_members m ON m.tree_id = t.id GROUP BY t.id ORDER BY t.rowid"),
     ]);
+    assert(trees.results.every(tree => isShortId(tree.short_id)), "Public ID migration is incomplete.", 503);
     const row = meta.results[0];
     return { siteName: row?.site ? JSON.parse(String(row.site)).name || env.SITE_NAME : env.SITE_NAME,
       revision: Number(row?.revision || 0), trees: trees.results, tree: null };
   }
+  assert(isShortId(id), "Family tree not found.", 404);
   const rows = await env.DB.batch<Record<string, unknown>>([
     ...collectionQueries(env),
-    env.DB.prepare("SELECT p.person_id, p.version FROM photos p JOIN tree_members m ON m.person_id = p.person_id WHERE m.tree_id = ?").bind(id),
+    env.DB.prepare("SELECT p.person_id, p.version FROM photos p JOIN tree_members m ON m.person_id = p.person_id WHERE m.tree_id = (SELECT entity_id FROM public_ids WHERE kind = 'tree' AND short_id = ?)").bind(id),
+    env.DB.prepare("SELECT * FROM public_ids"),
   ]);
   const { collection: c, revision } = collectionFromRows(rows);
+  const mappings = rows[7].results as unknown as PublicId[];
+  const publicIds = new Map(mappings.map(row => [`${row.kind}:${row.entity_id}`, row.short_id]));
+  const treeId = mappings.find(row => row.kind === "tree" && row.short_id === id)?.entity_id;
+  assert(treeId && c.trees[treeId], "Family tree not found.", 404);
+  const view = treeView(c, treeId, env.SITE_NAME);
+  const publicId = (kind: string, uuid: string) => {
+    const value = publicIds.get(`${kind}:${uuid}`);
+    assert(value, "Public ID migration is incomplete.", 503);
+    return value;
+  };
   return { siteName: c.site?.name || env.SITE_NAME, revision,
-    trees: Object.values(c.trees).map(t => ({ id: t.id, name: t.name, people: t.members.length })),
-    tree: { ...treeView(c, id, env.SITE_NAME), photo_versions: Object.fromEntries(rows[6].results.map(p => [String(p.person_id), String(p.version)])) } };
+    trees: Object.values(c.trees).map(t => ({ id: t.id, short_id: publicId("tree", t.id), name: t.name, people: t.members.length })),
+    tree: { ...view, short_id: publicId("tree", treeId),
+      people: Object.fromEntries(Object.entries(view.people).map(([uuid, p]) => [uuid, { ...p, short_id: publicId("person", uuid),
+        other_trees: p.other_trees.map(t => ({ ...t, short_id: publicId("tree", t.id) })) }])), photo_versions: Object.fromEntries(rows[6].results.map(p => [String(p.person_id), String(p.version)])) } };
 }
-export async function saveCollection(env: Env, collection: unknown, revision: unknown, user: Identity, reason: string) {
+async function saveCollectionOnce(env: Env, collection: unknown, revision: unknown, user: Identity, reason: string) {
   validateCollection(collection);
   assert(typeof revision === "number" && Number.isSafeInteger(revision) && revision >= 0, "A current revision is required.", 409);
   const previous = await readCollection(env);
   assert(previous.revision === revision, "Someone else updated the family tree. Reload before saving.", 409);
+  const additions = await planPublicIds(env, collection);
   const operation = crypto.randomUUID(), actor = user.email || "Family member";
   const people = JSON.stringify(collection.people), trees = JSON.stringify(collection.trees);
   const parents = JSON.stringify(Object.values(collection.people).flatMap(p => p.parents.map(parent => [p.id, parent])));
@@ -84,9 +101,17 @@ export async function saveCollection(env: Env, collection: unknown, revision: un
       WHERE status IS NOT excluded.status OR marriage_date IS NOT excluded.marriage_date OR marriage_place IS NOT excluded.marriage_place OR divorce_date IS NOT excluded.divorce_date OR has_details != excluded.has_details`, partnerships, operation),
     statement(`INSERT INTO tree_members(tree_id,person_id,position) SELECT json_extract(value,'$[0]'),json_extract(value,'$[1]'),json_extract(value,'$[2]') FROM json_each(?) WHERE ${guard}
       ON CONFLICT(tree_id,person_id) DO UPDATE SET position=excluded.position WHERE position != excluded.position`, members, operation),
+    statement(`INSERT INTO public_ids(kind,entity_id,short_id) SELECT json_extract(value,'$.kind'),json_extract(value,'$.entity_id'),json_extract(value,'$.short_id') FROM json_each(?) WHERE ${guard} ON CONFLICT(kind,entity_id) DO NOTHING`, JSON.stringify(additions), operation),
   ]);
   assert(results[1].results.length === 1, "Someone else updated the family tree. Reload before saving.", 409);
   return revision + 1;
+}
+export async function saveCollection(env: Env, collection: unknown, revision: unknown, user: Identity, reason: string) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try { return await saveCollectionOnce(env, collection, revision, user, reason); }
+    catch (error) { if (!publicIdCollision(error) || attempt === 2) throw error; }
+  }
+  throw new Error("Couldn't assign public IDs.");
 }
 export function treeView(c: Collection, id: string, siteName: string) {
   const family = c.trees[id];

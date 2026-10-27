@@ -43,3 +43,5 @@ pages["/favicon.svg"] = await source("favicon.svg");
 await mkdir("generated", { recursive: true });
 await writeFile("generated/pages.json", JSON.stringify(pages));
 await build({ entryPoints: ["src/index.ts"], bundle: true, format: "esm", target: "es2022", outfile: "dist/worker.mjs", minify: true, sourcemap: true });
+
+await build({ entryPoints: ["src/public-ids.ts"], bundle: true, format: "esm", platform: "node", outfile: "dist/public-ids.mjs" });

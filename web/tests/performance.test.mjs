@@ -6,7 +6,7 @@ import { runtime } from "../scripts/runtime.mjs";
 const origin = "http://localhost", base = `${origin}/family-tree`;
 const treeId = randomUUID(), emptyTree = randomUUID(), personId = randomUUID();
 const owner = { authorization: "Bearer local-test-owner-token" };
-let mf, db, cookie, version;
+let mf, db, cookie, version, treeShortId, emptyShortId;
 const call = (path, headers = {}) => mf.dispatchFetch(base + path, { headers: { cookie, ...headers } });
 const image = new Uint8Array([255, 216, 255, 224, 0, 0]);
 const upload = () => mf.dispatchFetch(`${base}/api/photos/${personId}`, { method: "PUT", headers: { cookie, origin, "content-type": "image/jpeg" }, body: image });
@@ -19,12 +19,14 @@ before(async () => {
   assert.equal(saved.status, 200, await saved.text());
   const login = await mf.dispatchFetch(`${base}/api/login`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ password: "local-preview-only" }) });
   cookie = login.headers.get("set-cookie").split(";")[0];
+  treeShortId = (await db.prepare("SELECT short_id FROM public_ids WHERE kind = 'tree' AND entity_id = ?").bind(treeId).first()).short_id;
+  emptyShortId = (await db.prepare("SELECT short_id FROM public_ids WHERE kind = 'tree' AND entity_id = ?").bind(emptyTree).first()).short_id;
   version = (await (await upload()).json()).v;
 });
 after(async () => { await mf?.dispose(); });
 
 test("only versioned code is publicly cacheable; HTML and records stay private", async () => {
-  for (const route of ["", `/trees/${treeId}`]) {
+  for (const route of ["", `/t/${treeShortId}`]) {
     const page = await call(route), html = await page.text();
     assert.equal(page.headers.get("cache-control"), "private, no-store");
     assert.ok(!html.includes("Private relative"));
@@ -43,7 +45,7 @@ test("only versioned code is publicly cacheable; HTML and records stay private",
   }
   const missing = await call("/assets/missing.js");
   assert.equal(missing.status, 404); assert.match(missing.headers.get("cache-control"), /no-store/);
-  const view = await call(`/api/view?tree=${treeId}`);
+  const view = await call(`/api/view?tree=${treeShortId}`);
   assert.equal(view.headers.get("cache-control"), "private, no-store");
 });
 
@@ -51,9 +53,9 @@ test("overview counts include empty trees and photo pointers are scoped to the s
   const overview = await (await call("/api/view")).json();
   assert.equal(overview.siteName, "Test family"); assert.equal(overview.tree, null);
   assert.deepEqual(overview.trees.map(t => t.people), [1, 0]);
-  const full = await (await call(`/api/view?tree=${treeId}`)).json();
+  const full = await (await call(`/api/view?tree=${treeShortId}`)).json();
   assert.deepEqual(full.tree.photo_versions, { [personId]: version });
-  assert.deepEqual((await (await call(`/api/view?tree=${emptyTree}`)).json()).tree.photo_versions, {});
+  assert.deepEqual((await (await call(`/api/view?tree=${emptyShortId}`)).json()).tree.photo_versions, {});
   assert.equal(full.revision, overview.revision);
   assert.equal((await call(`/api/view?tree=${randomUUID()}`)).status, 404);
 });
@@ -86,6 +88,8 @@ test("photo revalidation authenticates first and respects replacements, removal 
   const stale = await call(path, { "if-none-match": `"${next}"` });
   assert.equal(stale.status, 404); assert.match(stale.headers.get("cache-control"), /no-store/);
   assert.equal((await db.prepare("SELECT count(*) AS n FROM photo_uploads WHERE person_id = ?").bind(personId).first()).n, 2);
+  treeShortId = (await db.prepare("SELECT short_id FROM public_ids WHERE kind = 'tree' AND entity_id = ?").bind(treeId).first()).short_id;
+  emptyShortId = (await db.prepare("SELECT short_id FROM public_ids WHERE kind = 'tree' AND entity_id = ?").bind(emptyTree).first()).short_id;
   version = (await (await upload()).json()).v;
 });
 
@@ -94,7 +98,7 @@ test("concurrent edits and reads keep revision checks and photo pointers consist
   const attempts = Array.from({ length: 12 }, (_, i) => mf.dispatchFetch(`${base}/api/people/${personId}`, {
     method: "PATCH", headers: { ...owner, origin, "content-type": "application/json" }, body: JSON.stringify({ revision, fields: { name: `Edit ${i}` } }),
   }));
-  const readers = Array.from({ length: 12 }, () => call(`/api/view?tree=${treeId}`));
+  const readers = Array.from({ length: 12 }, () => call(`/api/view?tree=${treeShortId}`));
   const [edits, reads] = await Promise.all([Promise.all(attempts), Promise.all(readers)]);
   assert.equal(edits.filter(r => r.status === 200).length, 1);
   assert.equal(edits.filter(r => r.status === 409).length, 11);
