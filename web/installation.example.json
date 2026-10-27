@@ -1,0 +1,13 @@
+{
+  "accountId": "00000000000000000000000000000000",
+  "workerName": "family-tree",
+  "databaseId": "00000000-0000-4000-8000-000000000000",
+  "databaseName": "family-tree",
+  "photosBucket": "family-tree-photos",
+  "backupBucket": "family-tree-backup",
+  "basePath": "/family-tree",
+  "siteName": "Family Tree",
+  "publicOrigin": "https://family.example.com",
+  "googleClientId": "your-google-client-id.apps.googleusercontent.com",
+  "ownerEmail": "owner@example.com"
+}

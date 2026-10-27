@@ -39,6 +39,8 @@ jobs:
       - run: uv run pytest
   web:
     runs-on: ubuntu-latest
+    env:
+      FAMILY_INSTALLATION_CONFIG: installation.example.json
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
@@ -53,5 +55,20 @@ jobs:
       - run: pnpm --dir web build
       - run: pnpm --dir web check
       - run: pnpm --dir web test
+      - run: pnpm --dir web exec playwright install --with-deps chromium
+      - run: pnpm --dir web test:browser
+      - name: Verify root and custom deployment paths
+        run: |
+          env -u FAMILY_INSTALLATION_CONFIG BASE_PATH= pnpm --dir web test:browser
+          env -u FAMILY_INSTALLATION_CONFIG BASE_PATH=/our/family pnpm --dir web test:browser
+          pnpm --dir web build
       - run: pnpm --dir web exec vite build
       - run: pnpm --dir web exec cf deploy --prebuilt --mode production --dry-run
+  local:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+      - run: node web/tests/docker-smoke.mjs

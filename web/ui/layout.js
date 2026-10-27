@@ -73,6 +73,7 @@ async function layout(tree, direction = "DOWN") {
   const horizontal = direction === "RIGHT";
   const { units, owner, families } = familyGraph(tree);
   if (horizontal) for (const unit of units) unit.width = CARD.w;
+  /** @type {{id:string,width:number,height:number,ports?:object[],layoutOptions?:Record<string,string>}[]} */
   const nodes = units.map((u) => ({ id: u.id, width: u.width, height: u.height,
     ports: [], layoutOptions: { "elk.portConstraints": "FIXED_POS" } }));
   const byId = new Map(nodes.map((n) => [n.id, n]));
@@ -127,7 +128,7 @@ async function layout(tree, direction = "DOWN") {
       edges.push({ id: `child:${id}`, sources: [output], targets: [target] });
     }
   }
-  const Elk = typeof module !== "undefined" ? require("./vendor/elk.bundled.js") : ELK;
+  const Elk = globalThis.ELK || require("./vendor/elk.bundled.js");
   const graph = await new Elk().layout({ id: "tree", children: nodes, edges,
     layoutOptions: {
       "elk.algorithm": "layered", "elk.direction": direction, "elk.edgeRouting": "ORTHOGONAL",

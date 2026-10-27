@@ -21,3 +21,12 @@ web/generated/
 .wrangler/
 
 .DS_Store
+
+# Private deployment configuration and research artifacts
+web/installation.json
+.preview-browser-errors.txt
+
+.env
+
+web/test-results/
+web/playwright-report/

@@ -1,7 +1,7 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { runtime } from "../scripts/runtime.mjs";
+import { runtime } from "./support.mjs";
 
 const origin = "http://localhost", base = `${origin}/family-tree/api`;
 const [father, mother, child, partner, single, outside, treeId, otherTree] = Array.from({ length: 8 }, randomUUID);

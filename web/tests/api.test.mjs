@@ -1,7 +1,7 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID, generateKeyPairSync } from "node:crypto";
-import { runtime } from "../scripts/runtime.mjs";
+import { runtime } from "./support.mjs";
 import { SignJWT, exportJWK } from "jose";
 
 const origin = "http://localhost", base = "/family-tree";
@@ -20,13 +20,13 @@ async function call(path, { body, method = body === undefined ? "GET" : "POST", 
   }, body: body === undefined ? undefined : JSON.stringify(body) });
 }
 const cookieFrom = response => response.headers.get("set-cookie")?.split(";")[0];
-async function signIn(email, { verified = true, nonceOverride, name, picture, audience = "207540522825-6h5fk3lfe0jhcddpbmrm6e1n8i2rur02.apps.googleusercontent.com" } = {}) {
-  const challenge = await call("/google/start", { body: {} });
+async function signIn(email, { verified = true, nonceOverride, name, picture, accountCookie, audience = "test-google-client" } = {}) {
+  const challenge = await call("/google/start", { body: {}, cookie: accountCookie || familyCookie });
   const { nonce } = await challenge.json();
-  const credential = await new SignJWT({ email, name, picture, email_verified: verified, nonce: nonceOverride || nonce }).setProtectedHeader({ alg: "RS256", kid: jwk.kid }).setSubject("google-subject")
+  const credential = await new SignJWT({ email, name, picture, email_verified: verified, nonce: nonceOverride || nonce }).setProtectedHeader({ alg: "RS256", kid: jwk.kid }).setSubject(email)
     .setIssuer("https://accounts.google.com").setAudience(audience).setIssuedAt().setExpirationTime("5m").sign(google.privateKey);
   const cookie = cookieFrom(challenge);
-  const response = await call("/google/login", { body: { credential }, cookie });
+  const response = await call("/google/login", { body: { credential }, cookie: `${cookie}; ${accountCookie || familyCookie || ""}` });
   return { response, credential, challengeCookie: cookie };
 }
 before(async () => {
@@ -53,7 +53,7 @@ test("anonymous visitors cannot read records, photos, or an HTML-embedded collec
   const html = await page.text(); assert.match(html, /family-password/); assert.ok(!html.includes("Private family note")); assert.ok(!html.includes(parentId));
   assert.equal((await mf.dispatchFetch(`${origin}/api/view`)).status, 404);
 });
-test("family password grants viewing, with a private path-scoped session", async () => {
+test("a shared family password grants viewing, with a private path-scoped session", async () => {
   assert.equal((await call("/login", { body: { password: "wrong" } })).status, 403);
   const login = await call("/login", { body: { password: "local-preview-only" } }); assert.equal(login.status, 200);
   assert.match(login.headers.get("set-cookie"), /HttpOnly; SameSite=Lax/); assert.match(login.headers.get("set-cookie"), /Path=\/family-tree/);
@@ -79,25 +79,30 @@ test("family members may suggest but cannot read suggestions, edit records, or c
   assert.equal(added.status, 201);
   assert.equal((await call("/suggestions", { cookie: familyCookie })).status, 403);
   assert.equal((await call(`/people/${parentId}`, { method: "PATCH", body: { revision: 1, fields: { name: "Changed" } }, cookie: familyCookie })).status, 403);
-  assert.equal((await call("/trees", { body: { name: "New tree" }, cookie: familyCookie })).status, 404);
+  assert.equal((await call("/trees", { body: { name: "New tree" }, cookie: familyCookie })).status, 403);
   assert.equal((await call("/suggestions", { owner: true }).then(r => r.json()))[0].person_name, "Parent");
 });
-test("Google tokens require the approved email, audience, verified email, and one-time nonce", async () => {
-  for (const [email, options, status] of [["stranger@example.com", {}, 403], ["mehul@mehulamin.com", { verified: false }, 401], ["mehul@mehulamin.com", { nonceOverride: "wrong" }, 401], ["mehul@mehulamin.com", { audience: "wrong" }, 401]]) {
+test("Google tokens require an approved subject, audience, verified email, and one-time nonce", async () => {
+  for (const [email, options, status] of [["stranger@example.com", {}, 403], ["editor@example.com", { verified: false }, 401], ["editor@example.com", { nonceOverride: "wrong" }, 401], ["editor@example.com", { audience: "wrong" }, 401]]) {
     const result = await signIn(email, options); assert.equal(result.response.status, status);
   }
-  const signed = await signIn("mehul@mehulamin.com", { name: "Test Editor", picture: "https://lh3.googleusercontent.com/test-photo" }); assert.equal(signed.response.status, 200);
-  assert.equal((await call("/google/login", { body: { credential: signed.credential }, cookie: signed.challengeCookie })).status, 401, "nonce cannot be replayed");
+  const signed = await signIn("editor@example.com", { name: "Test Editor", picture: "https://lh3.googleusercontent.com/test-photo" }); assert.equal(signed.response.status, 200);
+  assert.equal((await call("/google/login", { body: { credential: signed.credential }, cookie: `${signed.challengeCookie}; ${familyCookie}` })).status, 401, "nonce cannot be replayed");
   const cookie = cookieFrom(signed.response);
   const profile = await (await call("/session", { cookie })).json();
   assert.equal(profile.name, "Test Editor");
   assert.equal(profile.picture, "https://lh3.googleusercontent.com/test-photo");
-  assert.equal(profile.email, "mehul@mehulamin.com");
-  assert.equal((await call("/editors", { cookie })).status, 403);
+  assert.equal(profile.email, "editor@example.com");
+  assert.equal((await call("/users", { cookie })).status, 403);
   assert.equal((await call("/suggestions", { cookie })).status, 200);
-  await call("/editors", { owner: true, method: "DELETE", body: { email: "mehul@mehulamin.com" } });
+  await db.prepare("UPDATE users SET enabled=0,auth_version=auth_version+1 WHERE email='editor@example.com'").run();
   assert.equal((await call("/suggestions", { cookie })).status, 401, "revocation invalidates existing editor sessions");
-  await call("/editors", { owner: true, body: { email: "mehul@mehulamin.com" } });
+  await db.prepare("UPDATE users SET enabled=1 WHERE email='editor@example.com'").run();
+});
+test("viewers cannot approve themselves or link an unapproved Google account", async () => {
+  assert.equal((await signIn("relative-google@example.com",{accountCookie:familyCookie})).response.status,403);
+  assert.equal((await call("/users",{body:{email:"relative-google@example.com"},cookie:familyCookie})).status,403);
+  assert.equal((await call("/google/link",{method:"DELETE",cookie:familyCookie,headers:{origin}})).status,404);
 });
 test("same revision cannot overwrite a concurrent update; invalid ancestry is rejected atomically", async () => {
   const current = await (await call("/collection", { owner: true })).json();
@@ -128,12 +133,12 @@ test("mutations reject cross-site requests and backup contains recoverable recor
   // dispatchFetch waitUntil work completes before the next storage read in the runtime.
   const bucket = await mf.getR2Bucket("BACKUP");
   let object;
-  for (let n = 0; n < 20; n++) { object = await bucket.get("collection.json"); if (object) { const value = JSON.parse(await object.text()); if (value.uploads.length === 2) { assert.ok(value.collection.people[parentId]); assert.equal(value.suggestions.length, 1); assert.equal(value.photos.length, 1); return; } } await new Promise(resolve => setTimeout(resolve, 20)); }
+  for (let n = 0; n < 20; n++) { object = await bucket.get("collection.json"); if (object) { const value = JSON.parse(await object.text()); if (value.uploads.length === 2) { assert.ok(value.collection.people[parentId]); assert.equal(value.tables.suggestions.length, 1); assert.equal(value.tables.photos.length, 1); return; } } await new Promise(resolve => setTimeout(resolve, 20)); }
   assert.fail("Expected the current rolling backup, including retained uploads");
 });
 
 test("editors can add relatives, reuse a shared UUID across trees, and review private suggestions", async () => {
-  const signed = await signIn("mehul@mehulamin.com"), cookie = cookieFrom(signed.response);
+  const signed = await signIn("editor@example.com"), cookie = cookieFrom(signed.response);
   let current = await (await call("/collection", { owner: true })).json();
   const otherTree = randomUUID(), sharedId = randomUUID();
   current.collection.people[sharedId] = { id: sharedId, name: "Existing relative", parents: [], partners: [] };
@@ -188,7 +193,7 @@ test("Google editors remove only the current photo pointer and retain all upload
   const upload = await mf.dispatchFetch(`${origin}${base}/api/photos/${childId}`, { method: "PUT", headers: { origin, cookie: familyCookie, "content-type": "image/jpeg" }, body: bytes });
   assert.equal(upload.status, 200);
   const pointer = await db.prepare("SELECT * FROM photos WHERE person_id = ?").bind(childId).first();
-  const signed = await signIn("mehul@mehulamin.com");
+  const signed = await signIn("editor@example.com");
   assert.equal(signed.response.status, 200);
   assert.equal((await call(`/photos/${childId}`, { method: "DELETE", cookie: cookieFrom(signed.response), headers: { origin } })).status, 200);
   assert.equal((await call(`/photos/${childId}`, { cookie: familyCookie })).status, 404);
@@ -199,23 +204,14 @@ test("Google editors remove only the current photo pointer and retain all upload
   assert.equal(again.status, 200, "viewers can add a photo again after removal");
 });
 
-test("editor sign-out rotates into viewer access; viewer sign-out ends access", async () => {
-  const signed = await signIn("mehul@mehulamin.com");
-  assert.equal(signed.response.status, 200);
-  const editorCookie = cookieFrom(signed.response);
-  const leaveEditing = await call("/logout", { body: {}, cookie: editorCookie });
-  assert.equal(leaveEditing.status, 200);
-  const viewerCookie = cookieFrom(leaveEditing);
-  assert.notEqual(viewerCookie, editorCookie);
-  assert.equal((await call("/view", { cookie: editorCookie })).status, 401, "old editor session is revoked");
-  const viewer = await (await call("/session", { cookie: viewerCookie })).json();
-  assert.equal(viewer.role, "member");
-  assert.equal(viewer.email, null);
-  assert.equal((await call("/view", { cookie: viewerCookie })).status, 200);
-  assert.equal((await call("/suggestions", { cookie: viewerCookie })).status, 403);
-  assert.equal((await call("/logout", { body: {}, cookie: viewerCookie })).status, 200);
-  assert.equal((await call("/view", { cookie: viewerCookie })).status, 401);
-  assert.equal((await call("/logout", { body: {} })).status, 200, "anonymous logout never grants viewing");
+test("sign-out revokes the named session and never grants anonymous viewer access", async () => {
+  const signed=await signIn("editor@example.com"); assert.equal(signed.response.status,200);
+  const editorCookie=cookieFrom(signed.response);
+  const logout=await call("/logout",{body:{},cookie:editorCookie}); assert.equal(logout.status,200);
+  assert.match(logout.headers.get("set-cookie"),/Max-Age=0/);
+  assert.equal((await call("/view",{cookie:editorCookie})).status,401);
+  assert.equal((await call("/logout",{body:{}})).status,200);
+  assert.equal((await call("/view")).status,401);
 });
 
 test("only the owner can delete a person everywhere, with revision and name confirmation", async () => {
@@ -234,7 +230,7 @@ test("only the owner can delete a person everywhere, with revision and name conf
   const upload = await db.prepare("SELECT * FROM photo_uploads WHERE person_id = ?").bind(victim).first();
   const body = { revision, name: "Delete Test Person" }, path = `/people/${victim}`;
   assert.equal((await call(path, { method: "DELETE", body, cookie: familyCookie })).status, 403);
-  const editor = await signIn("mehul@mehulamin.com");
+  const editor = await signIn("editor@example.com");
   assert.equal((await call(path, { method: "DELETE", body, cookie: cookieFrom(editor.response) })).status, 403);
   assert.equal((await call(path, { method: "DELETE", owner: true, body: { ...body, name: "Wrong" } })).status, 400);
   assert.equal((await call(path, { method: "DELETE", owner: true, body: { ...body, revision: revision - 1 } })).status, 409);
@@ -252,7 +248,7 @@ test("only the owner can delete a person everywhere, with revision and name conf
 });
 
 test("only editors may delete suggestions, without changing people or other suggestions", async () => {
-  const signed = await signIn("mehul@mehulamin.com"), cookie = cookieFrom(signed.response);
+  const signed = await signIn("editor@example.com"), cookie = cookieFrom(signed.response);
   const first = await call("/suggestions", { cookie: familyCookie, body: { name: "Test sender", message: "Delete this test suggestion" } });
   assert.equal(first.status, 201);
   const { id } = await first.json();

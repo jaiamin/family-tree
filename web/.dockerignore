@@ -1,0 +1,11 @@
+node_modules
+.local
+.cloudflare
+.wrangler
+.impeccable
+generated
+dist
+installation.json
+.env
+.dev.vars
+tests

@@ -1,11 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { build } from "esbuild";
-import { runtime } from "../scripts/runtime.mjs";
+import { runtime } from "./support.mjs";
+import { runtime as emptyRuntime } from "../scripts/runtime.mjs";
 await build({ entryPoints: [new URL("../src/recovery.ts", import.meta.url).pathname], bundle: true, format: "esm", platform: "node", outfile: new URL("../dist/recovery.mjs", import.meta.url).pathname });
 const { recoverBackup } = await import("../dist/recovery.mjs");
 test("rolling backup restores records and all original photos into fresh storage, and refuses live data", async () => {
-  const source = await runtime(), target = await runtime();
+  const source = await runtime(), target = await emptyRuntime();
   try {
     const headers = { authorization: "Bearer local-test-owner-token", "content-type": "application/json" };
     const id = crypto.randomUUID(), tree = crypto.randomUUID();
@@ -20,10 +21,9 @@ test("rolling backup restores records and all original photos into fresh storage
       await new Promise(resolve => setTimeout(resolve, 20));
     }
     assert.equal(snapshot.uploads.length, 2);
-    assert.equal(snapshot.format, 2);
+    assert.equal(snapshot.format, 3);
     assert.equal(snapshot.tables.public_ids.length, 2);
     const db = await target.getD1Database("DB"), photos = await target.getR2Bucket("PHOTOS");
-    await db.exec("DELETE FROM editors");
     const env = { DB: db, PHOTOS: photos, BACKUP: backup };
     assert.deepEqual(await recoverBackup(env), { people: 1, photos: 2 });
     assert.deepEqual((await db.prepare("SELECT * FROM public_ids ORDER BY kind, entity_id").all()).results, [...snapshot.tables.public_ids].sort((a,b) => a.kind.localeCompare(b.kind) || a.entity_id.localeCompare(b.entity_id)));
@@ -45,7 +45,7 @@ test("backup failures remain visible and a retry clears them without retaining e
     const DB = await mf.getD1Database("DB"), BACKUP = await mf.getR2Bucket("BACKUP");
     const failed = { head: async () => { throw new Error("Storage unavailable"); } };
     await refreshBackup({ DB, BACKUP: failed });
-    assert.match((await DB.prepare("SELECT error FROM backup_state").first()).error, /pending/);
+    assert.match((await DB.prepare("SELECT error FROM backup_state").first()).error, /failed/);
     await refreshBackup({ DB, BACKUP });
     let state = await DB.prepare("SELECT * FROM backup_state").first();
     assert.equal(state.error, null); assert.equal(state.generation, state.saved_generation);
@@ -53,7 +53,7 @@ test("backup failures remain visible and a retry clears them without retaining e
     await refreshBackup({ DB, BACKUP });
     state = await DB.prepare("SELECT * FROM backup_state").first();
     assert.equal(state.error, null); assert.equal(state.generation, state.saved_generation, "An already-written backup reconciles status after an interrupted acknowledgement");
-    assert.deepEqual((await BACKUP.list()).objects.map(o => o.key), ["collection.json"]);
+    assert.deepEqual((await BACKUP.list()).objects.map(o => o.key), ["collection.json", `daily/${new Date().toISOString().slice(0,10)}.json`]);
   } finally { await mf.dispose(); }
 });
 
@@ -68,8 +68,39 @@ test("first new backup upgrades the rolling manifest even when its generation wa
     await BACKUP.put("collection.json", JSON.stringify(previous), { customMetadata: { generation: String(generation) } });
     await refreshBackup({ DB, BACKUP });
     const current = await BACKUP.get("collection.json"), restored = await current.json();
-    assert.equal(restored.format, 2); assert.deepEqual(restored.tables.public_ids, []);
-    assert.equal(current.customMetadata.format, "2");
-    assert.deepEqual((await BACKUP.list()).objects.map(o=>o.key), ["collection.json"]);
+    assert.equal(restored.format, 3); assert.deepEqual(restored.tables.public_ids, []);
+    assert.equal(current.customMetadata.format, "3");
+    assert.deepEqual((await BACKUP.list()).objects.map(o=>o.key), ["collection.json", `daily/${new Date().toISOString().slice(0,10)}.json`]);
   } finally { await mf.dispose(); }
+});
+
+test("a thousand retained uploads use paginated listings and missing copies block publication", async () => {
+  const mf = await runtime();
+  try {
+    const DB = await mf.getD1Database("DB"), bucket = await mf.getR2Bucket("BACKUP");
+    const uploads = Array.from({length:1001},(_,index)=>({id:`upload-${index}`,key:`people/person/upload-${index}`}));
+    await DB.prepare("INSERT INTO photo_uploads(id,person_id,object_key,content_type,content_hash) SELECT json_extract(value,'$.id'),'person',json_extract(value,'$.key'),'image/jpeg','test-hash' FROM json_each(?)")
+      .bind(JSON.stringify(uploads)).run();
+    let photoLists=0, reads=0, heads=0, missing=false;
+    const BACKUP = {
+      get(...args) { reads++;return bucket.get(...args); },
+      head(key) { heads++;assert.ok(!key.startsWith("people/"),"no per-photo storage requests");return bucket.head(key); },
+      put:(...args)=>bucket.put(...args), delete:(...args)=>bucket.delete(...args),
+      list(options={}) {
+        if (options.prefix === "daily/") return bucket.list(options);
+        photoLists++;
+        const objects=(options.cursor ? uploads.slice(1000) : uploads.slice(0,1000)).filter(upload=>!missing || upload.id!=="upload-1000").map(upload=>({key:upload.key}));
+        return {objects,truncated:!options.cursor,...options.cursor ? {} : {cursor:"next-page"}};
+      },
+    };
+    await refreshBackup({DB,BACKUP});
+    assert.equal((await DB.prepare("SELECT error FROM backup_state").first()).error,null);
+    assert.equal(photoLists,2);assert.equal(reads,0);assert.ok(heads<=2);
+    const previous=await(await bucket.get("collection.json")).arrayBuffer();
+    missing=true;
+    await DB.prepare("UPDATE backup_state SET generation=generation+1").run();
+    await refreshBackup({DB,BACKUP});
+    assert.match((await DB.prepare("SELECT error FROM backup_state").first()).error,/failed/);
+    assert.deepEqual(await(await bucket.get("collection.json")).arrayBuffer(),previous,"missing originals never replace a valid backup");
+  } finally {await mf.dispose();}
 });

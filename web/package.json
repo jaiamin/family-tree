@@ -6,15 +6,20 @@
     "build": "node scripts/build.mjs",
     "dev": "node scripts/dev.mjs",
     "test": "node --test tests/*.test.mjs",
-    "check": "tsc --noEmit",
-    "deploy": "pnpm build && vite build && cf deploy --prebuilt --mode production"
+    "check": "tsc --noEmit && tsc -p tsconfig.browser.json",
+    "deploy": "pnpm build && vite build && cf deploy --prebuilt --mode production",
+    "start": "node scripts/server.mjs",
+    "maintain": "node scripts/maintain.mjs",
+    "test:browser": "playwright test"
   },
   "dependencies": {
+    "@fontsource-variable/geist": "^5.3.0",
     "jose": "^6.2.13"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "2.0.0-beta.v.5",
     "@cloudflare/workers-types": "^5.20261026.1",
+    "@playwright/test": "1.64.1",
     "@types/node": "^26.6.5",
     "cf": "1.0.0-beta.21",
     "esbuild": "^0.28.2",
@@ -23,7 +28,7 @@
     "vite": "8.3.5"
   },
   "engines": {
-    "node": ">=24.22.0"
+    "node": ">=26.12.1"
   },
   "packageManager": "pnpm@12.15.0"
 }

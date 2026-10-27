@@ -48,4 +48,4 @@ async function createPhotoCrop(file) {
     return new Promise((resolve, reject) => output.toBlob(blob => blob ? resolve(blob) : reject(new Error("Couldn't prepare this photo.")), "image/jpeg", 0.85));
   } };
 }
-if (typeof module !== "undefined") module.exports = { photoCropRect };
+if (typeof module !== "undefined") module.exports = { photoCropRect, createPhotoCrop };

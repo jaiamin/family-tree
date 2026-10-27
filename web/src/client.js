@@ -1,6 +1,6 @@
-(() => {
-  const base = document.currentScript.dataset.base;
-  const $ = id => document.getElementById(id);
+import { byId as $ } from "./dom.js";
+import { administration } from "./admin.js";
+  const base = document.body.dataset.familyBase || "";
   const el = (tag, attrs = {}, ...children) => {
     const node = document.createElement(tag);
     for (const [key, value] of Object.entries(attrs)) key === "class" ? node.className = value : node.setAttribute(key, value);
@@ -51,7 +51,7 @@
     box.addEventListener("cancel", event => { event.preventDefault(); box.dismiss(); });
     box.addEventListener("keydown", event => { if (event.key === "Escape") event.stopPropagation(); });
     const before = document.activeElement;
-    box.onclose = () => { box.remove(); if (activeDialog === box) activeDialog = null; before?.focus({ preventScroll: true }); };
+    box.onclose = () => { box.remove(); if (activeDialog === box) activeDialog = null; if (before instanceof HTMLElement) before.focus({ preventScroll: true }); };
     box.addEventListener("click", event => { if (event.target === box) { const r = box.getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) box.dismiss(); } });
     document.body.append(box); activeDialog = box; box.showModal();
     return { box, body, footer };
@@ -96,7 +96,7 @@
     container.setAttribute("aria-label", "Loading Google sign-in");
     container.setAttribute("aria-busy", "true");
     try {
-      if (!session.googleClientId) throw new Error("Editor sign-in hasn't been configured yet.");
+      if (!session.googleClientId) throw new Error("Google sign-in hasn't been configured yet.");
       const challenge = await api("/google/start", {});
       if (!window.google?.accounts) {
         await new Promise((resolve, reject) => {
@@ -109,8 +109,8 @@
         callback: async response => {
           try {
             await api("/google/login", { credential: response.credential });
-            try { sessionStorage.setItem("family-editor-signed-in", "1"); location.reload(); }
-            catch { activeDialog?.close(); toast("Signed in to edit.", "success"); setTimeout(() => location.reload(), 3000); }
+            try { sessionStorage.setItem("family-signed-in", "1"); location.reload(); }
+            catch { activeDialog?.close(); toast("Signed in.", "success"); setTimeout(() => location.reload(), 3000); }
           } catch (error) {
             if (!container.isConnected) return;
             toast(error.message, "error");
@@ -126,7 +126,7 @@
         window.google.accounts.id.renderButton(container, { type: "standard", theme: document.documentElement.dataset.theme === "dark" ? "filled_black" : "outline", size: "large", shape: "rectangular", text: "signin_with", width });
       };
       render();
-      if (!container.signInObserver) container.closest("dialog").addEventListener("close", () => container.signInObserver?.disconnect(), { once: true });
+      if (!container.signInObserver) container.closest("dialog")?.addEventListener("close", () => container.signInObserver?.disconnect(), { once: true });
       container.signInObserver = new ResizeObserver(render); container.signInObserver.observe(container);
     } catch (error) {
       if (!container.isConnected) return;
@@ -135,12 +135,12 @@
     } finally { container.setAttribute("aria-busy", "false"); container.removeAttribute("aria-label"); }
   }
   function editorSignIn() {
-    const panel = dialog("Sign in to edit");
+    const panel = dialog("Edit family trees");
     if (!panel) return;
-    panel.box.classList.add("editor-sign-in");
+    panel.box.classList.add("google-account-dialog");
     panel.footer.remove();
     const holder = el("div", { class: "google-sign-in" });
-    const note = el("p", { class: "form-note", id: "editor-sign-in-note" }, "Use an approved Google account.");
+    const note = el("p", { class: "form-note", id: "google-account-dialog-note" }, "Sign in with an approved Google account.");
     panel.box.setAttribute("aria-describedby", note.id);
     panel.body.append(note, holder);
     googleSignIn(holder);
@@ -389,25 +389,7 @@
     }
     updateDetails(); form.append(summary); finish(); relation.focus();
   }
-  async function manageAccess() {
-    const panel = dialog("Editor access");
-    if (!panel) return;
-    panel.box.classList.add("editor-access");
-    const list = el("div", { class: "editor-access-list", "aria-busy": "true", "aria-label": "Loading editors" }, el("div", { class: "connection-row" }, skeleton("skeleton-medium")));
-    panel.body.append(el("p", { class: "form-note" }, `Owner: ${session.email}`), list);
-    let input;
-    const { form, status, finish } = formIn(panel, "Add editor", async () => { await api("/editors", { email: input.value }); input.value = ""; await refresh(); });
-    input = field(form, "Google account email", "", { required: true, type: "email", max: 254 }); finish();
-    async function refresh() {
-      const items = await api("/editors"); list.replaceChildren(...items.map(item => el("div", { class: "connection-row" }, el("span", {}, item.email), button("Remove", async () => {
-        try { if (!confirm(`Remove editor access for ${item.email}?`)) return; await api("/editors", { email: item.email }, "DELETE"); await refresh(); }
-        catch (error) { status.classList.add("is-error"); status.textContent = error.message; }
-      }, "text-button"))));
-    }
-    try { await refresh(); } catch (error) { list.replaceChildren(); status.classList.add("is-error"); status.textContent = error.message; }
-    finally { list.removeAttribute("aria-busy"); list.removeAttribute("aria-label"); }
-    if (panel.box.isConnected) input.focus();
-  }
+  const admin = administration({ api, dialog, field, formIn, el, button, base, reload, get session() { return session; } });
   function mountHeader() {
     const actions = document.querySelector("header > .actions");
     const signOut = async () => { await api("/logout", {}); location.reload(); };
@@ -417,9 +399,9 @@
       const entry = button("", () => { menu.open = false; action(); });
       entry.append(icon(paths), el("span", {}, label)); items.append(entry); return entry;
     };
-    if (session.role !== "member") {
+    if (session.role === "editor" || session.role === "owner") {
       const avatar = el("span", { class: "account-avatar", "aria-hidden": "true" },
-        (session.name || session.email).trim().split(/\s+/).slice(0, 2).map(part => part.charAt(0)).join("").toUpperCase());
+        (session.name || session.email || "?").trim().split(/\s+/).slice(0, 2).map(part => part.charAt(0)).join("").toUpperCase());
       if (session.picture) {
         const image = el("img", { src: session.picture, alt: "", referrerpolicy: "no-referrer", hidden: "" });
         image.onload = () => { image.hidden = false; }; avatar.append(image);
@@ -429,9 +411,14 @@
     }
     const treeShortId = location.pathname.slice(base.length).match(/^\/t\/([1-9A-HJ-NP-Za-km-z]{12})\/?$/)?.[1];
     item("Send a suggestion", ["M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9H13a8.5 8.5 0 0 1 8 8v.5Z"], () => suggest());
-    if (session.role !== "member") item("Family suggestions", ["M4 4h16v16H4zM4 13h4l2 3h4l2-3h4"], inbox);
+    if (session.role !== "viewer") item("Family suggestions", ["M4 4h16v16H4zM4 13h4l2 3h4l2-3h4"], inbox);
     if (session.role === "owner") {
-      item("Editor access", ["M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M16 3a4 4 0 0 1 0 8M22 21v-2a4 4 0 0 0-3-3.87", "M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z"], manageAccess);
+      item("Editor access", ["M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M16 3a4 4 0 0 1 0 8M22 21v-2a4 4 0 0 0-3-3.87", "M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z"], admin.accounts);
+      item("Trees and settings", ["M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"], admin.trees);
+      item("Import GEDCOM", ["M12 3v12m-4-4 4 4 4-4M5 16v5h14v-5"], admin.importGedcom);
+      item("Agent access", ["M9 3v3m6-3v3M4 8h16v12H4zM8 12h.01M16 12h.01M8 16h8"], admin.automation);
+      item("Backups", ["M12 3v12m-4-4 4 4 4-4M5 16v5h14v-5"], admin.backups);
+      item("Recent activity", ["M3 12a9 9 0 1 0 3-7M3 3v6h6M12 7v5l3 2"], admin.activity);
       if (session.backup?.error) {
         const notice = el("p", { class: "backup-notice", role: "status" }, session.backup.error);
         items.append(notice);
@@ -450,25 +437,27 @@
     items.append(el("a", { href: "https://github.com/jaiamin/family-tree", target: "_blank", rel: "noopener" },
       icon(["M9 19c-4 1-4-2-6-2M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5a5.4 5.4 0 0 0-1-3.5c.3-1.2.3-2.4 0-3.5 0 0-1 0-3 1.5a15.4 15.4 0 0 0-8 0C6 2 5 2 5 2c-.3 1.1-.3 2.3 0 3.5A5.4 5.4 0 0 0 4 9c0 3.5 3 5.5 6 5.5A4.8 4.8 0 0 0 9 18v4"]), el("span", {}, "GitHub")));
     items.append(el("hr", { class: "menu-divider" }));
-    if (session.role === "member") item("Edit", ["M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L9 17l-4 1 1-4Z"], editorSignIn);
-    item(session.role === "member" ? "Sign out" : "Sign out of editing", ["M9 5H5v14h4M14 8l4 4-4 4M9 12h9"], signOut);
+    if (session.role === "viewer") {
+      if (session.googleClientId) item("Edit", ["M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L9 17l-4 1 1-4Z"], editorSignIn);
+      item("Sign out", ["M9 5H5v14h4M14 8l4 4-4 4M9 12h9"], signOut);
+    } else item("Sign out of editing", ["M9 5H5v14h4M14 8l4 4-4 4M9 12h9"], async () => { await api("/logout/editing", {}); location.reload(); });
     menu.append(summary, items); document.querySelector(".header-utilities").replaceChildren(menu);
     const headerMenus = [...actions.parentElement.querySelectorAll("details")];
     for (const dropdown of headerMenus) dropdown.addEventListener("toggle", () => {
       if (!dropdown.open) return;
-      const panel = dropdown.querySelector(".menu-items"), anchor = dropdown.querySelector("summary").getBoundingClientRect();
+      const panel = /** @type {HTMLElement} */ (dropdown.querySelector(".menu-items")), anchor = dropdown.querySelector("summary").getBoundingClientRect();
       panel.style.left = `${Math.max(16, Math.min(anchor.right - panel.offsetWidth, innerWidth - panel.offsetWidth - 16))}px`;
       panel.style.top = `${anchor.bottom + 8}px`;
       panel.style.maxHeight = `${Math.max(80, innerHeight - anchor.bottom - 24)}px`;
     });
     addEventListener("resize", () => headerMenus.forEach(dropdown => dropdown.open = false));
-    document.addEventListener("click", event => { for (const item of actions.parentElement.querySelectorAll("details")) if (!item.contains(event.target)) item.open = false; });
+    document.addEventListener("click", event => { for (const item of actions.parentElement.querySelectorAll("details")) if (event.target instanceof Node && !item.contains(event.target)) item.open = false; });
     document.addEventListener("keydown", event => {
       if (event.key !== "Escape") return;
       const open = [...actions.parentElement.querySelectorAll("details[open]")];
       if (!open.length) return;
       event.preventDefault(); event.stopPropagation();
-      open.forEach(item => item.open = false); open[0].querySelector("summary").focus();
+      open.forEach(item => { if (item instanceof HTMLDetailsElement) item.open = false; }); open[0].querySelector("summary").focus();
     });
   }
   async function loadTree() {
@@ -478,7 +467,7 @@
     $("title").textContent = data.siteName;
     document.title = data.tree ? `${data.tree.name} · ${data.siteName}` : data.siteName;
     if (data.tree) {
-      const current = document.querySelector(".current-tree"); current.textContent = data.tree.name; current.href = `${base}/t/${data.tree.short_id}`;
+      const current = /** @type {HTMLAnchorElement} */ (document.querySelector(".current-tree")); current.textContent = data.tree.name; current.href = `${base}/t/${data.tree.short_id}`;
       $("tree-options").replaceChildren(...data.trees.map(tree => {
         const current = tree.id === data.tree.id;
         return el("li", {}, el("a", {
@@ -490,11 +479,13 @@
       }));
     } else {
       $("family-heading").textContent = `Family trees (${data.trees.length})`;
+      if (session.role === "owner") $("family-heading").append(button("Create tree", admin.trees, "text-button"));
       $("family-list").replaceChildren(...data.trees.map(tree => el("li", {}, el("a", { class: "tree-card", href: `${base}/t/${tree.short_id}` }, el("div", {}, el("h3", {}, tree.name), el("p", {}, `${tree.people} ${tree.people === 1 ? "person" : "people"}`)), icon(["m9 6 6 6-6 6"])))));
     }
+    if (data.tree && !Object.keys(data.tree.people).length && session.role === "owner") document.querySelector("main").append(button("Add the first person", () => admin.firstPerson(data.tree.id)));
     return data.tree;
   }
-  window.familySite = { base, openDialog: dialog, loadTree: async () => { await ready; return loadTree(); }, editPerson,
+  export const familySite = { base, openDialog: dialog, loadTree: async () => { await ready; return loadTree(); }, editPerson,
     canEdit: () => session?.role === "editor" || session?.role === "owner",
     suggestionAction: id => {
       const action = button("Suggest", () => suggest(id), "action suggest-action");
@@ -502,7 +493,7 @@
       return action;
     },
     personActions: id => {
-      if (session.role === "member") return null;
+      if (session.role === "viewer") return null;
       const tools = el("div", { class: "person-tools" });
       tools.append(button("Edit details", () => editPerson(id)), button("Add relative", () => addRelative(id)));
       return tools;
@@ -518,6 +509,7 @@
     const id = person?.id, version = view.tree?.photo_versions[id];
     if (version) document.head.append(el("link", { rel: "preload", as: "image", href: `${base}/api/photos/${id}?v=${version}` }));
   }).catch(() => {});
+  /** @type {Promise<void>} */
   const ready = new Promise(resolve => document.addEventListener("DOMContentLoaded", async () => {
     try {
       session = await sessionRequest;
@@ -525,8 +517,10 @@
         $("login-title").textContent = session.siteName; document.title = session.siteName;
         const form = $("family-login"), status = $("login-status");
         form.onsubmit = async event => {
-          event.preventDefault(); const submit = form.querySelector('button[type="submit"]'); submit.disabled = true; status.classList.remove("is-error"); status.textContent = ""; submit.textContent = "Opening…";
-          try { await api("/login", { password: $("family-password").value }); location.reload(); } catch (error) { status.classList.add("is-error"); status.textContent = error.message; } finally { submit.disabled = false; submit.textContent = "Continue"; }
+          event.preventDefault(); const submit = /** @type {HTMLButtonElement} */ (form.querySelector('button[type="submit"]')); submit.disabled = true; status.classList.remove("is-error"); status.textContent = ""; submit.textContent = "Opening…";
+          try { await api("/login", { password: $("family-password").value }); location.reload(); }
+          catch (error) { status.classList.add("is-error"); status.textContent = error.message; }
+          finally { submit.disabled = false; submit.textContent = "Continue"; }
         };
         const password = $("family-password"), toggle = $("password-toggle");
         toggle.onclick = () => {
@@ -539,13 +533,12 @@
       } else {
         mountHeader();
         try {
-          const signedIn = sessionStorage.getItem("family-editor-signed-in");
-          sessionStorage.removeItem("family-editor-signed-in");
-          if (signedIn && session.role !== "member") toast("Signed in to edit.", "success");
+          const signedIn = sessionStorage.getItem("family-signed-in");
+          sessionStorage.removeItem("family-signed-in");
+          if (signedIn) toast("Signed in.", "success");
         } catch {}
         if ($("family-list")) await loadTree();
       }
       resolve();
     } catch (error) { document.body.replaceChildren(el("main", { class: "login-main" }, el("p", { role: "status" }, error.message), button("Try again", () => location.reload()))); resolve(); }
   }, { once: true }));
-})();

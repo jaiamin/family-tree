@@ -1,9 +1,14 @@
+import { byId as $ } from "../src/dom.js";
+import { familySite } from "../src/client.js";
+import { layout, connections, children, siblings, halfSiblings, partnership, parentsOf, partnersOf } from "./layout.js";
+import { compareRelationship } from "./relationship.js";
+import { createPhotoCrop } from "./photo-crop.js";
 (async () => {
-const tree = await window.familySite.loadTree();
-const apiUrl = path => window.familySite.base + path;
+const tree = await familySite.loadTree();
+const apiUrl = path => familySite.base + path;
 const treeUrl = new URL(apiUrl(`/t/${tree.short_id}`), location.origin).href;
 const ids = Object.keys(tree.people);
-const $ = (id) => document.getElementById(id);
+const photoCleanups = new WeakMap();
 const view = $("canvas");
 const stage = $("stage");
 const svgNS = "http://www.w3.org/2000/svg";
@@ -79,19 +84,20 @@ treeSwitch.onclick = () => {
   open ? openTreeOptions() : closeTreeOptions();
 };
 document.addEventListener("click", (event) => {
-  if (!event.target.closest(".tree-picker")) closeTreeOptions();
+  if (event.target instanceof Element && !event.target.closest(".tree-picker")) closeTreeOptions();
 });
 document.addEventListener("focusin", (event) => {
-  if (!event.target.closest(".tree-picker")) closeTreeOptions();
+  if (event.target instanceof Element && !event.target.closest(".tree-picker")) closeTreeOptions();
 });
 document.querySelector(".tree-picker").addEventListener("keydown", (event) => {
+  if (!(event instanceof KeyboardEvent)) return;
   if (event.key === "Escape") {
     closeTreeOptions();
     treeSwitch.focus();
     event.preventDefault();
   } else if (["ArrowDown", "ArrowUp"].includes(event.key)) {
     const links = [...treeOptions.querySelectorAll("a")];
-    const index = links.indexOf(document.activeElement);
+    const index = links.findIndex(link => link === document.activeElement);
     const next = event.key === "ArrowDown" ? (index + 1) % links.length
       : (index < 0 ? links.length - 1 : (index - 1 + links.length) % links.length);
     openTreeOptions();
@@ -140,7 +146,7 @@ async function shareLink(button, title, url) {
     notify("Couldn't copy the link. Copy the address from your browser.");
   } finally {
     button.disabled = false;
-    if (document.activeElement === document.body) focus?.focus({ preventScroll: true });
+    if (document.activeElement === document.body) if (focus instanceof HTMLElement) focus.focus({ preventScroll: true });
   }
 }
 $("share-tree").onclick = () => shareLink($("share-tree"), `${tree.name} · ${tree.site_name}`, treeUrl);
@@ -264,7 +270,7 @@ const pointers = new Map();
 let moved = false;
 let pinch = null;
 view.addEventListener("pointerdown", (e) => {
-  if (listMode || e.target.closest("#card, .zoom")) return;
+  if (listMode || (e.target instanceof Element ? e.target : document.body).closest("#card, .zoom")) return;
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   moved = false;
   if (pointers.size === 2) {
@@ -300,7 +306,7 @@ const release = (e) => {
 view.addEventListener("pointerup", release);
 view.addEventListener("pointercancel", release);
 view.addEventListener("wheel", (e) => {
-  if (listMode || e.target.closest("#card")) return;
+  if (listMode || (e.target instanceof Element ? e.target : document.body).closest("#card")) return;
   e.preventDefault();
   const box = view.getBoundingClientRect();
   zoomAt(camera.scale * Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)), e.clientX - box.left, e.clientY - box.top);
@@ -542,7 +548,7 @@ function photoEditor(id) {
   };
   function menu(message = "", error = false) {
     const choose = action(photos[id] ? "Change photo" : "Add photo", () => picker.click(), true);
-    const remove = photos[id] && window.familySite.canEdit() ? action("Remove photo", async () => {
+    const remove = photos[id] && familySite.canEdit() ? action("Remove photo", async () => {
       if (!confirm("Remove this profile photo? Uploaded photos will be kept.")) return;
       choose.disabled = remove.disabled = true; panel.box.saving = true; remove.textContent = "Removing…";
       try {
@@ -585,7 +591,7 @@ function photoEditor(id) {
     preview();
   };
   const open = () => {
-    panel = window.familySite.openDialog("Profile photo");
+    panel = familySite.openDialog("Profile photo");
     if (!panel) return;
     panel.box.classList.add("photo-dialog");
     panel.box.addEventListener("close", () => { cleanup(); panel = null; });
@@ -642,7 +648,7 @@ function select(id, preserveComparison = false) {
     "div",
     { id: "card", role: "dialog", "aria-label": p.name },
     el("div", { class: "top" }, photo.circle, el("div", { class: "who" }, el("h2", {}, displayName(id)), photo.label)),
-    el("div", { class: "person-editing" }, window.familySite?.personActions(id)),
+    el("div", { class: "person-editing" }, familySite?.personActions(id)),
     el("div", { class: "details-body", id: "details-body" },
       facts.length ? el("dl", { class: "person-facts" }, ...facts.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)])) : null,
       group("Parents", parentsOf(tree, id)),
@@ -656,9 +662,9 @@ function select(id, preserveComparison = false) {
       ) : null,
       related.size === 1 ? el("p", { class: "none" }, "No family recorded yet.") : null,
     ),
-    el("div", { class: "actions" }, compare, link, window.familySite?.suggestionAction(id)),
+    el("div", { class: "actions" }, compare, link, familySite?.suggestionAction(id)),
   );
-  box.photoCleanup = photo.cleanup;
+  photoCleanups.set(box, photo.cleanup);
   const shut = el("button", { class: "close", "aria-label": "Close" });
   shut.innerHTML = '<svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>';
   shut.onclick = close;
@@ -689,9 +695,9 @@ function select(id, preserveComparison = false) {
   }
   history.replaceState(null, "", `#${person(id).short_id}`);
 }
-document.addEventListener("family-person-select", event => select(event.detail));
+document.addEventListener("family-person-select", event => { if (event instanceof CustomEvent) select(event.detail); });
 function clear() {
-  $("card")?.photoCleanup?.();
+  photoCleanups.get($("card"))?.();
   $("card")?.remove();
   for (const id of ids) cards[id].classList.remove("selected");
   unhighlight();
@@ -709,8 +715,8 @@ function close() {
 }
 stage.addEventListener("click", (e) => {
   if (moved) return;
-  const node = e.target.closest(".person");
-  node ? select(node.dataset.id) : close();
+  const node = (e.target instanceof Element ? (e.target instanceof Element ? e.target : document.body).closest(".person") : null);
+  node instanceof HTMLElement ? select(node.dataset.id) : close();
 });
 view.addEventListener("click", (e) => { if (!moved && e.target === view) close(); });
 addEventListener("keydown", (e) => { if (e.key === "Escape" && !e.defaultPrevented && !document.querySelector("dialog[open]")) close(); });
@@ -819,7 +825,7 @@ else {
     const saved = JSON.parse(sessionStorage.getItem(viewKey) || "null");
     sessionStorage.removeItem(viewKey);
     if (saved?.id === start && [saved.scale, saved.x, saved.y].every(Number.isFinite) && saved.scale > 0) {
-      if (saved.expanded && !$("card").classList.contains("expanded")) $("card").querySelector(".sheet-toggle").click();
+      if (saved.expanded && !$("card").classList.contains("expanded")) /** @type {HTMLButtonElement} */ ($("card").querySelector(".sheet-toggle")).click();
       camera.scale = saved.scale;
       camera.x = saved.x * view.clientWidth - at(start).x * saved.scale;
       camera.y = saved.y * view.clientHeight - at(start).y * saved.scale;
