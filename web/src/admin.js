@@ -1,72 +1,161 @@
 // Owner workflows reuse the same dialog/form primitives as person editing.
-export function administration({ api, dialog, field, formIn, el, button, base, reload, session }) {
-  const error = (panel, failure) => panel.body.append(el("p", { class: "form-status is-error", role: "alert" }, failure.message));
-  const showSecret = (panel, label, value) => {
-    const output = el("textarea", { readonly: "", "aria-label": label, rows: "3" }); output.value = value;
-    panel.body.replaceChildren(el("p", { class: "form-note" }, label), output);
-    panel.footer.replaceChildren(button("Copy", async () => { try { await navigator.clipboard.writeText(value); } catch { output.select(); } }));
-  };
+export function administration({ api, dialog, field, formIn, el, button, base, reload, toast }) {
+  function error(panel, failure) {
+    let status = panel.body.querySelector(".admin-error");
+    if (!status) { status = el("p", { class: "form-status is-error admin-error", role: "alert" }); panel.body.prepend(status); }
+    status.textContent = failure.message;
+  }
+  function loading(panel) {
+    const placeholder = el("div", { class: "admin-loading", "aria-label": "Loading", "aria-busy": "true" },
+      ...[1, 2].map(() => el("div", { class: "admin-row", "aria-hidden": "true" }, el("span", { class: "skeleton skeleton-medium" }))));
+    panel.body.append(placeholder); return () => placeholder.remove();
+  }
+  const heading = (parent, text) => parent.append(el("h3", {}, text));
+  const listIn = panel => { const list = el("div", { class: "admin-list" }); panel.body.append(list); return list; };
+  const row = (name, detail, ...actions) => el("div", { class: "admin-row" },
+    el("div", { class: "admin-person" }, el("strong", {}, name), detail ? el("small", {}, detail) : null),
+    actions.length ? el("div", { class: "admin-actions" }, ...actions) : null);
+  async function change(panel, control, operation) {
+    if (panel.box.saving) return;
+    panel.box.saving = true;
+    const controls = [...panel.box.querySelectorAll("button, input")];
+    controls.forEach(item => item.disabled = true);
+    const label = control.textContent; control.textContent = "Saving…";
+    panel.body.querySelector(".admin-error")?.remove();
+    try { await operation(); }
+    catch (failure) { error(panel, failure); }
+    finally { panel.box.saving = false; controls.forEach(item => item.disabled = false); control.textContent = label; }
+  }
+  function showSecret(panel, title, note, value, copyLabel) {
+    const output = el("textarea", { readonly: "", "aria-label": copyLabel, rows: "3", spellcheck: "false" }); output.value = value;
+    panel.box.confirmClose = "Have you saved this key? It won't be shown again.";
+    const status = el("p", { class: "form-status", role: "status" });
+    panel.body.replaceChildren(el("p", { class: "admin-success", role: "status" }, title), el("p", { class: "form-note" }, note), output, status);
+    output.focus({ preventScroll: true });
+    panel.footer.replaceChildren(button(copyLabel, async () => {
+      try {
+        await navigator.clipboard.writeText(value); panel.box.confirmClose = "";
+        status.classList.remove("is-error"); status.textContent = "Copied. Store it somewhere safe.";
+        toast("Copied.", "success");
+      } catch {
+        output.focus(); output.select(); status.classList.add("is-error"); status.textContent = "Couldn't copy automatically. Copy the selected key and save it somewhere safe.";
+      }
+    }, "site-button primary"));
+  }
   async function accounts() {
     const panel = dialog("Editor access"); if (!panel) return;
-    const list = el("div", { class: "admin-list" }); panel.body.append(list);
+    const done = loading(panel);
     try {
-      for (const user of await api("/users")) {
-        const row = el("div", { class: "admin-row" }, el("div", {}, el("strong", {}, user.name), user.name !== user.email ? el("small", {}, user.email) : null));
-        if (user.role === "owner") row.append(el("span", {}, "Owner"));
-        else row.append(button(user.enabled ? "Revoke" : "Restore", async () => {
-          try { await api(`/users/${user.id}`, { enabled: !user.enabled }, "PATCH"); reload(); }
-          catch (failure) { error(panel, failure); }
-        }, "text-button"));
-        list.append(row);
+      const users = await api("/users"); done();
+      const list = listIn(panel);
+      function render() {
+        list.replaceChildren(...[...users].sort((a, b) => Number(b.role === "owner") - Number(a.role === "owner") || a.name.localeCompare(b.name)).map(user => {
+          if (user.role === "owner") return row(user.name, user.name !== user.email ? user.email : null, el("span", { class: "admin-role" }, "Owner"));
+          const action = button(user.enabled ? "Revoke" : "Restore", () => change(panel, action, async () => {
+            const enabled = !user.enabled;
+            await api(`/users/${user.id}`, { enabled }, "PATCH"); user.enabled = enabled; render();
+            toast(enabled ? "Editor access restored." : "Editor access revoked.", "success");
+          }), "text-button");
+          return row(user.name, `${user.name !== user.email ? `${user.email} · ` : ""}${user.enabled ? "Editor" : "Access revoked"}`, action);
+        }));
       }
+      render(); heading(panel.body, "Add an editor");
       let email;
-      const { form, finish } = formIn(panel, "Add editor", async () => { await api("/users", { email: email.value }); reload(); }, { cancel: false });
+      const { form, finish } = formIn(panel, "Add editor", async () => {
+        await api("/users", { email: email.value });
+        users.splice(0, users.length, ...await api("/users")); render(); email.value = "";
+        toast("Editor access saved.", "success");
+      }, { cancel: false });
       email = field(form, "Google email", "", { required: true, type: "email" }); finish();
-    } catch (failure) { error(panel, failure); }
+    } catch (failure) { done(); error(panel, failure); }
+  }
+  async function createTree() {
+    const panel = dialog("Create tree"); if (!panel) return;
+    const done = loading(panel);
+    try {
+      const view = await api("/view"); done(); let name;
+      const { form, finish } = formIn(panel, "Create tree", async () => {
+        await api("/trees", { name: name.value, revision: view.revision }); reload("Tree created.");
+      });
+      name = field(form, "New tree name", "", { required: true }); finish(); name.focus();
+    } catch (failure) { done(); error(panel, failure); }
+  }
+  function editTree(tree, revision) {
+    const panel = dialog("Edit tree"); if (!panel) return;
+    let name;
+    const { form, finish } = formIn(panel, "Save changes", async () => {
+      await api(`/trees/${tree.id}`, { name: name.value, revision }, "PATCH"); reload("Tree saved.");
+    });
+    name = field(form, "Tree name", tree.name, { required: true }); finish();
+    const remove = button("Delete tree grouping", () => deleteTree(tree, revision), "text-button danger");
+    panel.body.append(el("div", { class: "delete-person-section" }, remove));
+  }
+  function deleteTree(tree, revision) {
+    const panel = dialog("Delete tree grouping"); if (!panel) return;
+    panel.body.append(el("p", { class: "form-note" }, "People and photos stay in the collection. Only this tree grouping is deleted."));
+    let confirmation;
+    const { form, finish } = formIn(panel, "Delete grouping", async () => {
+      if (confirmation.value !== tree.name) throw Error("Enter the tree name exactly to confirm.");
+      await api(`/trees/${tree.id}`, { name: confirmation.value, revision }, "DELETE");
+      // A deleted tree has no viewer page to reload.
+      panel.box.dirty = false; location.href = `${base}/`;
+    });
+    confirmation = field(form, `Type ${tree.name} to confirm`, "", { required: true }); finish();
+    panel.footer.querySelector(".primary").classList.add("danger");
   }
   async function trees() {
     const panel = dialog("Trees and settings"); if (!panel) return;
+    const done = loading(panel);
     try {
-      const view = await api("/view");
+      const view = await api("/view"); done();
       let name;
-      const { form, finish } = formIn(panel, "Create tree", async () => { await api("/trees", { name: name.value, revision: view.revision }); reload(); }, { cancel: false });
-      name = field(form, "New tree name", "", { required: true }); finish();
-      const list = el("div", { class: "admin-list" }); panel.body.prepend(list);
-      for (const tree of view.trees) {
-        const row = el("div", { class: "admin-row" }, el("strong", {}, tree.name));
-        row.append(button("Rename", () => renameTree(tree), "text-button"), button("Delete grouping", async () => {
-          const confirmation = prompt(`Type ${tree.name} to delete this grouping. People and photos stay in the collection.`);
-          if (confirmation !== tree.name) return;
-          try { await api(`/trees/${tree.id}`, { name: confirmation, revision: view.revision }, "DELETE"); reload(); }
-          catch (failure) { error(panel, failure); }
-        }, "text-button")); list.append(row);
-      }
-      function renameTree(tree) {
-        const next = prompt("Tree name", tree.name); if (!next || next === tree.name) return;
-        api(`/trees/${tree.id}`, { name: next, revision: view.revision }, "PATCH").then(reload).catch(failure => error(panel, failure));
-      }
-      const settings = el("form", { class: "admin-settings" });
-      const site = field(settings, "Website name", view.siteName, { required: true });
-      settings.append(button("Save name", async () => { try { await api("/site", { name: site.value, revision: view.revision }, "PATCH"); reload(); } catch (failure) { error(panel, failure); } })); panel.body.append(settings);
-    } catch (failure) { error(panel, failure); }
+      const { form, finish } = formIn(panel, "Save changes", async () => {
+        await api("/site", { name: name.value, revision: view.revision }, "PATCH"); reload("Website name saved.");
+      }, { cancel: false });
+      name = field(form, "Website name", view.siteName, { required: true }); finish();
+      const title = el("div", { class: "admin-section-heading" }, el("h3", {}, "Family trees"), button("Create tree", createTree, "text-button"));
+      panel.body.append(title);
+      const list = listIn(panel);
+      list.append(...view.trees.map(tree => row(tree.name, `${tree.people} ${tree.people === 1 ? "person" : "people"}`,
+        button("Edit", () => editTree(tree, view.revision), "text-button"))));
+      if (!view.trees.length) list.append(el("p", { class: "form-note" }, "No family trees yet."));
+    } catch (failure) { done(); error(panel, failure); }
   }
   async function firstPerson(treeId) {
     const panel = dialog("First person"); if (!panel) return;
-    const view = await api("/view"); let name;
-    const { form, finish } = formIn(panel, "Add person", async () => { await api("/first-person", { treeId, revision: view.revision, fields: { name: name.value } }); reload(); });
-    name = field(form, "Name", "", { required: true }); finish(); name.focus();
+    try {
+      const view = await api("/view"); let name;
+      const { form, finish } = formIn(panel, "Add person", async () => { await api("/first-person", { treeId, revision: view.revision, fields: { name: name.value } }); reload(); });
+      name = field(form, "Name", "", { required: true }); finish(); name.focus();
+    } catch (failure) { error(panel, failure); }
   }
   async function automation() {
     const panel = dialog("Agent access"); if (!panel) return;
+    const done = loading(panel);
     try {
-      for (const credential of await api("/automation")) panel.body.append(el("div", { class: "admin-row" }, el("strong", {}, credential.name), button("Revoke", async () => {
-        try { await api(`/automation/${credential.id}`, undefined, "DELETE"); reload(); } catch (failure) { error(panel, failure); }
-      }, "text-button")));
+      let credentials = await api("/automation"); done();
+      const list = listIn(panel);
+      function render() {
+        list.replaceChildren(...credentials.map(credential => {
+          const revoke = button("Revoke", () => {
+            if (!confirm(`Revoke access for ${credential.name}? Its agent will stop working.`)) return;
+            change(panel, revoke, async () => {
+              await api(`/automation/${credential.id}`, undefined, "DELETE"); credentials = credentials.filter(item => item.id !== credential.id); render();
+              toast("Agent access revoked.", "success");
+            });
+          }, "text-button");
+          return row(credential.name, "Owner access", revoke);
+        }));
+        if (!credentials.length) list.append(el("p", { class: "form-note" }, "No agents connected."));
+      }
+      render(); heading(panel.body, "Connect an agent");
       let name;
       const { form, finish } = formIn(panel, "Create credential", async () => {
-        const credential = await api("/automation", { name: name.value }); showSecret(panel, "Owner-level credential. Save it now; it won't be shown again.", credential.token);
+        const credential = await api("/automation", { name: name.value });
+        showSecret(panel, `Credential created for ${name.value}.`, "Owner access. Save this credential in your agent settings; it won't be shown again.", credential.token, "Copy credential");
+        toast("Agent access saved.", "success");
       }, { cancel: false }); name = field(form, "Agent name", "", { required: true }); finish();
-    } catch (failure) { error(panel, failure); }
+    } catch (failure) { done(); error(panel, failure); }
   }
   async function activity() {
     const panel = dialog("Recent activity"); if (!panel) return;
@@ -88,27 +177,39 @@ export function administration({ api, dialog, field, formIn, el, button, base, r
       preview=await api("/imports/preview",{name:name.value,source});
       const view=await api("/view");
       panel.body.replaceChildren(el("p",{},`${preview.people} ${preview.people === 1 ? "person" : "people"} · A new tree will be created.`),...preview.warnings.map(warning=>el("p",{class:"form-note"},warning)));
-      panel.footer.replaceChildren(button("Import tree",async()=>{
-        try { await api("/imports/commit",{name:name.value,source,checksum:preview.checksum,revision:view.revision}); reload(); }
-        catch(failure){error(panel,failure);}
-      },"site-button primary"));
+      const commit = button("Import tree", () => change(panel, commit, async () => {
+        await api("/imports/commit", { name: name.value, source, checksum: preview.checksum, revision: view.revision }); reload("Tree imported.");
+      }), "site-button primary");
+      panel.footer.replaceChildren(commit);
     });
     name=field(form,"Tree name","",{required:true});
     file=field(form,"GEDCOM file","",{type:"file",required:true}); file.accept=".ged,.gedcom,text/plain"; finish();
   }
   async function backups() {
-    const panel=dialog("Backups"); if (!panel) return;
-    const state=(await api("/session")).backup;
-    panel.body.append(el("p",{},state?.saved_at ? `Last saved: ${new Date(`${state.saved_at}Z`).toLocaleString()}` : "No successful backup yet."),el("p",{class:"form-note"},state?.error || (state && state.saved_generation < state.generation ? "Changes are awaiting backup. Keep an off-device copy." : "Latest state and seven daily recovery points. Keep an off-device copy.")));
-    panel.footer.replaceChildren(button("Export encrypted backup",async()=>{
-      try {
-        const bytes=crypto.getRandomValues(new Uint8Array(32)), key=btoa(String.fromCharCode(...bytes));
-        const response=await fetch(`${base}/api/backup/export`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({key})});
-        if (!response.ok) throw Error((await response.json()).error);
-        const url=URL.createObjectURL(await response.blob()), link=el("a",{href:url,download:"family-backup.encrypted"}); link.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
-        showSecret(panel,"Save this recovery key separately from the downloaded backup. Without it the export cannot be restored.",key);
-      } catch(failure) {error(panel,failure);}
-    }));
+    const panel = dialog("Backups"); if (!panel) return;
+    const done = loading(panel);
+    try {
+      const state = (await api("/session")).backup; done();
+      const pending = state && state.saved_generation < state.generation;
+      const saved = state?.saved_at ? new Date(`${state.saved_at}Z`).toLocaleString() : "Not saved yet";
+      panel.body.append(el("dl", { class: "backup-details" },
+        el("dt", {}, "Automatic backup"), el("dd", {}, state?.error ? "Needs attention" : pending ? "Changes pending" : state?.saved_at ? "Up to date" : "Awaiting first backup"),
+        el("dt", {}, "Last saved"), el("dd", {}, saved)),
+        el("p", { class: "form-note" }, "Latest state and seven daily recovery points."));
+      if (state?.error) error(panel, Error(state.error));
+      heading(panel.body, "Keep a copy");
+      panel.body.append(el("p", { class: "form-note" }, "Download an encrypted backup and save its recovery key separately."));
+      const exportButton = button("Export encrypted backup", () => change(panel, exportButton, async () => {
+        exportButton.textContent = "Exporting…";
+        const bytes = crypto.getRandomValues(new Uint8Array(32)), key = btoa(String.fromCharCode(...bytes));
+        const response = await fetch(`${base}/api/backup/export`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key }) });
+        if (!response.ok) throw Error((await response.json()).error || "Couldn't export the backup. Please try again.");
+        const url = URL.createObjectURL(await response.blob()), link = el("a", { href: url, download: "family-backup.encrypted" });
+        link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+        showSecret(panel, "Your encrypted backup is ready.", "Save this recovery key separately from the downloaded file. You need both to restore the backup.", key, "Copy recovery key");
+      }), "site-button primary");
+      panel.footer.replaceChildren(exportButton);
+    } catch (failure) { done(); error(panel, failure); }
   }
-  return { backups, importGedcom, accounts, trees, firstPerson, automation, activity, showSecret };
+  return { backups, importGedcom, accounts, trees, createTree, firstPerson, automation, activity };
 }

@@ -59,6 +59,7 @@ header > .actions:empty { display: none; }
 .dialog-close:hover { background: var(--chip); }
 .dialog-body { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 0 20px 20px; }
 .dialog-footer { flex: none; display: flex; gap: 8px; padding: 16px 20px; border-top: 1px solid var(--border); }
+.dialog-footer:empty { display: none; }
 .dialog-footer .site-button { flex: 1; min-height: 44px; }
 .dialog-footer .site-button:not(.primary):has(+ .primary) { flex: 0 0 auto; min-width: 88px; }
 .site-dialog .form-note { margin: 0 0 20px; overflow-wrap: anywhere; }
@@ -127,11 +128,6 @@ header > .actions:empty { display: none; }
 .picker-person strong { display: block; font-weight: 500; }
 .picker-person > span { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 
-.editor-access-list:not(:empty) { margin-bottom: 12px; }
-.editor-access-list .connection-row:first-child { padding-top: 0; }
-.editor-access-list .connection-row:last-child { border-bottom: 0; }
-.editor-access-list:not(:empty) + form { padding-top: 20px; border-top: 1px solid var(--border); }
-
 .suggestion-filters { flex: none; display: flex; gap: 6px; padding: 0 20px 16px; border-bottom: 1px solid var(--border); }
 .suggestion-filters .site-button { flex: 1; min-height: 40px; padding: 0 8px; white-space: nowrap; }
 .suggestion-filters [aria-pressed="true"] { background: var(--chip); border-color: var(--muted); }
@@ -174,11 +170,27 @@ header .share-tree-button { display: flex; gap: 6px; width: auto; padding: 0 10p
 
 .skeleton-control { flex: none; width: 36px; height: 36px; border-radius: 8px; }
 
-.admin-list { display:grid; gap:12px; margin-bottom:20px; }
-.admin-row { display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid var(--border); flex-wrap:wrap; }
-.admin-row > div:first-child, .admin-row > strong:first-child { flex:1; min-width:120px; }
-.admin-row small { display:block; color:var(--muted); }
-.admin-row p { margin:4px 0 0; }
-.admin-settings { margin-top:24px; }
-
+/* Owner dialogs share one row rhythm and the standard fixed form footer. */
+.admin-list { display: grid; gap: 0; }
+.admin-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.admin-row:first-child { padding-top: 0; }
+.admin-row:last-child { border-bottom: 0; }
+.admin-person, .admin-row > div:first-child { flex: 1; min-width: 0; }
+.admin-row strong { display: block; font-weight: 500; }
+.admin-row small { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.admin-row p { margin: 4px 0 0; }
 .admin-row strong, .admin-row small { overflow-wrap: anywhere; }
+.admin-row .admin-actions { display: flex; flex: none; align-items: center; gap: 4px; }
+.admin-actions .text-button { min-height: 44px; margin-right: -8px; }
+.admin-role { color: var(--muted); font-size: 12px; }
+.admin-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); }
+.site-dialog .admin-section-heading h3 { margin: 0; }
+.admin-section-heading > .text-button { min-height: 44px; margin-right: -8px; }
+.admin-section-heading + .admin-list { margin-top: 12px; }
+.admin-list + h3 { padding-top: 20px; border-top: 1px solid var(--border); }
+.site-dialog .admin-list > .form-note { margin-bottom: 0; }
+.admin-success { margin: 0 0 8px; font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.backup-details { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px 20px; margin: 0 0 20px; font-size: 13px; line-height: 1.5; }
+.backup-details dt { color: var(--muted); }
+.backup-details dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+.admin-loading .admin-row { min-height: 64px; }

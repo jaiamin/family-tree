@@ -33,6 +33,8 @@ test("owners manage trees and relatives browse privately without accounts", asyn
   await page.getByRole("button",{name:"Editor access",exact:true}).click();
   await page.getByLabel("Google email").fill("relative@example.com");
   await page.getByRole("button",{name:"Add editor",exact:true}).click();
+  await expect(page.getByText("Editor access saved.",{exact:true})).toBeVisible();
+  await page.getByRole("dialog").getByRole("button",{name:"Close",exact:true}).click();
   const viewer=await browser.newContext(), relative=await viewer.newPage();
   await relative.goto(treeURL);
   await relative.getByLabel("Password",{exact:true}).fill("local-preview-only");
