@@ -203,8 +203,8 @@
           item.contact ? el("p", { class: "inbox-meta" }, item.contact) : null);
         const actions = el("div", { class: "inbox-actions" });
         if (item.person_id && (data?.tree?.people[item.person_id] || item.tree_id)) actions.append(button("Open person", () => {
-          if (!data?.tree?.people[item.person_id]) { location.href = `${base}/trees/${item.tree_id}#${item.person_id}`; return; }
-          panel.box.close(); location.hash = item.person_id;
+          if (!data?.tree?.people[item.person_id]) { location.href = `${base}/t/${item.tree_short_id}#${item.person_short_id}`; return; }
+          panel.box.close(); location.hash = data.tree.people[item.person_id].short_id;
           document.dispatchEvent(new CustomEvent("family-person-select", { detail: item.person_id }));
         }, "text-button"));
         const change = async (action, operation) => {
@@ -427,7 +427,7 @@
       items.append(el("div", { class: "account-identity" }, avatar,
         el("div", { class: "account-address" }, session.name ? el("strong", { class: "account-name" }, session.name) : null, el("span", {}, session.email))));
     }
-    const treeId = location.pathname.slice(base.length).match(/^\/trees\/([0-9a-f-]+)\/?$/)?.[1];
+    const treeShortId = location.pathname.slice(base.length).match(/^\/t\/([1-9A-HJ-NP-Za-km-z]{12})\/?$/)?.[1];
     item("Send a suggestion", ["M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9H13a8.5 8.5 0 0 1 8 8v.5Z"], () => suggest());
     if (session.role !== "member") item("Family suggestions", ["M4 4h16v16H4zM4 13h4l2 3h4l2-3h4"], inbox);
     if (session.role === "owner") {
@@ -437,7 +437,7 @@
         items.append(notice);
       }
     }
-    if (treeId) items.append(el("a", { href: `${base}/api/trees/${treeId}/gedcom`, download: "" }, icon(["M12 3v12m-4-4 4 4 4-4M5 16v5h14v-5"]), el("span", {}, "Download GEDCOM")));
+    if (treeShortId) items.append(el("a", { href: `${base}/api/t/${treeShortId}/gedcom`, download: "" }, icon(["M12 3v12m-4-4 4 4 4-4M5 16v5h14v-5"]), el("span", {}, "Download GEDCOM")));
     items.append(el("hr", { class: "menu-divider" }));
     const themeLabel = () => document.documentElement.dataset.theme === "dark" ? "Use light mode" : "Use dark mode";
     const theme = item(themeLabel(), ["M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"], () => {
@@ -472,17 +472,17 @@
     });
   }
   async function loadTree() {
-    const match = location.pathname.slice(base.length).match(/^\/trees\/([0-9a-f-]+)\/?$/);
+    const match = location.pathname.slice(base.length).match(/^\/t\/([1-9A-HJ-NP-Za-km-z]{12})\/?$/);
     data = await (initialView || api(`/view${match ? `?tree=${match[1]}` : ""}`));
     initialView = null;
     $("title").textContent = data.siteName;
     document.title = data.tree ? `${data.tree.name} · ${data.siteName}` : data.siteName;
     if (data.tree) {
-      const current = document.querySelector(".current-tree"); current.textContent = data.tree.name; current.href = `${base}/trees/${data.tree.id}`;
+      const current = document.querySelector(".current-tree"); current.textContent = data.tree.name; current.href = `${base}/t/${data.tree.short_id}`;
       $("tree-options").replaceChildren(...data.trees.map(tree => {
         const current = tree.id === data.tree.id;
         return el("li", {}, el("a", {
-          href: `${base}/trees/${tree.id}`, "aria-label": `${tree.name}, ${tree.people} ${tree.people === 1 ? "person" : "people"}`,
+          href: `${base}/t/${tree.short_id}`, "aria-label": `${tree.name}, ${tree.people} ${tree.people === 1 ? "person" : "people"}`,
           ...current ? { "aria-current": "page" } : {},
         }, el("span", { class: "tree-option-check", "aria-hidden": "true" }, current ? icon(["m5 12 4 4L19 6"]) : null),
           el("span", { class: "tree-option-name" }, tree.name),
@@ -490,7 +490,7 @@
       }));
     } else {
       $("family-heading").textContent = `Family trees (${data.trees.length})`;
-      $("family-list").replaceChildren(...data.trees.map(tree => el("li", {}, el("a", { class: "tree-card", href: `${base}/trees/${tree.id}` }, el("div", {}, el("h3", {}, tree.name), el("p", {}, `${tree.people} ${tree.people === 1 ? "person" : "people"}`)), icon(["m9 6 6 6-6 6"])))));
+      $("family-list").replaceChildren(...data.trees.map(tree => el("li", {}, el("a", { class: "tree-card", href: `${base}/t/${tree.short_id}` }, el("div", {}, el("h3", {}, tree.name), el("p", {}, `${tree.people} ${tree.people === 1 ? "person" : "people"}`)), icon(["m9 6 6 6-6 6"])))));
     }
     return data.tree;
   }
@@ -508,13 +508,14 @@
       return tools;
     },
   };
-  const treeMatch = location.pathname.slice(base.length).match(/^\/trees\/([0-9a-f-]+)\/?$/);
+  const treeMatch = location.pathname.slice(base.length).match(/^\/t\/([1-9A-HJ-NP-Za-km-z]{12})\/?$/);
   const sessionRequest = api("/session");
   let initialView = document.body.dataset.login ? null : api(`/view${treeMatch ? `?tree=${treeMatch[1]}` : ""}`);
   // Requests start while the deferred graph engine is parsing; the UI handles failures below.
   sessionRequest.catch(() => {});
   initialView?.then(view => {
-    const id = decodeURIComponent(location.hash.slice(1)), version = view.tree?.photo_versions[id];
+    const person = Object.values(view.tree?.people || {}).find(person => person.short_id === location.hash.slice(1));
+    const id = person?.id, version = view.tree?.photo_versions[id];
     if (version) document.head.append(el("link", { rel: "preload", as: "image", href: `${base}/api/photos/${id}?v=${version}` }));
   }).catch(() => {});
   const ready = new Promise(resolve => document.addEventListener("DOMContentLoaded", async () => {

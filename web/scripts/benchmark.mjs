@@ -1,5 +1,6 @@
 // Run after build: node scripts/benchmark.mjs [baseline worker path] [result path].
 // Requires agent-browser; uses disposable synthetic D1/R2, never production or .local.
+import { migratePublicIds } from "../dist/public-ids.mjs";
 import { runtime } from "./runtime.mjs";
 import { randomUUID } from "node:crypto";
 import { writeFile, mkdir } from "node:fs/promises";
@@ -22,6 +23,9 @@ try {
     ...ids.map((id, i) => db.prepare("INSERT INTO tree_members(tree_id,person_id,position) VALUES (?,?,?)").bind(tree, id, i)),
     ...ids.slice(2).map((id, i) => db.prepare("INSERT INTO parents(child_id,parent_id) VALUES (?,?)").bind(id, ids[Math.floor(i / 2)])),
   ]);
+  await migratePublicIds({ DB: db });
+  const treeShortId = (await db.prepare("SELECT short_id FROM public_ids WHERE kind = 'tree' AND entity_id = ?").bind(tree).first()).short_id;
+  const personShortId = (await db.prepare("SELECT short_id FROM public_ids WHERE kind = 'person' AND entity_id = ?").bind(ids[0]).first()).short_id;
   const image = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX2kAAAAASUVORK5CYII=", "base64");
   for (const id of ids.slice(0, 16)) {
     await bucket.put(id, image, { httpMetadata: { contentType: "image/png" } });
@@ -32,18 +36,18 @@ try {
   const headers = { cookie };
   const median = values => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
   const results = { environment: "Local Miniflare; synthetic 256-person tree, 16 tiny PNG photos; Chromium 4x CPU, 100ms latency, 1.6Mbps download; 5 cold/warm pairs", api: {}, browser: {} };
-  for (const path of ["/api/session", "/api/view", `/api/view?tree=${tree}`, `/api/photos/${ids[0]}`]) {
+  for (const path of ["/api/session", "/api/view", `/api/view?tree=${treeShortId}`, `/api/photos/${ids[0]}`]) {
     const samples = [];
     for (let n = 0; n < 21; n++) {
       const start = performance.now(); const response = await mf.dispatchFetch(base + path, { headers }); await response.arrayBuffer();
       if (n) samples.push(performance.now() - start);
     }
-    results.api[path.replace(tree, "TREE").replace(ids[0], "PERSON")] = { medianMs: median(samples), p95Ms: [...samples].sort((a,b) => a-b)[18] };
+    results.api[path.replace(treeShortId, "TREE").replace(ids[0], "PERSON")] = { medianMs: median(samples), p95Ms: [...samples].sort((a,b) => a-b)[18] };
   }
   const currentPhoto = await mf.dispatchFetch(`${base}/api/photos/${ids[0]}`, { headers });
   const conditional = await mf.dispatchFetch(`${base}/api/photos/${ids[0]}`, { headers: { ...headers, "if-none-match": currentPhoto.headers.get("etag") || '"not-available"' } });
   results.photoRevalidation = { status: conditional.status, bodyBytes: (await conditional.arrayBuffer()).byteLength };
-  const page = await mf.dispatchFetch(`${base}/trees/${tree}`, { headers });
+  const page = await mf.dispatchFetch(`${base}/t/${treeShortId}`, { headers });
   const html = await page.text(); results.html = { bytes: Buffer.byteLength(html), gzipBytes: gzipSync(html).length };
   browser("open", "about:blank");
   ws = new WebSocket(browser("get", "cdp-url"));
@@ -66,7 +70,7 @@ try {
     await cdp("Page.navigate", { url: "about:blank" });
     while (await evaluate("location.href") !== "about:blank") await new Promise(resolve => setTimeout(resolve, 10));
     if (kind === "cold") await cdp("Network.clearBrowserCache");
-    await cdp("Page.navigate", { url: `${base}/trees/${tree}#${ids[0]}` });
+    await cdp("Page.navigate", { url: `${base}/t/${treeShortId}#${personShortId}` });
     const deadline = Date.now() + 30000;
     let value;
     do {

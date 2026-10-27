@@ -1,3 +1,4 @@
+import { shortIdPattern } from "./public-ids";
 import { applyLink, applyPersonEdit, assert, HttpError, uuid, record } from "./model";
 import { googleChallenge, googleLogin, identity, newSession, rateLimit, requireRole, requireSameOrigin, sessionCookie, sha256, secretMatches } from "./auth";
 import { readCollection, readView, saveCollection, treeView } from "./data";
@@ -118,10 +119,12 @@ async function route(request: Request, env: Env): Promise<Response> {
   }
   if (path.startsWith("/api/")) {
     requireRole(user);
-    const exportRoute = /^\/api\/trees\/([0-9a-f-]+)\/gedcom$/.exec(path);
+    const exportRoute = new RegExp(`^/api/t/(${shortIdPattern})/gedcom$`).exec(path);
     if (exportRoute && method === "GET") {
       const { collection } = await readCollection(env);
-      const tree = treeView(collection, exportRoute[1], env.SITE_NAME);
+      const mapping = await env.DB.prepare("SELECT entity_id FROM public_ids WHERE kind = 'tree' AND short_id = ?").bind(exportRoute[1]).first<{ entity_id: string }>();
+      assert(mapping, "Family tree not found.", 404);
+      const tree = treeView(collection, mapping.entity_id, env.SITE_NAME);
       const name = tree.name.normalize("NFKD").replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80) || "family-tree";
       return new Response(gedcom(tree), { headers: { "content-type": "application/octet-stream", "content-disposition": `attachment; filename="${name}.ged"` } });
     }
@@ -151,7 +154,7 @@ async function route(request: Request, env: Env): Promise<Response> {
     }
     if (path === "/api/suggestions" && method === "GET") {
       requireRole(user, "editor");
-      const { results } = await env.DB.prepare("SELECT suggestions.*, (SELECT tree_id FROM tree_members WHERE person_id = suggestions.person_id ORDER BY tree_id LIMIT 1) AS tree_id FROM suggestions ORDER BY created_at DESC LIMIT 200").all();
+      const { results } = await env.DB.prepare("SELECT suggestions.*, (SELECT tree_id FROM tree_members WHERE person_id = suggestions.person_id ORDER BY tree_id LIMIT 1) AS tree_id, (SELECT short_id FROM public_ids WHERE kind = 'person' AND entity_id = suggestions.person_id) AS person_short_id, (SELECT p.short_id FROM public_ids p WHERE p.kind = 'tree' AND p.entity_id = (SELECT tree_id FROM tree_members WHERE person_id = suggestions.person_id ORDER BY tree_id LIMIT 1)) AS tree_short_id FROM suggestions ORDER BY created_at DESC LIMIT 200").all();
       return json(results);
     }
     if (path.startsWith("/api/suggestions/") && method === "PATCH") {
@@ -257,9 +260,11 @@ async function route(request: Request, env: Env): Promise<Response> {
   }
   assert(method === "GET" || method === "HEAD", "Not allowed.", 405);
   if (path === "/favicon.svg") return asset(path);
-  if (!user) return asset("/login.html");
-  const treeRoute = /^\/trees\/[0-9a-f-]+\/?$/.test(path);
+  const match = new RegExp(`^/t/(${shortIdPattern})/?$`).exec(path);
+  const treeRoute = Boolean(match);
   assert(path === "/" || treeRoute || path === "/index.html", "Not found.", 404);
+  if (!user) return asset("/login.html");
+  if (match) assert(await env.DB.prepare("SELECT 1 FROM public_ids p JOIN trees t ON t.id = p.entity_id WHERE p.kind = 'tree' AND p.short_id = ?").bind(match[1]).first(), "Family tree not found.", 404);
   return asset(treeRoute ? "/tree.html" : "/index.html");
 }
 export default {

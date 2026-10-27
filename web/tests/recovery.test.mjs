@@ -20,10 +20,13 @@ test("rolling backup restores records and all original photos into fresh storage
       await new Promise(resolve => setTimeout(resolve, 20));
     }
     assert.equal(snapshot.uploads.length, 2);
+    assert.equal(snapshot.format, 2);
+    assert.equal(snapshot.tables.public_ids.length, 2);
     const db = await target.getD1Database("DB"), photos = await target.getR2Bucket("PHOTOS");
     await db.exec("DELETE FROM editors");
     const env = { DB: db, PHOTOS: photos, BACKUP: backup };
     assert.deepEqual(await recoverBackup(env), { people: 1, photos: 2 });
+    assert.deepEqual((await db.prepare("SELECT * FROM public_ids ORDER BY kind, entity_id").all()).results, [...snapshot.tables.public_ids].sort((a,b) => a.kind.localeCompare(b.kind) || a.entity_id.localeCompare(b.entity_id)));
     assert.equal((await db.prepare("SELECT name FROM people WHERE id = ?").bind(id).first()).name, "Relative");
     assert.equal((await db.prepare("SELECT count(*) AS n FROM photo_uploads").first()).n, 2);
     for (const file of snapshot.uploads) {
@@ -51,5 +54,22 @@ test("backup failures remain visible and a retry clears them without retaining e
     state = await DB.prepare("SELECT * FROM backup_state").first();
     assert.equal(state.error, null); assert.equal(state.generation, state.saved_generation, "An already-written backup reconciles status after an interrupted acknowledgement");
     assert.deepEqual((await BACKUP.list()).objects.map(o => o.key), ["collection.json"]);
+  } finally { await mf.dispose(); }
+});
+
+test("first new backup upgrades the rolling manifest even when its generation was already saved", async () => {
+  const mf = await runtime();
+  try {
+    const DB = await mf.getD1Database("DB"), BACKUP = await mf.getR2Bucket("BACKUP");
+    await refreshBackup({ DB, BACKUP });
+    const previous = await (await BACKUP.get("collection.json")).json();
+    const generation = (await DB.prepare("SELECT generation FROM backup_state").first()).generation;
+    previous.format = 1; delete previous.tables.public_ids;
+    await BACKUP.put("collection.json", JSON.stringify(previous), { customMetadata: { generation: String(generation) } });
+    await refreshBackup({ DB, BACKUP });
+    const current = await BACKUP.get("collection.json"), restored = await current.json();
+    assert.equal(restored.format, 2); assert.deepEqual(restored.tables.public_ids, []);
+    assert.equal(current.customMetadata.format, "2");
+    assert.deepEqual((await BACKUP.list()).objects.map(o=>o.key), ["collection.json"]);
   } finally { await mf.dispose(); }
 });

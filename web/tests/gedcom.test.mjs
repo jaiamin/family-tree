@@ -6,7 +6,7 @@ import { runtime } from "../scripts/runtime.mjs";
 const origin = "http://localhost", base = `${origin}/family-tree/api`;
 const [father, mother, child, partner, single, outside, treeId, otherTree] = Array.from({ length: 8 }, randomUUID);
 const notes = "Family memory @ home\n" + "ગુજરાતી 👪 ".repeat(100);
-let mf, cookie, text;
+let mf, cookie, text, treeShortId;
 const people = Object.fromEntries([
   [father, "Father", "male", [], [mother]], [mother, "Mother", "female", [], [father]],
   [child, "Child", "female", [father, mother], [partner]], [partner, "Partner", "female", [], [child]],
@@ -26,14 +26,16 @@ before(async () => {
   mf = await runtime();
   const imported = await mf.dispatchFetch(`${base}/collection`, { method: "PUT", headers: { authorization: "Bearer local-test-owner-token", "content-type": "application/json" }, body: JSON.stringify({ collection, revision: 0 }) });
   assert.equal(imported.status, 200, await imported.text());
+  const db = await mf.getD1Database("DB");
+  treeShortId = (await db.prepare("SELECT short_id FROM public_ids WHERE kind = 'tree' AND entity_id = ?").bind(treeId).first()).short_id;
   const login = await mf.dispatchFetch(`${base}/login`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ password: "local-preview-only" }) });
   assert.equal(login.status, 200); cookie = login.headers.get("set-cookie").split(";")[0];
 });
 after(async () => { await mf?.dispose(); });
-const download = (id = treeId, headers = { cookie }) => mf.dispatchFetch(`${base}/trees/${id}/gedcom`, { headers });
+const download = (id = treeShortId, headers = { cookie }) => mf.dispatchFetch(`${base}/t/${id}/gedcom`, { headers });
 
 test("GEDCOM download requires family access and never exposes another tree's members", async () => {
-  assert.equal((await download(treeId, {})).status, 401);
+  assert.equal((await download(treeShortId, {})).status, 401);
   assert.equal((await download(randomUUID())).status, 404);
   const response = await download();
   assert.equal(response.status, 200);

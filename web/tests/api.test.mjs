@@ -6,7 +6,7 @@ import { SignJWT, exportJWK } from "jose";
 
 const origin = "http://localhost", base = "/family-tree";
 const ownerHeaders = { authorization: "Bearer local-test-owner-token" };
-let mf, db, familyCookie, treeId, parentId, childId;
+let mf, db, familyCookie, treeId, treeShortId, parentId, childId;
 const google = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const jwk = await exportJWK(google.publicKey); jwk.kid = "test-google-key"; jwk.alg = "RS256"; jwk.use = "sig";
 const outboundService = async request => {
@@ -41,6 +41,7 @@ before(async () => {
   };
   const response = await call("/collection", { body: { collection, revision: 0 }, method: "PUT", owner: true });
   assert.equal(response.status, 200, await response.text());
+  treeShortId = (await db.prepare("SELECT short_id FROM public_ids WHERE kind = 'tree' AND entity_id = ?").bind(treeId).first()).short_id;
 });
 after(async () => { await mf?.dispose(); });
 
@@ -48,7 +49,7 @@ test("anonymous visitors cannot read records, photos, or an HTML-embedded collec
   for (const path of ["/view", "/collection", "/photos", `/photos/${parentId}`, "/suggestions"]) {
     const response = await call(path); assert.equal(response.status, 401, path); assert.match(response.headers.get("cache-control"), /no-store/);
   }
-  const page = await mf.dispatchFetch(`${origin}${base}/trees/${treeId}/`);
+  const page = await mf.dispatchFetch(`${origin}${base}/t/${treeShortId}/`);
   const html = await page.text(); assert.match(html, /family-password/); assert.ok(!html.includes("Private family note")); assert.ok(!html.includes(parentId));
   assert.equal((await mf.dispatchFetch(`${origin}/api/view`)).status, 404);
 });
@@ -57,13 +58,13 @@ test("family password grants viewing, with a private path-scoped session", async
   const login = await call("/login", { body: { password: "local-preview-only" } }); assert.equal(login.status, 200);
   assert.match(login.headers.get("set-cookie"), /HttpOnly; SameSite=Lax/); assert.match(login.headers.get("set-cookie"), /Path=\/family-tree/);
   familyCookie = cookieFrom(login);
-  const response = await call(`/view?tree=${treeId}`, { cookie: familyCookie });
+  const response = await call(`/view?tree=${treeShortId}`, { cookie: familyCookie });
   assert.equal(response.status, 200); assert.equal((await response.json()).tree.people[parentId].birth_date, "1960-01-01");
-  const page = await mf.dispatchFetch(`${origin}${base}/trees/${treeId}/`, { headers: { cookie: familyCookie } });
+  const page = await mf.dispatchFetch(`${origin}${base}/t/${treeShortId}/`, { headers: { cookie: familyCookie } });
   assert.ok(!(await page.text()).includes("Private family note"), "HTML is a data-free shell, records arrive only through authenticated API");
 });
 test("canonical home and deep tree URLs render authenticated shells without redirecting", async () => {
-  for (const path of [base, `${base}/trees/${treeId}`, `${base}/trees/${treeId}/`]) {
+  for (const path of [base, `${base}/t/${treeShortId}`, `${base}/t/${treeShortId}/`]) {
     const response = await mf.dispatchFetch(`${origin}${path}`, { headers: { cookie: familyCookie } });
     assert.equal(response.status, 200, path);
     assert.equal(response.headers.get("location"), null, path);

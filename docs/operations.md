@@ -65,3 +65,19 @@ Owner-only person deletion removes the person from all trees, relationship links
 ## GEDCOM export
 
 Open a tree and choose **Download GEDCOM** from the top-right menu. Any signed-in family viewer can export that tree as GEDCOM 5.5.1, including people, recorded gender, dates, places, notes, and relationships. People outside the tree and photos are excluded. Person UUIDs are retained in `_UID` fields; free-text dates are preserved as event notes. This is a portable download, separate from the automatic recovery backup.
+
+## Short links
+
+Tree URLs are `/family-tree/t/<12-character ID>`; a person adds `#<12-character ID>`. IDs use random Base58 characters, remain permanent, and never grant access. UUIDs remain internal to API/MCP records, relationships, GEDCOM and photo storage. Old `/trees/<UUID>` routes and UUID fragments are unsupported.
+
+For an existing deployment, build first, then apply the additive migration and backfill **before deploying this version**:
+
+```sh
+pnpm --dir web build
+# Use an existing D1-scoped CLOUDFLARE_API_TOKEN in the environment; never put it in the command.
+node web/scripts/migrate-public-ids.mjs ACCOUNT_ID DATABASE_ID
+```
+
+The command applies `web/migrations/0001_public_ids.sql`, allocates missing IDs with uniqueness retries, and checks that family records/photo pointers did not change. Rerunning preserves assigned IDs. No family import, UUID rewrite or R2 move is involved. Local preview automatically applies the same migration to its separate local database.
+
+Deploy immediately after backfill, avoiding edits through an old deployment during the transition. New app/API/MCP writes assign IDs atomically with the existing revision check. The next scheduled backup (at most15minutes) replaces the rolling manifest with format2, including the ID mapping; verify `backup_state` is current. Restore requires format2 and preserves every short link. No legacy backup reader or URL fallback is retained.
