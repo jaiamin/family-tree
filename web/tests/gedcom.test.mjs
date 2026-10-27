@@ -28,7 +28,7 @@ before(async () => {
   assert.equal(imported.status, 200, await imported.text());
   const db = await mf.getD1Database("DB");
   treeShortId = (await db.prepare("SELECT short_id FROM public_ids WHERE kind = 'tree' AND entity_id = ?").bind(treeId).first()).short_id;
-  const login = await mf.dispatchFetch(`${base}/login`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ username: "viewer", password: "local-preview-only" }) });
+  const login = await mf.dispatchFetch(`${base}/login`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ password: "local-preview-only" }) });
   assert.equal(login.status, 200); cookie = login.headers.get("set-cookie").split(";")[0];
 });
 after(async () => { await mf?.dispose(); });

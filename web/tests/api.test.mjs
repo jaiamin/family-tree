@@ -21,12 +21,12 @@ async function call(path, { body, method = body === undefined ? "GET" : "POST", 
 }
 const cookieFrom = response => response.headers.get("set-cookie")?.split(";")[0];
 async function signIn(email, { verified = true, nonceOverride, name, picture, accountCookie, audience = "test-google-client" } = {}) {
-  const challenge = await call("/google/start", { body: {}, cookie: accountCookie });
+  const challenge = await call("/google/start", { body: {}, cookie: accountCookie || familyCookie });
   const { nonce } = await challenge.json();
   const credential = await new SignJWT({ email, name, picture, email_verified: verified, nonce: nonceOverride || nonce }).setProtectedHeader({ alg: "RS256", kid: jwk.kid }).setSubject(email)
     .setIssuer("https://accounts.google.com").setAudience(audience).setIssuedAt().setExpirationTime("5m").sign(google.privateKey);
   const cookie = cookieFrom(challenge);
-  const response = await call("/google/login", { body: { credential }, cookie: accountCookie ? `${cookie}; ${accountCookie}` : cookie });
+  const response = await call("/google/login", { body: { credential }, cookie: `${cookie}; ${accountCookie || familyCookie || ""}` });
   return { response, credential, challengeCookie: cookie };
 }
 before(async () => {
@@ -53,9 +53,9 @@ test("anonymous visitors cannot read records, photos, or an HTML-embedded collec
   const html = await page.text(); assert.match(html, /family-password/); assert.ok(!html.includes("Private family note")); assert.ok(!html.includes(parentId));
   assert.equal((await mf.dispatchFetch(`${origin}/api/view`)).status, 404);
 });
-test("named viewer credentials grant viewing, with a private path-scoped session", async () => {
-  assert.equal((await call("/login", { body: { username: "viewer", password: "wrong" } })).status, 403);
-  const login = await call("/login", { body: { username: "viewer", password: "local-preview-only" } }); assert.equal(login.status, 200);
+test("a shared family password grants viewing, with a private path-scoped session", async () => {
+  assert.equal((await call("/login", { body: { password: "wrong" } })).status, 403);
+  const login = await call("/login", { body: { password: "local-preview-only" } }); assert.equal(login.status, 200);
   assert.match(login.headers.get("set-cookie"), /HttpOnly; SameSite=Lax/); assert.match(login.headers.get("set-cookie"), /Path=\/family-tree/);
   familyCookie = cookieFrom(login);
   const response = await call(`/view?tree=${treeShortId}`, { cookie: familyCookie });
@@ -82,32 +82,27 @@ test("family members may suggest but cannot read suggestions, edit records, or c
   assert.equal((await call("/trees", { body: { name: "New tree" }, cookie: familyCookie })).status, 403);
   assert.equal((await call("/suggestions", { owner: true }).then(r => r.json()))[0].person_name, "Parent");
 });
-test("Google tokens require a linked subject, audience, verified email, and one-time nonce", async () => {
+test("Google tokens require an approved subject, audience, verified email, and one-time nonce", async () => {
   for (const [email, options, status] of [["stranger@example.com", {}, 403], ["editor@example.com", { verified: false }, 401], ["editor@example.com", { nonceOverride: "wrong" }, 401], ["editor@example.com", { audience: "wrong" }, 401]]) {
     const result = await signIn(email, options); assert.equal(result.response.status, status);
   }
   const signed = await signIn("editor@example.com", { name: "Test Editor", picture: "https://lh3.googleusercontent.com/test-photo" }); assert.equal(signed.response.status, 200);
-  assert.equal((await call("/google/login", { body: { credential: signed.credential }, cookie: signed.challengeCookie })).status, 401, "nonce cannot be replayed");
+  assert.equal((await call("/google/login", { body: { credential: signed.credential }, cookie: `${signed.challengeCookie}; ${familyCookie}` })).status, 401, "nonce cannot be replayed");
   const cookie = cookieFrom(signed.response);
   const profile = await (await call("/session", { cookie })).json();
-  assert.equal(profile.name, "Test editor");
-  assert.equal(profile.picture, null, "Provider metadata does not overwrite the local profile on login");
+  assert.equal(profile.name, "Test Editor");
+  assert.equal(profile.picture, "https://lh3.googleusercontent.com/test-photo");
   assert.equal(profile.email, "editor@example.com");
   assert.equal((await call("/users", { cookie })).status, 403);
   assert.equal((await call("/suggestions", { cookie })).status, 200);
-  await db.prepare("UPDATE users SET enabled=0,auth_version=auth_version+1 WHERE username='editor'").run();
+  await db.prepare("UPDATE users SET enabled=0,auth_version=auth_version+1 WHERE email='editor@example.com'").run();
   assert.equal((await call("/suggestions", { cookie })).status, 401, "revocation invalidates existing editor sessions");
-  await db.prepare("UPDATE users SET enabled=1 WHERE username='editor'").run();
+  await db.prepare("UPDATE users SET enabled=1 WHERE email='editor@example.com'").run();
 });
-test("Google linking requires the authenticated account and does not grant a higher role", async () => {
-  const conflict=await signIn("editor@example.com",{accountCookie:familyCookie});assert.equal(conflict.response.status,409);
-  const linked=await signIn("relative-google@example.com",{accountCookie:familyCookie,picture:"https://lh3.googleusercontent.com/relative"});
-  assert.equal(linked.response.status,200);
-  const profile=await(await call("/session",{cookie:familyCookie})).json();
-  assert.equal(profile.googleLinked,true);assert.equal(profile.role,"viewer");assert.equal(profile.picture,"https://lh3.googleusercontent.com/relative");
-  assert.equal((await signIn("relative-google@example.com")).response.status,200);
-  assert.equal((await call("/google/link",{method:"DELETE",cookie:familyCookie,headers:{origin}})).status,200);
-  assert.equal((await signIn("relative-google@example.com")).response.status,403);
+test("viewers cannot approve themselves or link an unapproved Google account", async () => {
+  assert.equal((await signIn("relative-google@example.com",{accountCookie:familyCookie})).response.status,403);
+  assert.equal((await call("/users",{body:{email:"relative-google@example.com"},cookie:familyCookie})).status,403);
+  assert.equal((await call("/google/link",{method:"DELETE",cookie:familyCookie,headers:{origin}})).status,404);
 });
 test("same revision cannot overwrite a concurrent update; invalid ancestry is rejected atomically", async () => {
   const current = await (await call("/collection", { owner: true })).json();

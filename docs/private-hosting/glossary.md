@@ -8,13 +8,12 @@
 | Person | Genealogical identity with stable UUID, reusable across trees and distinct from a user. |
 | Relationship | Parent/partner connection between people; displayed when its endpoints belong to the selected tree. |
 | Membership | Inclusion of a person in a tree. |
-| User | Named authenticated account carrying an installation-wide role. |
+| User | Approved Google editor/owner account; separate from genealogical people. |
 | Identity | Credential/provider identity explicitly attached to a user; Google uses provider and stable subject. |
-| Viewer | Approved user who views, suggests and uploads/replaces photos, but cannot edit genealogy. |
+| Viewer | Visitor with the family password who views, suggests and uploads/replaces photos. |
 | Editor | Approved user who manages people/relationships, suggestions and displayed-photo removal. |
 | Owner | Installation administrator managing access/settings/trees and permanent person deletion. |
 | Installer | Operator provisioning, upgrading and recovering the deployment; not necessarily a genealogical person. |
-| Invitation | Expiring single-use permission to establish an approved account. |
 | Session | Revocable authenticated browser access, not a genealogical identity. |
 | Automation credential | Individually revocable API authority used by MCP or scripts; not a second data store. |
 | Photo upload | Immutable accepted image object retained after replacement or person deletion. Current UI uploads a square crop, not necessarily the original camera file. |

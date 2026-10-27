@@ -17,7 +17,7 @@ before(async () => {
     trees: { [treeId]: { id: treeId, name: "Family", members: [personId] }, [emptyTree]: { id: emptyTree, name: "Empty family", members: [] } } };
   const saved = await mf.dispatchFetch(`${base}/api/collection`, { method: "PUT", headers: { ...owner, origin, "content-type": "application/json" }, body: JSON.stringify({ collection, revision: 0 }) });
   assert.equal(saved.status, 200, await saved.text());
-  const login = await mf.dispatchFetch(`${base}/api/login`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ username: "viewer", password: "local-preview-only" }) });
+  const login = await mf.dispatchFetch(`${base}/api/login`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ password: "local-preview-only" }) });
   cookie = login.headers.get("set-cookie").split(";")[0];
   treeShortId = (await db.prepare("SELECT short_id FROM public_ids WHERE kind = 'tree' AND entity_id = ?").bind(treeId).first()).short_id;
   emptyShortId = (await db.prepare("SELECT short_id FROM public_ids WHERE kind = 'tree' AND entity_id = ?").bind(emptyTree).first()).short_id;
@@ -76,7 +76,7 @@ test("photo revalidation authenticates first and respects replacements, removal 
   assert.equal(replaced.status, 200); assert.equal(replaced.headers.get("etag"), `"${next}"`);
   const token = randomUUID(), email = "temporary@example.com";
   await db.batch([
-    db.prepare("INSERT INTO users(id,username,name,email,role,password_hash) VALUES(?,?,?,?,'editor','unused')").bind(email,email,"Temporary",email),
+    db.prepare("INSERT INTO users(id,name,email,role) VALUES(?,?,?,'editor')").bind(email,"Temporary",email),
     db.prepare("INSERT INTO sessions(token_hash,user_id,auth_version,expires) VALUES (?,?,?,?)").bind(createHash("sha256").update(token).digest("hex"), email, 1, Math.floor(Date.now()/1000)+3600),
   ]);
   const signed = { cookie: `family_session=${token}`, "if-none-match": `"${next}"` };

@@ -1,11 +1,11 @@
-# ADR 003: Invited local accounts with offline recovery
+# ADR 003: Shared viewing and Google editing
 
-Status: implemented.
+Status: accepted; supersedes the initial named-password-account proposal.
 
-Final interview decisions: one owner with explicit transfer and protection against removing the last owner. Local credentials remain the offline-capable foundation; optional Google linking does not create a parallel permission model.
+Both deployments use one shared family password for visitors, with no viewer accounts. Compare the runtime secret through Web Crypto, rate-limit attempts, and issue random opaque HttpOnly sessions stored only as hashes. Password rotation invalidates viewer sessions. A shared password can be forwarded; it provides family privacy, not individual viewer accountability.
 
-Owner-issued single-use expiring invitation links let relatives establish usernames/passwords without SMTP. Store adaptive salted password verifiers. Bootstrap requires an installer-generated single-use claim credential; public first-visitor ownership is forbidden.
+Only the configured owner and explicitly approved editor emails may authenticate through Google. Verify issuer, audience, expiry, email verification and a single-use nonce; bind the first verified Google subject and refuse reassignment. Editors have no local account password. Google sign-in requires internet; an existing local viewer session does not.
 
-Opaque browser sessions and individually revocable automation credentials map to application users/authority and are enforced server-side. Optional Google links require explicit approved-account linking and provider/sub identity, never automatic email matching. Recovery uses a saved code or host-side command without resetting genealogy, with affected sessions invalidated.
+Owner identity comes from deployment configuration, never the first visitor. Changing the configured owner invalidates old owner authorization, including automation. The installer recovers access by changing that configuration. Editor logout preserves the independently authenticated viewer session; viewer logout revokes both.
 
-Migration retires shared-password access and establishes credentials for approved existing owners/editors. Existing emails express approval intent, not trusted Google subject identities. Pending accounts do not become public registration. Invitations/recovery secrets must not enter logs or third-party scripts. Passwords use salted PBKDF2-SHA256 (600,000 rounds); browser sessions use HttpOnly cookies and stored token hashes. Invitation secrets travel in URL fragments, then are removed before use.
+This avoids costly per-account password hashing on Cloudflare Free and gives older relatives one familiar password screen. There is no alternative local-password authentication mode, signup, invitation/reset links or runtime legacy fallback. Secrets remain installer-managed; verified existing editor approvals migrate without inventing provider subject identities.

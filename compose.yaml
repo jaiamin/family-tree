@@ -11,8 +11,9 @@ services:
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Set your HTTPS origin}
       BASE_PATH: ${BASE_PATH-/family-tree}
       TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-0}
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
-      SETUP_TOKEN: ${SETUP_TOKEN:?Set a strong single-use setup credential}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?Set your Google web client ID}
+      OWNER_EMAIL: ${OWNER_EMAIL:?Set the owner Google email}
+      FAMILY_PASSWORD: ${FAMILY_PASSWORD:?Set a strong shared family password}
     volumes:
       - family-data:/data
       - ${BACKUP_DIRECTORY:?Choose a private backup directory}:/backup

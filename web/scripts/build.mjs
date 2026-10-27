@@ -71,4 +71,4 @@ await build({ entryPoints: ["src/public-ids.ts"], bundle: true, format: "esm", p
 
 await build({ entryPoints: ["src/platform/local.ts"], bundle: true, format: "esm", platform: "node", target: "node26", outfile: "dist/local.mjs" });
 
-await build({ entryPoints: ["src/backup.ts", "src/recovery.ts", "src/backup-export.ts", "src/auth.ts", "src/accounts/password.ts", "src/legacy-migration.ts"], bundle:true, format:"esm", platform:"node", target:"node26", outdir:"dist/maintenance" });
+await build({ entryPoints: ["src/backup.ts", "src/recovery.ts", "src/backup-export.ts", "src/legacy-migration.ts"], bundle:true, format:"esm", platform:"node", target:"node26", outdir:"dist/maintenance" });

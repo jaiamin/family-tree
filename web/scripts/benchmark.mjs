@@ -34,7 +34,7 @@ try {
     await db.prepare("INSERT INTO photo_uploads(id,person_id,object_key,content_type,content_hash) VALUES(?,?,?,?,?)").bind(id,id,id,"image/png",hash).run();
     await db.prepare("INSERT INTO photos(person_id,object_key,version) VALUES (?,?,?)").bind(id, id, id).run();
   }
-  const login = await mf.dispatchFetch(`${base}/api/login`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ username: "viewer", password: "local-preview-only" }) });
+  const login = await mf.dispatchFetch(`${base}/api/login`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ password: "local-preview-only" }) });
   const cookie = login.headers.get("set-cookie").split(";")[0];
   const headers = { cookie };
   const median = values => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];

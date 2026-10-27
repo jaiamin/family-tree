@@ -12,7 +12,7 @@ export function installationConfig(path) {
   const file = path || process.env.FAMILY_INSTALLATION_CONFIG;
   const input = !file && process.env.FAMILY_INSTALLATION_CONFIG_JSON;
   const config = JSON.parse(input || readFileSync(resolve(import.meta.dirname, "..", file || "installation.json"), "utf8"));
-  for (const key of ["accountId", "workerName", "databaseId", "databaseName", "photosBucket", "backupBucket", "siteName", "publicOrigin"]) {
+  for (const key of ["accountId", "workerName", "databaseId", "databaseName", "photosBucket", "backupBucket", "siteName", "publicOrigin", "ownerEmail", "googleClientId"]) {
     if (typeof config[key] !== "string" || !config[key].trim()) throw Error(`Installation requires ${key}.`);
   }
   validatePublicSettings(config);

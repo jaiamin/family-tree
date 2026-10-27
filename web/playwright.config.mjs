@@ -11,7 +11,7 @@ export default defineConfig({
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"],
     ...process.env.PLAYWRIGHT_CHROMIUM_PATH ? { launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } } : {} } }],
   webServer: {
-    command: "pnpm build && pnpm dev",
+    command: "pnpm build && node tests/fixtures/browser-server.mjs",
     url: `http://localhost:8002${basePath}/api/session`,
     env: { PORT: "8002", DEV_DATA_DIR: mkdtempSync(join(tmpdir(),"family-browser-")) },
     reuseExistingServer: false,

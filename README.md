@@ -1,6 +1,6 @@
 # Family Tree
 
-Private, invite-only family trees. Graph and list views, photos, search, relationship comparison, private sharing and GEDCOM import/export.
+Private family trees. Graph and list views, photos, search, relationship comparison, private sharing and GEDCOM import/export.
 
 ## Deploy
 
@@ -8,20 +8,22 @@ Same app and frontend, two hosting options. [Setup & recovery →](docs/operatio
 
 | | Docker | Cloudflare |
 |---|---|---|
-| Runtime | Node.js | Workers |
+| Runtime | Node.js | Workers Free¹ |
 | Data | SQLite + private files | D1 + private R2 |
 | Setup | `.env.example` → `.env` | `web/installation.example.json` → `web/installation.json` |
 
 
-Follow [Docker setup](docs/operations.md#local-production) or [Cloudflare setup](docs/operations.md#cloudflare-production), claim the owner in your browser, then invite relatives. Encrypted backups transfer installations between hosts.
+Follow [Docker setup](docs/operations.md#local-production) or [Cloudflare setup](docs/operations.md#cloudflare-production), share the family password, then approve editors. Encrypted backups transfer installations between hosts.
 
 | Role | Access |
 |---|---|
 | Viewer | Browse, suggest corrections, add/replace photos |
 | Editor | Also edit people/relationships, review suggestions, clear displayed photos |
-| Owner | Also manage trees/accounts, import, delete people, transfer ownership |
+| Owner | Also manage trees/editor access, import, delete people |
 
-Username/password accounts work offline. Google linking is optional. Public source code; authenticated family data.
+Visitors use one family password; approved editors use Google. Public source code; private family data.
+
+¹ Free-plan usage limits apply. No paid plan is required by the authentication design.
 
 ## Optional MCP
 
@@ -44,7 +46,7 @@ pnpm --dir web build
 pnpm --dir web dev
 ```
 
-Open **http://localhost:8000/family-tree/** (forward 8000 → 8000). Claim the empty preview with `local-setup-only`. Ignored preview data never replaces production.
+Open **http://localhost:8000/family-tree/** (forward 8000 → 8000). Use password `local-preview-only`. Ignored preview data never replaces production. For editing, set `GOOGLE_CLIENT_ID` and `OWNER_EMAIL`; authorize the localhost origin in Google.
 
 ```sh
 pnpm --dir web check && pnpm --dir web test

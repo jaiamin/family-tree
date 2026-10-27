@@ -1,17 +1,14 @@
 import { test, expect } from "@playwright/test";
 const basePath = process.env.BASE_PATH ?? "/family-tree";
 
-test("a family can set up, invite, browse and suggest through the private interface", async ({page,browser}) => {
+test("owners manage trees and relatives browse privately without accounts", async ({page,browser}) => {
   const errors=[];page.on("pageerror",error=>errors.push(error.message));
   await page.route("**/*",route => new URL(route.request().url()).hostname === "localhost" ? route.continue() : route.abort());
   await page.goto(`${basePath}/`);
-  await page.getByLabel("Setup credential").fill("local-setup-only");
-  await page.getByLabel("Your name").fill("Family owner");
-  await page.getByLabel("Username",{exact:true}).fill("owner");
-  await page.getByLabel("Password",{exact:true}).fill("synthetic-password");
+  await page.getByLabel("Password",{exact:true}).fill("local-preview-only");
   await page.getByRole("button",{name:"Continue",exact:true}).click();
-  await expect(page.locator(".recovery-code")).toBeVisible();
-  await page.getByRole("button",{name:"I saved it · Continue"}).click();
+  await page.context().addCookies([{name:"family_session",value:"synthetic-browser-owner",url:"http://localhost:8002",httpOnly:true}]);
+  await page.reload();
   await page.getByRole("button",{name:"Create tree",exact:true}).click();
   await page.getByLabel("New tree name").fill("Our family");
   await page.getByRole("dialog").getByRole("button",{name:"Create tree",exact:true}).click();
@@ -32,16 +29,14 @@ test("a family can set up, invite, browse and suggest through the private interf
   await page.getByRole("button",{name:"List view",exact:true}).click();
   await expect(page.getByRole("button",{name:/Child Relative/}).first()).toBeVisible();
   await page.locator('summary[aria-label="Family menu"]').click();
-  await page.getByRole("button",{name:"Family access",exact:true}).click();
-  await page.getByRole("button",{name:"Create invitation",exact:true}).click();
-  const invite=await page.getByRole("textbox").inputValue();
+  await page.getByRole("button",{name:"Editor access",exact:true}).click();
+  await page.getByLabel("Google email").fill("relative@example.com");
+  await page.getByRole("button",{name:"Add editor",exact:true}).click();
   const viewer=await browser.newContext(), relative=await viewer.newPage();
-  await relative.goto(invite);
-  await relative.getByLabel("Your name").fill("Family viewer");
-  await relative.getByLabel("Username",{exact:true}).fill("relative");
-  await relative.getByLabel("Password",{exact:true}).fill("synthetic-password");
+  await relative.goto(treeURL);
+  await relative.getByLabel("Password",{exact:true}).fill("local-preview-only");
   await relative.getByRole("button",{name:"Continue",exact:true}).click();
-  await expect(relative.getByRole("link",{name:"Our family 2 people"})).toBeVisible();
+  await expect(relative.getByRole("button",{name:/Child Relative/}).first()).toBeVisible();
   await relative.goto(treeURL);
   await relative.getByRole("button",{name:/Child Relative/}).first().click();
   await expect(relative.getByRole("button",{name:"Edit details"})).toHaveCount(0);
@@ -52,7 +47,6 @@ test("a family can set up, invite, browse and suggest through the private interf
   await expect(relative.getByRole("dialog",{name:"Suggest a change",exact:true})).toBeInViewport();
   expect(await relative.evaluate(()=>document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await viewer.close();
-  await page.getByRole("dialog",{name:"Family access",exact:true}).getByRole("button",{name:"Close",exact:true}).click();
   await page.locator('summary[aria-label="Family menu"]').click();
   await page.getByRole("button",{name:"Import GEDCOM",exact:true}).click();
   await page.getByLabel("Tree name",{exact:true}).fill("Imported family");

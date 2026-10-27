@@ -72,21 +72,21 @@ async function route(request: Request, env: Env): Promise<Response> {
     const site = await env.DB.prepare("SELECT site FROM collections WHERE id='main'").first<{site:string|null}>();
     return json({ ...(user?.role === "owner" ? { backup: await env.DB.prepare("SELECT generation,saved_generation,saved_at,error FROM backup_state WHERE id=1").first() } : {}),
       authenticated: !!user, role: user?.role, id: user?.id, email: user?.email, name: user?.name, picture: user?.picture,
-      needsSetup: !(await env.DB.prepare("SELECT id FROM users WHERE role='owner' LIMIT 1").first()),
-      googleLinked: !!user && !!(await env.DB.prepare("SELECT subject FROM identities WHERE user_id=? AND provider='google'").bind(user.id).first()),
       siteName: site?.site ? JSON.parse(site.site)?.name || env.SITE_NAME : env.SITE_NAME, googleClientId: env.GOOGLE_CLIENT_ID || "" });
   }
   const accounts = await accountRoute(request,env,user,path);
   if (accounts) return accounts;
   if (path === "/api/google/start" && method === "POST") {
-    const challenge = await googleChallenge(request, env, user);
+    requireRole(user);
+    const challenge = await googleChallenge(request, env);
     return json({ nonce: challenge.nonce }, 200, { "set-cookie": challenge.cookie });
   }
   if (path === "/api/google/login" && method === "POST") {
+    requireRole(user);
     await rateLimit(request, env, "google-login", 20, 900);
     const body = await bodyOf(request);
     assert(typeof body.credential === "string" && body.credential.length < 20000, "Invalid Google sign-in.");
-    return json({ ok: true }, 200, { "set-cookie": await googleLogin(request, env, body.credential, user) });
+    return json({ ok: true }, 200, { "set-cookie": await googleLogin(request, env, body.credential) });
   }
   if (path.startsWith("/api/")) {
     requireRole(user);
@@ -225,8 +225,8 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (path === "/favicon.svg") return asset(path);
   const match = new RegExp(`^/t/(${shortIdPattern})/?$`).exec(path);
   const treeRoute = Boolean(match);
-  assert(path === "/" || treeRoute || path === "/index.html" || path === "/join" || path === "/recover", "Not found.", 404);
-  if (!user || path === "/join" || path === "/recover") return asset("/login.html");
+  assert(path === "/" || treeRoute || path === "/index.html", "Not found.", 404);
+  if (!user) return asset("/login.html");
   if (match) assert(await env.DB.prepare("SELECT 1 FROM public_ids p JOIN trees t ON t.id = p.entity_id WHERE p.kind = 'tree' AND p.short_id = ?").bind(match[1]).first(), "Family tree not found.", 404);
   return asset(treeRoute ? "/tree.html" : "/index.html");
 }
@@ -245,10 +245,10 @@ export default {
     catch (error) {
       if (error instanceof Error && /installation_paused/.test(error.message)) response = json({error:"The family website is temporarily paused for maintenance."},503);
       else if (error instanceof HttpError) response = json({ error: error.message }, error.status);
-      else if (error instanceof Error && /UNIQUE constraint failed/.test(error.message)) response = json({error:"That username or identity is already in use."},409);
+      else if (error instanceof Error && /UNIQUE constraint failed/.test(error.message)) response = json({error:"That email or identity is already in use."},409);
       else { console.error(JSON.stringify({ event: "request_failed", method: request.method, path: new URL(request.url).pathname })); response = json({ error: "Something went wrong. Please try again." }, 500); }
     }
-    if (response.ok && !["GET", "HEAD"].includes(request.method) && !new URL(request.url).pathname.match(/\/(login|logout|google\/[^/]+)$/)) ctx.waitUntil(refreshBackup(env));
+    if (response.ok && !["GET", "HEAD"].includes(request.method) && !new URL(request.url).pathname.match(/\/api\/(login|logout(?:\/editing)?|google\/start)$/)) ctx.waitUntil(refreshBackup(env));
     const headers = new Headers(response.headers);
     if (!headers.has("cache-control")) headers.set("cache-control", "private, no-store");
     headers.set("x-content-type-options", "nosniff");

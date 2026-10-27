@@ -14,7 +14,7 @@ export async function assertBuiltPath(basePath) {
   if (basePath !== built.basePath) throw Error("BASE_PATH differs from the built frontend. Rebuild with the same BASE_PATH.");
 }
 
-export async function localRuntime({ directory, backupDirectory, origin, basePath = "/family-tree", setupToken, googleClientId = "", initialize = false }) {
+export async function localRuntime({ directory, backupDirectory, origin, basePath = "/family-tree", familyPassword, ownerEmail, googleClientId = "", initialize = false }) {
   directory = resolve(directory);
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const DB = new LocalDatabase(join(directory, "family.sqlite"));
@@ -23,7 +23,7 @@ export async function localRuntime({ directory, backupDirectory, origin, basePat
     DB.database.exec(await readFile(new URL("../schema.sql", import.meta.url), "utf8"));
   }
   const env = { DB, PHOTOS: new LocalBlobs(join(directory, "photos")), BACKUP: new LocalBlobs(backupDirectory || join(directory, "backup")),
-    BASE_PATH: basePath, PUBLIC_ORIGIN: origin, SITE_NAME: "Family Tree", SETUP_TOKEN: setupToken, GOOGLE_CLIENT_ID: googleClientId };
+    BASE_PATH: basePath, PUBLIC_ORIGIN: origin, SITE_NAME: "Family Tree", FAMILY_PASSWORD: familyPassword, OWNER_EMAIL: ownerEmail, GOOGLE_CLIENT_ID: googleClientId };
   const pending = new Set();
   const ctx = { waitUntil(promise) { pending.add(promise); promise.finally(() => pending.delete(promise)).catch(() => {}); } };
   return { env, fetch: (request, address = "local") => app.fetch(request, { ...env, CLIENT_IP: address }, ctx),
@@ -36,7 +36,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] || "").href) {
   await assertBuiltPath(process.env.BASE_PATH ?? "/family-tree");
   const hops = proxyHops(process.env.TRUST_PROXY_HOPS);
   const runtime = await localRuntime({ directory: process.env.DATA_DIR || "/data", backupDirectory: process.env.BACKUP_DIR,
-    origin, basePath: process.env.BASE_PATH ?? "/family-tree", setupToken: process.env.SETUP_TOKEN, googleClientId: process.env.GOOGLE_CLIENT_ID });
+    origin, basePath: process.env.BASE_PATH ?? "/family-tree", familyPassword: process.env.FAMILY_PASSWORD, ownerEmail: process.env.OWNER_EMAIL, googleClientId: process.env.GOOGLE_CLIENT_ID });
   const server = createServer(async (req, res) => {
     try {
       const headers = new Headers();
@@ -47,7 +47,9 @@ if (import.meta.url === pathToFileURL(process.argv[1] || "").href) {
       const body = ["GET", "HEAD"].includes(req.method) ? undefined : req;
       const request = new Request(new URL(req.url, origin), { method: req.method, headers, body, ...body ? { duplex: "half" } : {} });
       const response = await runtime.fetch(request, clientAddress(req.socket.remoteAddress, req.headers["x-forwarded-for"], hops));
-      res.writeHead(response.status, Object.fromEntries(response.headers));
+      const outgoing = Object.fromEntries(response.headers);
+      if (response.headers.getSetCookie().length) outgoing["set-cookie"] = response.headers.getSetCookie();
+      res.writeHead(response.status, outgoing);
       if (response.body) await pipeline(Readable.fromWeb(response.body), res);
       else res.end();
     } catch {

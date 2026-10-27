@@ -134,13 +134,13 @@ import { administration } from "./admin.js";
       if (session.googleClientId) container.append(button("Try again", () => googleSignIn(container)));
     } finally { container.setAttribute("aria-busy", "false"); container.removeAttribute("aria-label"); }
   }
-  function linkGoogleAccount() {
-    const panel = dialog("Link Google account");
+  function editorSignIn() {
+    const panel = dialog("Edit family trees");
     if (!panel) return;
     panel.box.classList.add("google-account-dialog");
     panel.footer.remove();
     const holder = el("div", { class: "google-sign-in" });
-    const note = el("p", { class: "form-note", id: "google-account-dialog-note" }, "Use Google for future sign-ins to this account.");
+    const note = el("p", { class: "form-note", id: "google-account-dialog-note" }, "Sign in with an approved Google account.");
     panel.box.setAttribute("aria-describedby", note.id);
     panel.body.append(note, holder);
     googleSignIn(holder);
@@ -399,7 +399,7 @@ import { administration } from "./admin.js";
       const entry = button("", () => { menu.open = false; action(); });
       entry.append(icon(paths), el("span", {}, label)); items.append(entry); return entry;
     };
-    if (session.authenticated) {
+    if (session.role === "editor" || session.role === "owner") {
       const avatar = el("span", { class: "account-avatar", "aria-hidden": "true" },
         (session.name || session.email || "?").trim().split(/\s+/).slice(0, 2).map(part => part.charAt(0)).join("").toUpperCase());
       if (session.picture) {
@@ -413,13 +413,12 @@ import { administration } from "./admin.js";
     item("Send a suggestion", ["M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9H13a8.5 8.5 0 0 1 8 8v.5Z"], () => suggest());
     if (session.role !== "viewer") item("Family suggestions", ["M4 4h16v16H4zM4 13h4l2 3h4l2-3h4"], inbox);
     if (session.role === "owner") {
-      item("Family access", ["M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M16 3a4 4 0 0 1 0 8M22 21v-2a4 4 0 0 0-3-3.87", "M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z"], admin.accounts);
+      item("Editor access", ["M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M16 3a4 4 0 0 1 0 8M22 21v-2a4 4 0 0 0-3-3.87", "M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z"], admin.accounts);
       item("Trees and settings", ["M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"], admin.trees);
       item("Import GEDCOM", ["M12 3v12m-4-4 4 4 4-4M5 16v5h14v-5"], admin.importGedcom);
       item("Agent access", ["M9 3v3m6-3v3M4 8h16v12H4zM8 12h.01M16 12h.01M8 16h8"], admin.automation);
       item("Backups", ["M12 3v12m-4-4 4 4 4-4M5 16v5h14v-5"], admin.backups);
       item("Recent activity", ["M3 12a9 9 0 1 0 3-7M3 3v6h6M12 7v5l3 2"], admin.activity);
-      item("Transfer ownership", ["M5 8h14m-4-4 4 4-4 4M19 16H5m4-4-4 4 4 4"], admin.recovery);
       if (session.backup?.error) {
         const notice = el("p", { class: "backup-notice", role: "status" }, session.backup.error);
         items.append(notice);
@@ -438,11 +437,10 @@ import { administration } from "./admin.js";
     items.append(el("a", { href: "https://github.com/jaiamin/family-tree", target: "_blank", rel: "noopener" },
       icon(["M9 19c-4 1-4-2-6-2M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5a5.4 5.4 0 0 0-1-3.5c.3-1.2.3-2.4 0-3.5 0 0-1 0-3 1.5a15.4 15.4 0 0 0-8 0C6 2 5 2 5 2c-.3 1.1-.3 2.3 0 3.5A5.4 5.4 0 0 0 4 9c0 3.5 3 5.5 6 5.5A4.8 4.8 0 0 0 9 18v4"]), el("span", {}, "GitHub")));
     items.append(el("hr", { class: "menu-divider" }));
-    if (session.googleClientId) item(session.googleLinked ? "Change linked Google account" : "Link Google account", ["M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L9 17l-4 1 1-4Z"], linkGoogleAccount);
-    if (session.googleLinked) item("Unlink Google account", ["M9 15 15 9M4 4l16 16"], async () => {
-      try { await api("/google/link", undefined, "DELETE"); reload(); } catch (failure) { toast(failure.message,"error"); }
-    });
-    item("Sign out", ["M9 5H5v14h4M14 8l4 4-4 4M9 12h9"], signOut);
+    if (session.role === "viewer") {
+      if (session.googleClientId) item("Edit", ["M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L9 17l-4 1 1-4Z"], editorSignIn);
+      item("Sign out", ["M9 5H5v14h4M14 8l4 4-4 4M9 12h9"], signOut);
+    } else item("Sign out of editing", ["M9 5H5v14h4M14 8l4 4-4 4M9 12h9"], async () => { await api("/logout/editing", {}); location.reload(); });
     menu.append(summary, items); document.querySelector(".header-utilities").replaceChildren(menu);
     const headerMenus = [...actions.parentElement.querySelectorAll("details")];
     for (const dropdown of headerMenus) dropdown.addEventListener("toggle", () => {
@@ -518,35 +516,12 @@ import { administration } from "./admin.js";
       if (document.body.dataset.login) {
         $("login-title").textContent = session.siteName; document.title = session.siteName;
         const form = $("family-login"), status = $("login-status");
-        const joining = location.pathname.endsWith("/join"), recovering = location.pathname.endsWith("/recover");
-        const invite = joining ? location.hash.slice(1) : null;
-        if (joining) history.replaceState(null,"",location.pathname);
-        const credential = $("setup-token"), display = $("account-name"), username = $("family-username");
-        /** @type {HTMLElement} */ (credential.closest(".auth-field")).hidden = !(session.needsSetup || recovering);
-        /** @type {HTMLElement} */ (display.closest(".auth-field")).hidden = !(session.needsSetup || joining);
-        /** @type {HTMLElement} */ (username.closest(".auth-field")).hidden = recovering;
-        credential.required = session.needsSetup || recovering; display.required = session.needsSetup || joining; username.required = !recovering;
-        $("auth-note").textContent = session.needsSetup ? "Create the owner account." : joining ? "Create your family account." : recovering ? "Use your saved owner recovery code." : "Sign in to your family trees.";
-        $("credential-label").textContent = recovering ? "Recovery code" : "Setup credential";
         form.onsubmit = async event => {
           event.preventDefault(); const submit = /** @type {HTMLButtonElement} */ (form.querySelector('button[type="submit"]')); submit.disabled = true; status.classList.remove("is-error"); status.textContent = ""; submit.textContent = "Opening…";
-          try {
-            const result = await api(session.needsSetup ? "/setup" : joining ? "/join" : recovering ? "/recover" : "/login", {
-              username: username.value, password: $("family-password").value, name: display.value,
-              token: session.needsSetup ? credential.value : invite, code: credential.value,
-            });
-            if (result.recoveryCode) {
-              form.replaceChildren(el("p", {class:"form-note"}, "Save this recovery code securely. It restores owner access."), el("code", {class:"recovery-code"}, result.recoveryCode), button("I saved it · Continue", () => { location.href = base || "/"; }));
-            } else if (joining || recovering) location.href = base || "/";
-            else location.reload();
-          } catch (error) { status.classList.add("is-error"); status.textContent = error.message; }
+          try { await api("/login", { password: $("family-password").value }); location.reload(); }
+          catch (error) { status.classList.add("is-error"); status.textContent = error.message; }
           finally { submit.disabled = false; submit.textContent = "Continue"; }
         };
-        if (session.googleClientId && !session.needsSetup && !joining && !recovering) {
-          const holder = el("div", { class: "google-sign-in" });
-          form.after(holder);
-          googleSignIn(holder);
-        }
         const password = $("family-password"), toggle = $("password-toggle");
         toggle.onclick = () => {
           const show = password.type === "password";

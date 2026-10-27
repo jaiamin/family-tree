@@ -1,5 +1,4 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
-import { audited } from "./activity";
 import { assert, HttpError } from "./model";
 import type { Env, Identity } from "./types";
 
@@ -28,14 +27,19 @@ export async function identity(request: Request, env: Env): Promise<Identity | n
   const authorization = request.headers.get("authorization") || "";
   if (authorization.startsWith("Bearer ")) {
     const row = await env.DB.prepare(`SELECT u.*, a.id AS automation_id FROM automation_credentials a JOIN users u ON u.id=a.user_id WHERE a.token_hash=? AND u.enabled=1 AND u.role='owner'`).bind(await sha256(authorization.slice(7))).first<UserRow & { automation_id: string }>();
-    return row ? userIdentity(row, row.automation_id) : null;
+    return row && row.email.toLowerCase() === env.OWNER_EMAIL?.toLowerCase() ? userIdentity(row, row.automation_id) : null;
   }
   const token = cookie(request, "family_session");
-  if (!token) return null;
-  const row = await env.DB.prepare(`SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires>? AND s.auth_version=u.auth_version AND u.enabled=1`).bind(await sha256(token), now()).first<UserRow>();
-  return row ? userIdentity(row) : null;
+  if (token) {
+    const row = await env.DB.prepare(`SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires>? AND s.auth_version=u.auth_version AND u.enabled=1`).bind(await sha256(token), now()).first<UserRow>();
+    if (row && (row.role !== "owner" || row.email?.toLowerCase() === env.OWNER_EMAIL?.toLowerCase())) return userIdentity(row);
+  }
+  const viewer = cookie(request, "family_viewer");
+  if (!viewer || !env.FAMILY_PASSWORD) return null;
+  const session = await env.DB.prepare("SELECT 1 FROM sessions WHERE token_hash=? AND user_id IS NULL AND viewer_key=? AND expires>?").bind(await sha256(viewer), await sha256(env.FAMILY_PASSWORD), now()).first();
+  return session ? { id: "viewer", role: "viewer", email: null, name: "Family viewer" } : null;
 }
-export interface UserRow { id: string; role: Identity["role"]; email: string | null; name: string; picture?: string; auth_version: number; password_hash: string; recovery_hash?: string }
+export interface UserRow { id: string; role: Identity["role"]; email: string; name: string; picture?: string; auth_version: number }
 export function userIdentity(row: UserRow, automationId?: string): Identity {
   return { id: row.id, role: row.role, email: row.email, name: row.name, picture: row.picture, ...automationId ? { automationId } : {} };
 }
@@ -67,38 +71,50 @@ export async function newSession(request: Request, env: Env, userId: string) {
   ]);
   return sessionCookie(request,env,"family_session",token,seconds);
 }
-export async function googleChallenge(request: Request, env: Env, user?: Identity | null) {
-  assert(env.GOOGLE_CLIENT_ID, "Google sign-in hasn't been configured.", 503);
+export async function newViewerSession(request: Request, env: Env) {
+  assert(env.FAMILY_PASSWORD, "The family password hasn't been configured.", 503);
+  const token = crypto.randomUUID() + crypto.randomUUID(), seconds = 30 * 86400;
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM sessions WHERE expires<=?").bind(now()),
+    env.DB.prepare("INSERT INTO sessions(token_hash,user_id,auth_version,viewer_key,expires) VALUES(?,NULL,0,?,?)").bind(await sha256(token), await sha256(env.FAMILY_PASSWORD), now()+seconds),
+  ]);
+  return sessionCookie(request, env, "family_viewer", token, seconds);
+}
+export async function googleChallenge(request: Request, env: Env) {
+  assert(env.GOOGLE_CLIENT_ID && env.OWNER_EMAIL, "Editor sign-in hasn't been configured.", 503);
   await rateLimit(request, env, "google", 30, 600);
   const id=crypto.randomUUID(), nonce=crypto.randomUUID();
   await env.DB.batch([
     env.DB.prepare("DELETE FROM login_challenges WHERE expires<=?").bind(now()),
-    env.DB.prepare("INSERT INTO login_challenges(id,nonce,expires,user_id) VALUES(?,?,?,?)").bind(await sha256(id),nonce,now()+600,user?.id || null),
+    env.DB.prepare("INSERT INTO login_challenges(id,nonce,expires) VALUES(?,?,?)").bind(await sha256(id),nonce,now()+600),
   ]);
   return {nonce,cookie:sessionCookie(request,env,"google_challenge",id,600)};
 }
-export async function googleLogin(request: Request, env: Env, token: string, user?: Identity | null) {
-  assert(env.GOOGLE_CLIENT_ID, "Google sign-in hasn't been configured.", 503);
+export async function googleLogin(request: Request, env: Env, token: string) {
+  assert(env.GOOGLE_CLIENT_ID && env.OWNER_EMAIL, "Editor sign-in hasn't been configured.", 503);
   const challenge=cookie(request,"google_challenge");
   assert(challenge,"Please start Google sign-in again.",401);
-  const row=await env.DB.prepare("DELETE FROM login_challenges WHERE id=? AND expires>? RETURNING nonce,user_id").bind(await sha256(challenge),now()).first<{nonce:string;user_id:string|null}>();
+  const row=await env.DB.prepare("DELETE FROM login_challenges WHERE id=? AND expires>? RETURNING nonce").bind(await sha256(challenge),now()).first<{nonce:string}>();
   assert(row,"Your sign-in has expired. Please try again.",401);
   let payload;
   try { ({payload}=await jwtVerify(token,googleKeys,{issuer:["https://accounts.google.com","accounts.google.com"],audience:env.GOOGLE_CLIENT_ID,algorithms:["RS256"],requiredClaims:["exp","iat","sub","nonce"],maxTokenAge:"1h"})); }
   catch { throw new HttpError(401,"Google sign-in couldn't be verified. Please try again."); }
-  assert(payload.nonce===row.nonce && payload.email_verified===true && typeof payload.sub==='string',"Google sign-in couldn't be verified.",401);
-  if (row.user_id) {
-    assert(user && !user.automationId && user.id===row.user_id,"Sign in to the account you are linking.",401);
-    const existing=await env.DB.prepare("SELECT user_id FROM identities WHERE provider='google' AND subject=?").bind(payload.sub).first<{user_id:string}>();
-    assert(!existing || existing.user_id===user.id,"This Google account is already linked.",409);
-    const email = typeof payload.email === "string" ? payload.email.slice(0,254) : user.email;
-    const picture = typeof payload.picture === "string" && /^https:\/\/[^/]+\.googleusercontent\.com\//.test(payload.picture) ? payload.picture : null;
-    await audited(env,user,"google.linked",[
-      env.DB.prepare("INSERT INTO identities(provider,subject,user_id) VALUES('google',?,?) ON CONFLICT(provider,user_id) DO UPDATE SET subject=excluded.subject").bind(payload.sub,user.id),
-      env.DB.prepare("UPDATE users SET email=?,picture=? WHERE id=?").bind(email,picture,user.id),
+  assert(payload.nonce===row.nonce && payload.email_verified===true && typeof payload.sub==='string' && typeof payload.email==='string',"Google sign-in couldn't be verified.",401);
+  const email = payload.email.toLowerCase();
+  const name = typeof payload.name === "string" ? payload.name.slice(0,100) : email;
+  const picture = typeof payload.picture === "string" && /^https:\/\/[^/]+\.googleusercontent\.com\//.test(payload.picture) ? payload.picture : null;
+  if (email === env.OWNER_EMAIL.toLowerCase()) {
+    // Configuration is the authority for ownership; an old owner never retains access.
+    await env.DB.batch([
+      env.DB.prepare("UPDATE users SET role='editor',enabled=0,auth_version=auth_version+1 WHERE role='owner' AND email!=? COLLATE NOCASE").bind(email),
+      env.DB.prepare("INSERT INTO users(id,email,name,role) VALUES(?,?,?,'owner') ON CONFLICT(email) DO UPDATE SET role='owner',enabled=1").bind(crypto.randomUUID(),email,name),
     ]);
   }
-  const linked=await env.DB.prepare("SELECT u.id FROM identities i JOIN users u ON u.id=i.user_id WHERE i.provider='google' AND i.subject=? AND u.enabled=1").bind(payload.sub).first<{id:string}>();
-  assert(linked,"This Google account is not linked to an approved account.",403);
-  return newSession(request,env,linked.id);
+  const approved = await env.DB.prepare("SELECT * FROM users WHERE email=? AND enabled=1").bind(email).first<UserRow>();
+  assert(approved, "This Google account doesn't have editing access.", 403);
+  await env.DB.prepare("INSERT OR IGNORE INTO identities(provider,subject,user_id) VALUES('google',?,?)").bind(payload.sub,approved.id).run();
+  const linked = await env.DB.prepare("SELECT 1 FROM identities WHERE provider='google' AND subject=? AND user_id=?").bind(payload.sub,approved.id).first();
+  assert(linked, "This Google account doesn't match the approved identity.", 403);
+  await env.DB.prepare("UPDATE users SET name=?,picture=? WHERE id=?").bind(name,picture,approved.id).run();
+  return newSession(request,env,approved.id);
 }

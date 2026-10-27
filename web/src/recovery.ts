@@ -26,7 +26,7 @@ export async function recoverBackup(env: Env, key = "collection.json") {
   }
   assert(keys.size === Object.keys(snapshot.collection.people).length + Object.keys(snapshot.collection.trees).length, "Backup public IDs are incomplete.");
   const columns: Record<string, string[]> = {
-    collections: ["id", "site", "revision", "operation", "actor", "reason"],
+    collections: ["id", "site", "revision", "operation", "actor", "reason", "updated_at"],
     people: ["id", "name", "sex", "birth_date", "death_date", "birth_place", "notes"],
     parents: ["child_id", "parent_id"],
     partnerships: ["person_a", "person_b", "status", "marriage_date", "marriage_place", "divorce_date", "has_details"],
@@ -34,7 +34,7 @@ export async function recoverBackup(env: Env, key = "collection.json") {
     photos: ["person_id", "object_key", "version"],
     photo_uploads: ["id", "person_id", "object_key", "content_type", "content_hash", "uploaded_at"],
     suggestions: ["id", "person_id", "person_name", "sender_name", "contact", "message", "status", "created_at"],
-    users: ["id","username","name","email","picture","role","enabled","password_hash","recovery_hash","auth_version","created_at"],
+    users: ["id","name","email","picture","role","enabled","auth_version","created_at"],
     identities: ["provider","subject","user_id"], activity: ["id","actor_id","actor_name","action","target","created_at"], public_ids: ["kind", "entity_id", "short_id"],
   };
   const tables = Object.keys(columns);

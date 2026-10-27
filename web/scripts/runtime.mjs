@@ -7,7 +7,7 @@ export async function runtime(options = {}) {
     ...options,
     modules: true, scriptPath: `${root}/dist/worker.mjs`, compatibilityDate: "2026-08-06",
     d1Databases: ["DB"], r2Buckets: ["PHOTOS", "BACKUP"],
-    bindings: { BASE_PATH: "/family-tree", SITE_NAME: "Family Tree", DEVELOPMENT: "true", SETUP_TOKEN: "local-setup-only", ...options.bindings },
+    bindings: { BASE_PATH: "/family-tree", SITE_NAME: "Family Tree", DEVELOPMENT: "true", FAMILY_PASSWORD: "local-preview-only", OWNER_EMAIL: "owner@example.com", ...options.bindings },
   });
   try {
   const db = await mf.getD1Database("DB");

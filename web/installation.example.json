@@ -8,5 +8,6 @@
   "basePath": "/family-tree",
   "siteName": "Family Tree",
   "publicOrigin": "https://family.example.com",
-  "googleClientId": ""
+  "googleClientId": "your-google-client-id.apps.googleusercontent.com",
+  "ownerEmail": "owner@example.com"
 }

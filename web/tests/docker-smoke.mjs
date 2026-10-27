@@ -7,7 +7,7 @@ const exec = promisify(execFile), prefix = `family-contract-${process.pid}`;
 const image = `${prefix}:local`, data = `${prefix}-data`, backup = `${prefix}-backup`;
 const docker = (...args) => exec("docker", args, {maxBuffer: 4 * 1024 * 1024});
 const settings = ["--network=none", "--read-only", "--tmpfs=/tmp", "--cap-drop=ALL", "--security-opt=no-new-privileges",
-  "-v",`${data}:/data`,"-v",`${backup}:/backup`,"-e","PUBLIC_ORIGIN=https://family.test","-e","SETUP_TOKEN=local-test-claim","-e","TRUST_PROXY_HOPS=1"];
+  "-v",`${data}:/data`,"-v",`${backup}:/backup`,"-e","PUBLIC_ORIGIN=https://family.test","-e","FAMILY_PASSWORD=synthetic-password","-e","OWNER_EMAIL=owner@example.com","-e","TRUST_PROXY_HOPS=1"];
 async function inContainer(source) {
   const child = execFile("docker",["exec","-i",prefix,"node","--input-type=module"],{maxBuffer:1024*1024});
   child.stdin.end(source);
@@ -27,18 +27,17 @@ try {
     const database=new DatabaseSync('/tmp/cli-restored/family.sqlite');
     assert.equal(database.prepare('SELECT count(*) AS n FROM people').get().n,1);
     assert.equal(database.prepare('SELECT count(*) AS n FROM photo_uploads').get().n,1);database.close();`);
-  await docker("exec","-e","OWNER_PASSWORD=synthetic-password","-e","RECOVERY_KEY_FILE=/tmp/recovered-owner.key",prefix,"node","scripts/maintain.mjs","recover-owner");
   await docker("restart",prefix);
   await inContainer(`import assert from 'node:assert/strict';
     let response; for(let i=0;i<40;i++){try{response=await fetch('http://localhost:8000/family-tree/api/session');break;}catch{await new Promise(r=>setTimeout(r,100));}}
-    assert.equal(response.status,200);assert.equal((await response.json()).needsSetup,false);
-    const login=await fetch('http://localhost:8000/family-tree/api/login',{method:'POST',headers:{origin:'https://family.test','content-type':'application/json'},body:JSON.stringify({username:'owner',password:'synthetic-password'})});
+    assert.equal(response.status,200);assert.equal((await response.json()).authenticated,false);
+    const login=await fetch('http://localhost:8000/family-tree/api/login',{method:'POST',headers:{origin:'https://family.test','content-type':'application/json'},body:JSON.stringify({password:'synthetic-password'})});
     assert.equal(login.status,200);const view=await fetch('http://localhost:8000/family-tree/api/view',{headers:{cookie:login.headers.get('set-cookie').split(';')[0]}});
     assert.equal((await view.json()).trees[0].people,1);`);
   await docker("exec",prefix,"node","scripts/maintain.mjs","pause");
   await docker("exec",prefix,"node","scripts/maintain.mjs","preflight");
   await docker("exec",prefix,"node","scripts/maintain.mjs","resume");
-  console.log("Docker: offline setup, roles, tree, photo retention, encrypted recovery, restart and pre-upgrade backup passed.");
+  console.log("Docker: viewer access, roles, tree, photo retention, encrypted recovery, restart and pre-upgrade backup passed.");
 } finally {
   await docker("rm","-f",prefix).catch(()=>{});
   await docker("volume","rm",data,backup).catch(()=>{});

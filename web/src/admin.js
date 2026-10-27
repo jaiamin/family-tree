@@ -7,41 +7,21 @@ export function administration({ api, dialog, field, formIn, el, button, base, r
     panel.footer.replaceChildren(button("Copy", async () => { try { await navigator.clipboard.writeText(value); } catch { output.select(); } }));
   };
   async function accounts() {
-    const panel = dialog("Family access"); if (!panel) return;
-    panel.body.append(el("p", { class: "form-note" }, "Access applies to every tree."));
+    const panel = dialog("Editor access"); if (!panel) return;
     const list = el("div", { class: "admin-list" }); panel.body.append(list);
     try {
-      const users = await api("/users");
-      for (const user of users) {
-        const row = el("div", { class: "admin-row" }, el("div", {}, el("strong", {}, user.name), el("small", {}, user.username)));
+      for (const user of await api("/users")) {
+        const row = el("div", { class: "admin-row" }, el("div", {}, el("strong", {}, user.name), user.name !== user.email ? el("small", {}, user.email) : null));
         if (user.role === "owner") row.append(el("span", {}, "Owner"));
-        else {
-          const select = el("select", { "aria-label": `Role for ${user.name}` }, el("option", { value: "viewer" }, "Viewer"), el("option", { value: "editor" }, "Editor")); select.value = user.role;
-          const save = async enabled => { try { await api(`/users/${user.id}`, { role: select.value, enabled }, "PATCH"); reload(); } catch (failure) { error(panel, failure); } };
-          select.onchange = () => save(Boolean(user.enabled));
-          row.append(select, button(user.enabled ? "Revoke" : "Restore", () => save(!user.enabled), "text-button"), button("Reset password", async () => {
-            try { const invitation = await api("/invitations", { role: user.role, targetId: user.id }); showSecret(panel, "Share this single-use reset link. It expires in 48 hours.", `${location.origin}${base}/join#${invitation.token}`); }
-            catch (failure) { error(panel, failure); }
-          }, "text-button"));
-        }
+        else row.append(button(user.enabled ? "Revoke" : "Restore", async () => {
+          try { await api(`/users/${user.id}`, { enabled: !user.enabled }, "PATCH"); reload(); }
+          catch (failure) { error(panel, failure); }
+        }, "text-button"));
         list.append(row);
       }
-      for (const invitation of await api("/invitations")) {
-        const target = users.find(user => user.id === invitation.target_id);
-        list.append(el("div", { class: "admin-row" }, el("div", {},
-          el("strong", {}, target ? `Reset for ${target.name}` : `${invitation.role === "editor" ? "Editor" : "Viewer"} invitation`),
-          el("small", {}, `Expires ${new Date(invitation.expires * 1000).toLocaleString()}`)),
-          button("Revoke link", async () => {
-            try { await api(`/invitations/${invitation.id}`, undefined, "DELETE"); reload(); }
-            catch (failure) { error(panel, failure); }
-          }, "text-button")));
-      }
-      let role;
-      const { form, finish } = formIn(panel, "Create invitation", async () => {
-        const invitation = await api("/invitations", { role: role.value });
-        showSecret(panel, "Share this single-use invitation. It expires in 48 hours.", `${location.origin}${base}/join#${invitation.token}`);
-      }, { cancel: false });
-      role = field(form, "Access", "viewer", { choices: [["viewer", "Viewer"], ["editor", "Editor"]] }); finish();
+      let email;
+      const { form, finish } = formIn(panel, "Add editor", async () => { await api("/users", { email: email.value }); reload(); }, { cancel: false });
+      email = field(form, "Google email", "", { required: true, type: "email" }); finish();
     } catch (failure) { error(panel, failure); }
   }
   async function trees() {
@@ -97,21 +77,6 @@ export function administration({ api, dialog, field, formIn, el, button, base, r
       if (!entries.length) panel.body.append(el("p", { class: "form-note" }, "No activity yet."));
     } catch (failure) { error(panel, failure); }
   }
-  async function recovery() {
-    const panel = dialog("Transfer ownership"); if (!panel) return;
-    try {
-      const users = (await api("/users")).filter(user => user.enabled && user.role !== "owner");
-      if (!users.length) { panel.body.append(el("p", {}, "Invite another account first.")); panel.footer.remove(); return; }
-      let target, password;
-      const { form, finish } = formIn(panel, "Transfer ownership", async () => {
-        if (!confirm("Transfer ownership? You will become an editor and agent credentials will be revoked.")) return;
-        const result = await api("/ownership", { userId: target.value, password: password.value });
-        showSecret(panel, "Give this recovery code to the new owner and save it securely.", result.recoveryCode);
-      });
-      target = field(form, "New owner", users[0].id, { choices: users.map(user => [user.id, user.name]) });
-      password = field(form, "Your password", "", { required: true, type: "password" }); finish();
-    } catch (failure) { error(panel, failure); }
-  }
   async function importGedcom() {
     const panel=dialog("Import GEDCOM"); if (!panel) return;
     let name, file, preview;
@@ -145,5 +110,5 @@ export function administration({ api, dialog, field, formIn, el, button, base, r
       } catch(failure) {error(panel,failure);}
     }));
   }
-  return { backups, importGedcom, accounts, trees, firstPerson, automation, activity, recovery, showSecret };
+  return { backups, importGedcom, accounts, trees, firstPerson, automation, activity, showSecret };
 }

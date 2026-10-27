@@ -4,12 +4,10 @@ import { localRuntime } from "./server.mjs";
 import { preUpgradeBackup } from "../dist/maintenance/backup.js";
 import { recoverBackup } from "../dist/maintenance/recovery.js";
 import { encryptedBackup, stageEncryptedBackup } from "../dist/maintenance/backup-export.js";
-import { hashPassword } from "../dist/maintenance/accounts/password.js";
-import { sha256 } from "../dist/maintenance/auth.js";
 
 const command = process.argv[2];
 const remote = process.env.DEPLOYMENT === "cloudflare";
-if (!["init","preflight","export","restore","recover-owner","migrate-legacy","pause","resume"].includes(command)) throw Error("Commands: init, preflight, export, restore, recover-owner, migrate-legacy, pause, resume. Configure DATA_DIR, BACKUP_DIR and PUBLIC_ORIGIN through the environment.");
+if (!["init","preflight","export","restore","migrate-legacy","pause","resume"].includes(command)) throw Error("Commands: init, preflight, export, restore, migrate-legacy, pause, resume. Configure DATA_DIR, BACKUP_DIR and PUBLIC_ORIGIN through the environment.");
 function required(name) {
   if (!process.env[name]) throw Error(`Set ${name}.`);
   return process.env[name];
@@ -54,19 +52,6 @@ try {
     try { await stageEncryptedBackup(runtime.env,Readable.toWeb(file.createReadStream()),(await readFile(process.env.RECOVERY_KEY_FILE,"utf8")).trim()); }
     finally {await file.close();}
     await recoverBackup(runtime.env);
-  }
-  if(command === "recover-owner") {
-    if(!process.env.OWNER_PASSWORD || !process.env.RECOVERY_KEY_FILE) throw Error("Set OWNER_PASSWORD and a new private RECOVERY_KEY_FILE.");
-    const recoveryCode=crypto.randomUUID()+crypto.randomUUID();
-    // Write the recovery credential before changing access, never print it.
-    await writeFile(process.env.RECOVERY_KEY_FILE,recoveryCode,{mode:0o600,flag:"wx"});
-    const state = await runtime.env.DB.prepare("SELECT maintenance FROM schema_version WHERE id=1").first();
-    const result=(await runtime.env.DB.batch([
-      runtime.env.DB.prepare("UPDATE schema_version SET maintenance=0 WHERE id=1"),
-      runtime.env.DB.prepare("UPDATE users SET password_hash=?,recovery_hash=?,auth_version=auth_version+1 WHERE role='owner' RETURNING id").bind(await hashPassword(process.env.OWNER_PASSWORD),await sha256(recoveryCode)),
-      runtime.env.DB.prepare("UPDATE schema_version SET maintenance=? WHERE id=1").bind(state.maintenance),
-    ]))[1];
-    if(result.results.length !== 1) throw Error("Recovery requires exactly one owner.");
   }
   console.log(`${command}: completed`);
 } finally {await runtime.close();}

@@ -2,7 +2,6 @@ import { backupTables, digest } from "./backup";
 import { collectionFromRows } from "./data";
 import { assert, validateCollection } from "./model";
 import { recoverBackup } from "./recovery";
-import { hashPassword } from "./accounts/password";
 import type { Env } from "./types";
 
 const legacyTables = ["collections", "people", "parents", "partnerships", "trees", "tree_members", "photos", "photo_uploads", "suggestions", "editors", "public_ids"];
@@ -21,14 +20,11 @@ export async function migrateLegacy(source: Env, destination: Env) {
   assert(!(await destination.BACKUP.list()).objects.length, "Migration requires an empty destination backup.", 409);
   const tables: Record<string, Record<string, unknown>[]> = Object.fromEntries(backupTables.map(table => [table, []]));
   legacyTables.forEach((table, i) => { if (table !== "editors") tables[table] = before.rows[i].results; });
-  // Email approval never becomes a Google identity. Previous editors remain
-  // disabled until the new owner explicitly restores and invites their account.
+  // Only the first verified Google login binds an approved email to a subject.
   const editors = before.rows[9].results;
   for (const editor of editors) {
-    const id = crypto.randomUUID();
-    tables.users.push({ id, username: `relative-${id.slice(0,8)}`, name: editor.name || editor.email, email: editor.email,
-      picture: null, role: "editor", enabled: 0, password_hash: await hashPassword(crypto.randomUUID()),
-      recovery_hash: null, auth_version: 1, created_at: new Date().toISOString() });
+    tables.users.push({ id: crypto.randomUUID(), name: editor.name || editor.email, email: editor.email,
+      picture: null, role: "editor", enabled: 1, auth_version: 1, created_at: new Date().toISOString() });
   }
   const hashes: Record<string, string> = {};
   for (const upload of tables.photo_uploads) {

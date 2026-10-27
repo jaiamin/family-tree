@@ -34,26 +34,22 @@ CREATE INDEX IF NOT EXISTS memberships_by_person ON tree_members(person_id);
 CREATE TABLE IF NOT EXISTS schema_version (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL, maintenance INTEGER NOT NULL DEFAULT 0 CHECK(maintenance IN (0,1)));
 INSERT OR IGNORE INTO schema_version(id,version) VALUES(1, 2);
 CREATE TABLE IF NOT EXISTS users (
-  id TEXT PRIMARY KEY, username TEXT NOT NULL UNIQUE COLLATE NOCASE,
-  name TEXT NOT NULL, email TEXT, picture TEXT,
-  role TEXT NOT NULL CHECK(role IN ('viewer','editor','owner')),
+  id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  name TEXT NOT NULL, picture TEXT,
+  role TEXT NOT NULL CHECK(role IN ('editor','owner')),
   enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
-  password_hash TEXT NOT NULL, recovery_hash TEXT,
   auth_version INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE UNIQUE INDEX IF NOT EXISTS single_owner ON users(role) WHERE role='owner';
 CREATE TABLE IF NOT EXISTS sessions (
-  token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
-  auth_version INTEGER NOT NULL, expires INTEGER NOT NULL
+  token_hash TEXT PRIMARY KEY, user_id TEXT REFERENCES users(id),
+  auth_version INTEGER NOT NULL, viewer_key TEXT, expires INTEGER NOT NULL,
+  CHECK ((user_id IS NULL AND viewer_key IS NOT NULL) OR (user_id IS NOT NULL AND viewer_key IS NULL))
 );
 CREATE TABLE IF NOT EXISTS identities (
   provider TEXT NOT NULL, subject TEXT NOT NULL, user_id TEXT NOT NULL REFERENCES users(id),
   PRIMARY KEY(provider, subject), UNIQUE(provider,user_id)
-);
-CREATE TABLE IF NOT EXISTS invitations (
-  id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, role TEXT NOT NULL CHECK(role IN ('viewer','editor')),
-  target_id TEXT REFERENCES users(id), target_version INTEGER, expires INTEGER NOT NULL, used_by TEXT, created_by TEXT NOT NULL REFERENCES users(id)
 );
 CREATE TABLE IF NOT EXISTS automation_credentials (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE,
@@ -63,7 +59,7 @@ CREATE TABLE IF NOT EXISTS activity (
   id INTEGER PRIMARY KEY, actor_id TEXT NOT NULL, actor_name TEXT NOT NULL,
   action TEXT NOT NULL, target TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-CREATE TABLE IF NOT EXISTS login_challenges (id TEXT PRIMARY KEY, nonce TEXT NOT NULL, expires INTEGER NOT NULL, user_id TEXT REFERENCES users(id));
+CREATE TABLE IF NOT EXISTS login_challenges (id TEXT PRIMARY KEY, nonce TEXT NOT NULL, expires INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS rate_limits (key TEXT PRIMARY KEY, count INTEGER NOT NULL, expires INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS suggestions (
   id TEXT PRIMARY KEY,
@@ -289,15 +285,6 @@ CREATE TRIGGER IF NOT EXISTS pause_identities_update BEFORE UPDATE ON identities
 WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
 BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
 CREATE TRIGGER IF NOT EXISTS pause_identities_delete BEFORE DELETE ON identities
-WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
-BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
-CREATE TRIGGER IF NOT EXISTS pause_invitations_insert BEFORE INSERT ON invitations
-WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
-BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
-CREATE TRIGGER IF NOT EXISTS pause_invitations_update BEFORE UPDATE ON invitations
-WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
-BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
-CREATE TRIGGER IF NOT EXISTS pause_invitations_delete BEFORE DELETE ON invitations
 WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
 BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
 CREATE TRIGGER IF NOT EXISTS pause_automation_credentials_insert BEFORE INSERT ON automation_credentials
