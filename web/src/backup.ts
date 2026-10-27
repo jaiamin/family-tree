@@ -30,8 +30,16 @@ async function writeSnapshot(env: Env, key: string, snapshot: Backup) {
 export async function refreshBackup(env: Env) {
   try {
     const snapshot = await createBackup(env);
-    // A verified manifest never references a missing backup upload.
-    for (const upload of snapshot.uploads) assert(await env.BACKUP.head(upload.object_key), "A retained backup photo is missing.");
+    // Listing verifies retained copies without one storage request per photo.
+    const retained = new Set<string>();
+    let cursor: string | undefined;
+    if (snapshot.uploads.length) do {
+      const page = await env.BACKUP.list({ cursor });
+      for (const object of page.objects) retained.add(object.key);
+      assert(!page.truncated || page.cursor && page.cursor !== cursor, "Incomplete backup listing.");
+      cursor = page.truncated ? page.cursor : undefined;
+    } while (cursor);
+    for (const upload of snapshot.uploads) assert(retained.has(upload.object_key), "A retained backup photo is missing.");
     await writeSnapshot(env, "collection.json", snapshot);
     await writeSnapshot(env, `daily/${snapshot.exported_at.slice(0,10)}.json`, snapshot);
     const daily = (await env.BACKUP.list({ prefix: "daily/" })).objects.sort((a,b) => b.key.localeCompare(a.key));

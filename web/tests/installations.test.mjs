@@ -79,7 +79,7 @@ for(const kind of ["Cloudflare","Local"]) {
       await source.env.DB.prepare("INSERT INTO editors VALUES(?)").bind("relative@example.test").run();
       const original=await(await owner.call("/collection")).json();
       const result=await migrateLegacy(source.env,target.env);
-      assert.equal(result.people,1);assert.equal(result.trees,2);assert.equal(result.photos,1);assert.equal(result.pendingAccounts,1);
+      assert.equal(result.people,1);assert.equal(result.trees,2);assert.equal(result.photos,1);assert.equal(result.approvedEditors,1);
       assert.deepEqual(await(await owner.call("/collection")).json(),original);
       assert.equal((await target.env.DB.prepare("SELECT count(*) AS n FROM tree_members WHERE person_id=?").bind(person.id).first()).n,2);
       const before=(await source.env.DB.prepare("SELECT * FROM public_ids ORDER BY short_id").all()).results;

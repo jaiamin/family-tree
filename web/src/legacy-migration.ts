@@ -45,5 +45,5 @@ export async function migrateLegacy(source: Env, destination: Env) {
     assert(primary && backup && await digest(await primary.arrayBuffer()) === hash && await digest(await backup.arrayBuffer()) === hash, "Source photos changed during rehearsal.", 409);
   }
   const restored = await recoverBackup(destination);
-  return { ...restored, trees: Object.keys(collection.trees).length, pendingAccounts: editors.length, revision, sourceFingerprint: before.fingerprint };
+  return { ...restored, trees: Object.keys(collection.trees).length, approvedEditors: editors.length, revision, sourceFingerprint: before.fingerprint };
 }
