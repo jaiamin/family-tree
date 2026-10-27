@@ -19,3 +19,5 @@ web/.env
 web/generated/
 
 .wrangler/
+
+.DS_Store
