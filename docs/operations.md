@@ -16,12 +16,15 @@ The Astro portfolio in `jaiamin/website` remains on Vercel. Create `vercel.json`
 
 ```json
 {
+  "trailingSlash": false,
   "rewrites": [
     { "source": "/family-tree", "destination": "https://family-tree.jaiamin.workers.dev/family-tree/" },
     { "source": "/family-tree/:path*", "destination": "https://family-tree.jaiamin.workers.dev/family-tree/:path*" }
   ]
 }
 ```
+
+`trailingSlash: false` redirects previously shared URLs ending in `/` to their canonical paths before proxying. Without this, Vercel can return its own 404 for a tree even though the Worker accepts the route.
 
 Ensure the portfolio middleware does not intercept this path. Test Google sign-in, cookies, photos, and deep links through the custom domain; testing the Worker hostname alone is insufficient.
 

@@ -1,6 +1,7 @@
 (async () => {
 const tree = await window.familySite.loadTree();
 const apiUrl = path => window.familySite.base + path;
+const treeUrl = new URL(apiUrl(`/trees/${tree.id}`), location.origin).href;
 const ids = Object.keys(tree.people);
 const $ = (id) => document.getElementById(id);
 const view = $("canvas");
@@ -134,7 +135,7 @@ async function shareLink(button, title, url) {
     if (document.activeElement === document.body) focus?.focus({ preventScroll: true });
   }
 }
-$("share-tree").onclick = () => shareLink($("share-tree"), `${tree.name} · ${tree.site_name}`, location.href.split("#")[0]);
+$("share-tree").onclick = () => shareLink($("share-tree"), `${tree.name} · ${tree.site_name}`, treeUrl);
 
 // Tree
 
@@ -575,7 +576,7 @@ function select(id, preserveComparison = false) {
   const up = parentsOf(tree, id);
   const related = highlight(id);
   const link = el("button", { class: "action" }, "Share person");
-  link.onclick = () => shareLink(link, `${displayName(id)} · ${tree.name}`, `${location.href.split("#")[0]}#${id}`);
+  link.onclick = () => shareLink(link, `${displayName(id)} · ${tree.name}`, `${treeUrl}#${id}`);
   const compare = el("button", { class: "action", "aria-label": "Compare relationship" }, "Compare");
   compare.onclick = () => startComparison(id);
   const facts = [
@@ -598,7 +599,7 @@ function select(id, preserveComparison = false) {
       group("Children", children(tree, id)),
       p.other_trees?.length ? el("section", {}, el("h3", {}, "Other trees"),
         ...p.other_trees.map((other) => el("a", {
-          class: "relative tree-link", href: apiUrl(`/trees/${other.id}/#${id}`),
+          class: "relative tree-link", href: apiUrl(`/trees/${other.id}#${id}`),
         }, other.name)),
       ) : null,
       related.size === 1 ? el("p", { class: "none" }, "No family recorded yet.") : null,
