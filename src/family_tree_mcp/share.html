@@ -141,6 +141,58 @@
   #share-status:empty { display: none; }
   .empty-tree { display: grid; place-items: center; height: 100%; color: var(--muted); }
 
+  .ask-open {
+    position: absolute; left: max(16px, env(safe-area-inset-left)); bottom: max(16px, env(safe-area-inset-bottom)); z-index: 2;
+    display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px 0 14px; border: 1px solid var(--border); border-radius: 999px;
+    background: var(--surface); box-shadow: var(--shadow-lg); font-weight: 500; cursor: pointer; transition: background-color .15s, border-color .15s;
+  }
+  .ask-open:hover { background: var(--chip); border-color: var(--border-strong); }
+  .ask-open[hidden] { display: none; }
+  #ask {
+    display: flex; flex-direction: column; flex: 0 0 360px; min-height: 0; min-width: 0; padding: 16px;
+    background: var(--surface); border-left: 1px solid var(--border); animation: rise .2s cubic-bezier(.16, 1, .3, 1);
+  }
+  #ask[hidden] { display: none; }
+  .ask-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none; }
+  .ask-head h2 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
+  #ask .close { display: grid; place-items: center; width: 28px; height: 28px; margin: -4px -6px -4px 0; border: 0; border-radius: 6px; background: none; color: var(--muted); cursor: pointer; }
+  #ask .close:hover { background: var(--chip); color: var(--fg); }
+  .ask-log { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 14px; padding: 16px 0; }
+  .ask-intro { margin: 0; color: var(--muted); }
+  .ask-examples { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+  #ask .chip {
+    max-width: 100%; padding: 7px 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface);
+    text-align: left; font-size: 13px; cursor: pointer; transition: background-color .15s, border-color .15s;
+  }
+  #ask .chip:hover { background: var(--chip); border-color: var(--border-strong); }
+  .msg { max-width: 100%; overflow-wrap: anywhere; }
+  .msg p, .msg ul { margin: 0; }
+  .msg p + p, .msg p + ul, .msg ul + p { margin-top: 8px; }
+  .msg ul { padding-left: 18px; }
+  .msg li + li { margin-top: 2px; }
+  .msg.user { align-self: flex-end; max-width: 85%; padding: 8px 12px; border-radius: 14px 14px 4px 14px; background: var(--chip); white-space: pre-wrap; }
+  .msg.error { display: grid; justify-items: start; gap: 8px; color: var(--muted); }
+  .person-link {
+    display: inline; padding: 0; border: 0; background: none; font-weight: 600; cursor: pointer;
+    text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px;
+  }
+  .person-link:hover { text-decoration-color: currentColor; }
+  .dots { display: inline-flex; gap: 4px; padding: 6px 0; }
+  .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: blink 1.2s infinite ease-in-out both; }
+  .dots i:nth-child(2) { animation-delay: .15s; }
+  .dots i:nth-child(3) { animation-delay: .3s; }
+  @keyframes blink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
+  .ask-form {
+    display: flex; align-items: flex-end; gap: 8px; flex: none; padding: 6px 6px 6px 12px; border: 1px solid var(--border); border-radius: 12px;
+    background: var(--surface); transition: border-color .15s, box-shadow .15s;
+  }
+  .ask-form:focus-within { border-color: var(--border-strong); box-shadow: 0 0 0 3px var(--chip); }
+  .ask-form textarea { flex: 1; min-width: 0; max-height: 120px; padding: 6px 0; border: 0; outline: none; background: none; resize: none; font: inherit; color: inherit; }
+  .ask-form textarea::placeholder { color: var(--muted); }
+  .ask-send { display: grid; place-items: center; flex: none; width: 32px; height: 32px; border: 0; border-radius: 8px; background: var(--fg); color: var(--surface); cursor: pointer; }
+  .ask-send:disabled { opacity: .4; cursor: default; }
+  .ask-note { flex: none; margin: 8px 0 0; color: var(--muted); font-size: 12px; text-align: center; }
+
   @media (max-width: 640px) {
     header { gap: 8px; flex-wrap: wrap; }
     .title { flex: 1 0 calc(100% - 136px); }
@@ -152,11 +204,16 @@
       padding-bottom: max(16px, env(safe-area-inset-bottom));
     }
     #card.expanded { height: 70dvh; max-height: none; }
+    #ask {
+      flex: none; height: 62dvh; border-left: 0; border-top: 1px solid var(--border);
+      padding-bottom: max(12px, env(safe-area-inset-bottom)); animation-name: sheet;
+    }
+    .ask-form textarea { font-size: 16px; }
     #card .sheet-toggle { display: block; flex: none; align-self: flex-start; margin: 8px 0 0; padding: 4px 0; border: 0; background: none; text-decoration: underline; cursor: pointer; }
     #card:not(.waiting) { animation-name: sheet; }
     @keyframes sheet { from { transform: translateY(24px); opacity: 0; } }
   }
-  @media (prefers-reduced-motion: reduce) { #stage.glide, #card { transition: none; animation: none; } }
+  @media (prefers-reduced-motion: reduce) { #stage.glide, #card, #ask { transition: none; animation: none; } .dots i { animation: none; opacity: .6; } }
 </style>
 </head>
 <body>

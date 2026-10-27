@@ -40,12 +40,19 @@ def new_code() -> str:
 
 
 def site_files(pages: dict[str, str], site: Site | None) -> dict[str, str]:
-    """The files of the Pages project for a page: with photos, also their function and config."""
+    """The files of the Pages project: with photos, also the site's functions and config.
+
+    Ask shares the photos' KV store for its daily question count, and stays switched off until
+    the owner stores an ANTHROPIC_API_KEY secret for the project.
+    """
     found = {f"public/{path}": page for path, page in pages.items()}
     if site and site.photos and site.edit_code:
         code = hashlib.sha256(site.edit_code.encode()).hexdigest()
-        function = files("family_tree_mcp").joinpath("photos.js").read_text(encoding="utf-8")
-        found["functions/api/photos/[[path]].js"] = function
+        assets = files("family_tree_mcp")
+        found["functions/api/photos/[[path]].js"] = assets.joinpath("photos.js").read_text(
+            encoding="utf-8"
+        )
+        found["functions/api/ask.js"] = assets.joinpath("ask.js").read_text(encoding="utf-8")
         found["wrangler.toml"] = (
             f'name = "{site.project}"\n'
             'pages_build_output_dir = "public"\n'

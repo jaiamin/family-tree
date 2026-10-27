@@ -12,12 +12,12 @@ from family_tree_mcp.tree import Site, Tree
 ASSETS = files("family_tree_mcp")
 
 
-def share_page(tree: Tree, site: Site, families: list[Family]) -> tuple[str, int]:
-    """Return the page HTML and how many living people had their details hidden.
+def public_data(tree: Tree, site: Site, families: list[Family]) -> tuple[dict, int]:
+    """The tree as visitors may see it, and how many living people had their details hidden.
 
     Hiding also drops marriage dates and places for couples where either may be living. People
-    whose details were hidden are marked `private` so the page can say so. With photos, the page
-    shows and edits photos through the site's /api/photos function.
+    whose details were hidden are marked `private` so the page can say so. The page embeds this,
+    and the site's Ask function reads the same data, so it never sees hidden details either.
     """
     public = tree.model_copy(deep=True)
     hidden: list[str] = []
@@ -42,6 +42,16 @@ def share_page(tree: Tree, site: Site, families: list[Family]) -> tuple[str, int
     data["site_name"] = site.name
     if site.photos:
         data["photos"] = True
+    return data, len(hidden)
+
+
+def share_page(tree: Tree, site: Site, families: list[Family]) -> tuple[str, int]:
+    """Return the page HTML and how many living people had their details hidden.
+
+    With photos, the page shows and edits photos through the site's /api/photos function, and
+    offers Ask when the site's /api/ask function has a key.
+    """
+    data, hidden = public_data(tree, site, families)
     embedded = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
     options = []
     for family in sorted(families, key=lambda t: t.name.casefold()):
@@ -79,7 +89,7 @@ def share_page(tree: Tree, site: Site, families: list[Family]) -> tuple[str, int
             "__DATA__": embedded,
         },
     )
-    return page, len(hidden)
+    return page, hidden
 
 
 def website_files(collection: Collection, site: Site) -> tuple[dict[str, str], int]:
@@ -91,6 +101,8 @@ def website_files(collection: Collection, site: Site) -> tuple[dict[str, str], i
         tree = collection.project(family.id)
         page, count = share_page(tree, site, list(collection.trees.values()))
         pages[f"trees/{tree.id}/index.html"] = page
+        data, _ = public_data(tree, site, list(collection.trees.values()))
+        pages[f"trees/{tree.id}/data.json"] = json.dumps(data, ensure_ascii=False)
         hidden += count
         entries.append(
             f'<li><a class="tree-card" href="/trees/{tree.id}/"><h3>{html.escape(tree.name)}</h3>'

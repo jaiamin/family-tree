@@ -21,7 +21,7 @@ def test_chooser_for_zero_one_and_many_trees_with_safe_names(tmp_path) -> None:
     store = Store(tmp_path)
     first = store.create("First & family", '<img src=x onerror="alert(1)">')
     pages, _ = website_files(store.collection(), site)
-    assert len(pages) == 3
+    assert len(pages) == 4
     assert f'href="/trees/{first.id}/"' in pages["index.html"]
     assert "First &amp; family" in pages["index.html"]
     assert "<img src=x" not in pages["index.html"]
@@ -32,7 +32,9 @@ def test_chooser_for_zero_one_and_many_trees_with_safe_names(tmp_path) -> None:
         "favicon.svg",
         "index.html",
         f"trees/{first.id}/index.html",
+        f"trees/{first.id}/data.json",
         f"trees/{second.id}/index.html",
+        f"trees/{second.id}/data.json",
     }
 
 
@@ -61,6 +63,8 @@ def test_pages_contain_only_members_and_links_while_sharing_uuid(tmp_path) -> No
     assert "birth_date" not in b["people"][shared.id]
     assert a["site_name"] == b["site_name"] == "Website"
     assert a["photos"] is True and hidden == 2
+    # Ask reads the same data the page shows, so it never sees hidden details either.
+    assert json.loads(pages[f"trees/{first.id}/data.json"]) == a
     assert "Shared" not in pages["index.html"]
     assert all("never-public" not in page and "Secret" not in page for page in pages.values())
     assert 'aria-label="Switch family tree"' in pages[f"trees/{first.id}/index.html"]

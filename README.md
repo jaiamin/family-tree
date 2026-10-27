@@ -45,6 +45,14 @@ MCP edits auto-publish after 30 seconds while the server runs. **Code updates re
 
 Publishing returns the photo code; `change_photo_code` replaces it. Photos live separately in Cloudflare KV; uploads require the published site.
 
+**Ask about the family (optional):** visitors can ask questions like "How is Jai related to Varshaben?" and Claude Haiku answers from the published tree, never seeing hidden details. It uses your own [Anthropic API key](https://console.anthropic.com/settings/keys); set a monthly spend limit in the console. Each question costs about a tenth of a cent, and the site answers at most 200 questions a day. Store the key yourself, then run `publish_site` again:
+
+```sh
+npx wrangler pages secret put ANTHROPIC_API_KEY --project-name your-project
+```
+
+The Ask button appears only on the published site once the key is set, not in local previews. To turn it off, run `npx wrangler pages secret delete ANTHROPIC_API_KEY --project-name your-project`, then `publish_site`.
+
 ## Data and recovery
 
 Back up `~/.family-tree-mcp/`. Its `collection.json` holds records and settings; configure an absolute `FAMILY_TREE_DIR` and restart to use another folder.

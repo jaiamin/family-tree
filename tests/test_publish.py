@@ -103,6 +103,8 @@ async def test_publish_once_then_keep_updated(tmp_path, calls, monkeypatch) -> N
         assert "Website" in (folder / "public/index.html").read_text()
         assert "Other Person" in (folder / f"public/trees/{other_id}/index.html").read_text()
         assert code not in config and code not in page and '"photos": true' in page
+        assert (folder / "functions/api/ask.js").read_text().startswith("// Ask: ")
+        assert "ANTHROPIC_API_KEY" not in config  # the owner stores the key as a secret
 
         # Every change republishes in the background; a change the page doesn't show doesn't.
         monkeypatch.setenv("CREATED", "1")
@@ -133,6 +135,14 @@ async def test_publish_once_then_keep_updated(tmp_path, calls, monkeypatch) -> N
         listed = await client.call_tool("get_website", {})
         assert listed.data["keep_updated"] is False
 
+        # A deleted tree's page and data leave the next build.
+        assert (folder / f"public/trees/{other_id}/data.json").exists()
+        await client.call_tool("delete_tree", {"tree": other_id})
+        await client.call_tool("export_website", {})
+        assert not (folder / f"public/trees/{other_id}/index.html").exists()
+        assert not (folder / f"public/trees/{other_id}/data.json").exists()
+        assert (folder / f"public/trees/{tid}/data.json").exists()
+
         changed = await client.call_tool("change_photo_code", {"code": " Our-Family-1950 "})
         assert changed.data["photo_code"] == "our-family-1950"
         config = (folder / "wrangler.toml").read_text()
@@ -161,6 +171,7 @@ async def test_collection_without_photos_can_update(tmp_path, calls) -> None:
     assert calls() == ["pages deploy public"]
     assert '"photos"' not in (folder / "public/index.html").read_text()
     assert not (folder / "wrangler.toml").exists()
+    assert not (folder / "functions").exists()
 
 
 async def test_parallel_tool_calls_keep_every_change(tmp_path) -> None:

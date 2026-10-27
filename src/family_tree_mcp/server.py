@@ -57,7 +57,10 @@ oldest first when birth dates are known.
 Sharing: export_website builds the complete site for local review without deploying.
 When publication is requested, call publish_site: it puts a read-only page online and
 then updates it automatically as the collection changes. Family can add photos on the page
-with the photo code publish_site returns; change_photo_code replaces it.
+with the photo code publish_site returns; change_photo_code replaces it. Visitors can also
+ask Claude about the family on the page once the owner stores their own Anthropic API key:
+they run `npx wrangler pages secret put ANTHROPIC_API_KEY --project-name <project>` in their
+terminal, then publish_site again. Never ask for, see or pass along the key yourself.
 
 Dates are free text; prefer ISO format (YYYY, YYYY-MM or YYYY-MM-DD).
 Every change is backed up: if you make a mistake, or the user asks to revert, use undo.
@@ -83,10 +86,10 @@ def create_server(store: Store, publish_delay: float = 30) -> FastMCP:
         pages, hidden = website_files(data, site)
         written = site_files(pages, site)
         folder = store.root / "exports" / "website"
-        # Remove only generated HTML, so deleted trees cannot linger in deployments.
+        # Remove only generated pages and data, so deleted trees cannot linger in deployments.
         public = folder / "public"
         if public.exists():
-            for old in public.rglob("*.html"):
+            for old in [*public.rglob("*.html"), *public.glob("trees/*/data.json")]:
                 old.unlink()
         for name, content in written.items():
             path = folder / name

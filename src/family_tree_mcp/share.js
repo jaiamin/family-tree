@@ -239,7 +239,7 @@ const pointers = new Map();
 let moved = false;
 let pinch = null;
 view.addEventListener("pointerdown", (e) => {
-  if (e.target.closest("#card, .zoom")) return;
+  if (e.target.closest("#card, .zoom, .ask-open")) return;
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   moved = false;
   if (pointers.size === 2) {
@@ -475,6 +475,7 @@ function highlight(id) {
 }
 
 function select(id) {
+  hideAsk();
   clear();
   selected = id;
   const p = person(id);
@@ -561,7 +562,10 @@ stage.addEventListener("click", (e) => {
   node ? select(node.dataset.id) : close();
 });
 view.addEventListener("click", (e) => { if (!moved && e.target === view) close(); });
-addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  askPanel && !askPanel.hidden ? closeAsk() : close();
+});
 
 // Search
 
@@ -615,6 +619,186 @@ search.addEventListener("keydown", (e) => {
   } else if (e.key === "Enter" && matches[active]) choose(matches[active]);
   else if (e.key === "Escape") { search.value = ""; showResults(); }
 });
+
+// Ask: questions about the family, answered by Claude through the site's /api/ask function. It
+// appears only on published sites whose owner has stored an API key.
+
+const ASKED = `ask:${tree.id}`;
+let askPanel = null;
+let askLog = [];
+try { askLog = JSON.parse(sessionStorage.getItem(ASKED)) || []; } catch {}
+function hideAsk() {
+  if (!askPanel || askPanel.hidden) return;
+  askPanel.hidden = true;
+  $("ask-open").hidden = false;
+}
+function closeAsk() {
+  hideAsk();
+  close();
+  $("ask-open").focus();
+}
+// A name in an answer lights up that person in the tree and keeps the conversation open.
+function peek(id) {
+  if (selected) cards[selected].classList.remove("selected");
+  selected = id;
+  highlight(id);
+  const frame = [id, ...parentsOf(tree, id), ...children(tree, id), ...partnersOf(tree, id)];
+  if (!inView(frame)) centreOn(frame);
+  history.replaceState(null, "", `#${id}`);
+}
+// Answers are plain text with "- " lists and [Name](#id) links; nothing is parsed as HTML.
+function inline(text) {
+  const parts = [];
+  const pattern = /\[([^\]\n]+)\]\(#([0-9a-f-]{36})\)|\*\*([^*\n]+)\*\*/g;
+  let last = 0;
+  for (const match of text.matchAll(pattern)) {
+    parts.push(text.slice(last, match.index));
+    last = match.index + match[0].length;
+    const [, label, id, bold] = match;
+    if (bold) parts.push(el("strong", {}, ...inline(bold)));
+    else if (!tree.people[id]) parts.push(label);
+    else {
+      const link = el("button", { class: "person-link", type: "button" }, label);
+      link.onclick = () => peek(id);
+      parts.push(link);
+    }
+  }
+  parts.push(text.slice(last));
+  return parts;
+}
+// Runs of "- " lines become a list; other lines join into paragraphs split by blank lines.
+function rendered(text) {
+  const blocks = [];
+  let block = null;
+  for (const line of text.split("\n")) {
+    const item = line.match(/^\s*[-•*]\s+(.*)$/);
+    if (!line.trim()) block = null;
+    else if (item) {
+      if (block?.tagName !== "UL") blocks.push((block = el("ul")));
+      block.append(el("li", {}, ...inline(item[1])));
+    } else {
+      if (block?.tagName === "P") block.append(el("br"));
+      else blocks.push((block = el("p")));
+      block.append(...inline(line));
+    }
+  }
+  return blocks;
+}
+// Starter questions from this family: a long chain of names, someone's grandchildren, the eldest.
+function examples() {
+  const grand = (id) => [...new Set(children(tree, id).flatMap((c) => children(tree, c)))];
+  const known = ids.filter((id) => !PLACEHOLDER.test(person(id).name));
+  const depths = new Map();
+  const depth = (id) => {
+    if (!depths.has(id)) depths.set(id, parentsOf(tree, id).length ? 1 + Math.max(...parentsOf(tree, id).map(depth)) : 0);
+    return depths.get(id);
+  };
+  const youngest = [...known].sort((a, b) => depth(b) - depth(a) || (year(person(b).birth_date) || "").localeCompare(year(person(a).birth_date) || ""))[0];
+  const questions = [];
+  if (youngest && depth(youngest) >= 2) {
+    const grandparents = parentsOf(tree, youngest).flatMap((p) => parentsOf(tree, p));
+    const far = grandparents.flatMap((g) => siblings(tree, g)).concat(grandparents).find((o) => !PLACEHOLDER.test(person(o).name));
+    if (far) questions.push(`How is ${person(youngest).name} related to ${person(far).name}?`);
+  }
+  const elder = known.filter((id) => grand(id).length).sort((a, b) => grand(b).length - grand(a).length)[0];
+  if (elder) questions.push(`Who are ${person(elder).name}'s grandchildren?`);
+  if (known.some((id) => person(id).birth_date)) questions.push("Who is the oldest person in the tree?");
+  return questions.slice(0, 3);
+}
+function setUpAsk() {
+  const open = el("button", { class: "ask-open", id: "ask-open", type: "button", "aria-controls": "ask" });
+  open.innerHTML = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.8 7L4 20l1-5.2A8 8 0 1 1 21 12Z"/></svg><span>Ask about the family</span>';
+  const log = el("div", { class: "ask-log", role: "log", "aria-live": "polite" });
+  const input = el("textarea", { rows: "1", maxlength: "500", placeholder: "Ask a question…", "aria-label": "Your question", enterkeyhint: "send" });
+  const send = el("button", { class: "ask-send", type: "submit", "aria-label": "Send" });
+  send.innerHTML = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg>';
+  const form = el("form", { class: "ask-form" }, input, send);
+  const shut = el("button", { class: "close", type: "button", "aria-label": "Close" });
+  shut.innerHTML = '<svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+  shut.onclick = closeAsk;
+  askPanel = el("aside", { id: "ask", "aria-label": "Ask about the family", hidden: "" },
+    el("div", { class: "ask-head" }, el("h2", {}, "Ask about the family"), shut),
+    log, form, el("p", { class: "ask-note" }, "Answered by Claude from this tree. It can make mistakes."));
+  $("view").append(askPanel);
+  view.append(open);
+
+  let waiting = false;
+  const save = () => { try { sessionStorage.setItem(ASKED, JSON.stringify(askLog)); } catch {} };
+  const bubble = (role, content) => el("div", { class: `msg ${role}` }, ...(role === "user" ? [content] : rendered(content)));
+  function draw() {
+    const start = askLog.length ? [] : [
+      el("p", { class: "ask-intro" }, `Ask anything about the people in ${tree.name}: who they are, how they're related, or when they were born.`),
+      el("div", { class: "ask-examples" }, ...examples().map((q) => {
+        const chip = el("button", { type: "button", class: "chip" }, q);
+        chip.onclick = () => ask(q);
+        return chip;
+      })),
+    ];
+    log.replaceChildren(...start, ...askLog.map((m) => bubble(m.role, m.content)));
+  }
+  async function ask(question) {
+    question = question.trim();
+    if (!question || waiting) return;
+    waiting = true;
+    send.disabled = true;
+    input.value = "";
+    input.style.height = "";
+    if (!askLog.length) log.replaceChildren();
+    const thinking = el("div", { class: "msg assistant thinking" }, el("span", { class: "dots", "aria-label": "Thinking" }, el("i"), el("i"), el("i")));
+    log.append(bubble("user", question), thinking);
+    log.scrollTop = log.scrollHeight;
+    const messages = [...askLog.slice(-8), { role: "user", content: question }];
+    let failure = "Couldn't connect. Check your connection and try again.";
+    try {
+      const response = await fetch("/api/ask", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ tree: tree.id, messages }) });
+      const reply = await response.json().catch(() => ({}));
+      if (response.ok && reply.answer) {
+        askLog.push({ role: "user", content: question }, { role: "assistant", content: reply.answer });
+        save();
+        thinking.replaceWith(bubble("assistant", reply.answer));
+        failure = "";
+      } else failure = reply.error || "Ask couldn't answer right now. Try again in a minute.";
+    } catch {}
+    if (failure) {
+      const retry = el("button", { type: "button", class: "chip" }, "Try again");
+      retry.onclick = () => {
+        retry.parentElement.previousElementSibling?.remove();
+        retry.parentElement.remove();
+        ask(question);
+      };
+      thinking.replaceWith(el("div", { class: "msg assistant error" }, el("p", {}, failure), retry));
+    }
+    waiting = false;
+    send.disabled = false;
+    log.scrollTop = log.scrollHeight;
+  }
+  form.onsubmit = (event) => {
+    event.preventDefault();
+    ask(input.value);
+  };
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+      event.preventDefault();
+      ask(input.value);
+    }
+  });
+  input.addEventListener("input", () => {
+    input.style.height = "";
+    input.style.height = `${Math.min(input.scrollHeight, 120)}px`;
+  });
+  open.onclick = () => {
+    close();
+    askPanel.hidden = false;
+    open.hidden = true;
+    draw();
+    log.scrollTop = log.scrollHeight;
+    input.focus({ preventScroll: true });
+  };
+}
+fetch("/api/ask")
+  .then((response) => (response.ok ? response.json() : {}))
+  .then((status) => { if (status.enabled && ids.length) setUpAsk(); })
+  .catch(() => {});
 
 if (!ids.length) view.replaceChildren(el("div", { class: "empty-tree" }, "This family tree is empty."));
 else {
