@@ -381,6 +381,7 @@ function renderComparison(box) {
   box.classList.add("comparing");
   box.setAttribute("aria-label", "Compare relationship");
   box.querySelector(".top").replaceChildren(el("h2", {}, "Compare relationship"));
+  box.querySelector(".person-editing")?.remove();
   const body = box.querySelector(".details-body");
   const origin = el("div", { class: "compare-person" }, avatar(from), el("span", { class: "name" }, displayName(from)));
   body.replaceChildren(origin);
@@ -494,7 +495,6 @@ function photoEditor(id) {
     button.setAttribute("aria-expanded", "true");
     const card = panel.closest("#card");
     if (card && matchMedia("(max-width: 640px)").matches && !card.classList.contains("expanded")) card.querySelector(".sheet-toggle").click();
-    panel.scrollIntoView({ block: "nearest" });
   };
   const hide = () => {
     panel.hidden = true;
@@ -608,10 +608,9 @@ function select(id, preserveComparison = false) {
     "div",
     { id: "card", role: "dialog", "aria-label": p.name },
     el("div", { class: "top" }, photo.circle, el("div", { class: "who" }, el("h2", {}, displayName(id)))),
+    el("div", { class: "person-editing" }, window.familySite?.personActions(id), photo.panel),
     el("div", { class: "details-body", id: "details-body" },
       facts.length ? el("dl", { class: "person-facts" }, ...facts.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)])) : null,
-      window.familySite?.personActions(id),
-      photo.panel,
       group("Parents", parentsOf(tree, id)),
       group(partners.length > 1 ? "Partners" : "Partner", partners, (o) => partnerNote(id, o)),
       group("Siblings", siblings(tree, id), (o) => (halfSiblings(tree, id, o) ? "Half" : "")),
