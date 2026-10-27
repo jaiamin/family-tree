@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { runtime } from "../scripts/runtime.mjs";
+import { runtime } from "./support.mjs";
 import { migratePublicIds, randomShortId, isShortId } from "../dist/public-ids.mjs";
 
 const base = "http://localhost/family-tree";

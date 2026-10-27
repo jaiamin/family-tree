@@ -173,3 +173,13 @@ header .share-tree-button { display: flex; gap: 6px; width: auto; padding: 0 10p
 .skeleton-paragraph .skeleton { display: block; margin: .8em 0; }
 
 .skeleton-control { flex: none; width: 36px; height: 36px; border-radius: 8px; }
+
+.admin-list { display:grid; gap:12px; margin-bottom:20px; }
+.admin-row { display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+.admin-row > div:first-child, .admin-row > strong:first-child { flex:1; min-width:120px; }
+.admin-row small { display:block; color:var(--muted); }
+.admin-row p { margin:4px 0 0; }
+.admin-settings { margin-top:24px; }
+.auth-field { display:grid; gap:8px; margin-bottom:16px; }
+.auth-field[hidden] { display:none; }
+.recovery-code { display:block; overflow-wrap:anywhere; margin:20px 0; }

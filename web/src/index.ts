@@ -1,48 +1,25 @@
+import { audited } from "./activity";
+import { creatorRoute } from "./creator";
+import { bodyOf, limitedBody, text } from "./http";
+import { accountRoute } from "./accounts/routes";
 import { shortIdPattern } from "./public-ids";
-import { applyLink, applyPersonEdit, assert, HttpError, uuid, record } from "./model";
-import { googleChallenge, googleLogin, identity, newSession, rateLimit, requireRole, requireSameOrigin, sessionCookie, sha256, secretMatches } from "./auth";
+import { applyLink, applyPersonEdit, assert, HttpError, uuid } from "./model";
+import { googleChallenge, googleLogin, identity, rateLimit, requireRole, requireSameOrigin, sessionCookie, sha256 } from "./auth";
 import { readCollection, readView, saveCollection, treeView } from "./data";
 import type { Env } from "./types";
 import pages from "../generated/pages.json";
-import { refreshBackup } from "./backup";
+import { refreshBackup, digest } from "./backup";
 import { gedcom } from "./gedcom";
 function asset(path: string, immutable = false) {
   const value = (pages as Record<string, string>)[path];
   assert(value, "Not found.", 404);
+  if (path.endsWith(".woff2")) return new Response(Uint8Array.from(atob(value),char=>char.charCodeAt(0)),{headers:{"content-type":"font/woff2","cache-control":"public, max-age=31536000, immutable"}});
   const type = path.endsWith(".js") ? "text/javascript" : path.endsWith(".svg") ? "image/svg+xml" : "text/html";
   return new Response(value, { headers: { "content-type": `${type}; charset=utf-8`, ...immutable ? { "cache-control": "public, max-age=31536000, immutable" } : {} } });
 }
 
 const json = (body: unknown, status = 200, headers: HeadersInit = {}) => Response.json(body, { status, headers });
-async function limitedBody(request: Request, max = 1_500_000) {
-  assert(request.body, "Request body is required.");
-  const reader = request.body.getReader();
-  const chunks: Uint8Array[] = []; let size = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > max) { await reader.cancel(); throw new HttpError(413, "This upload is too large."); }
-    chunks.push(value);
-  }
-  const data = new Uint8Array(size); let offset = 0;
-  for (const chunk of chunks) { data.set(chunk, offset); offset += chunk.length; }
-  return data;
-}
-async function bodyOf(request: Request) {
-  assert(request.headers.get("content-type")?.includes("application/json"), "Send JSON.", 415);
-  try {
-    const body = JSON.parse(new TextDecoder().decode(await limitedBody(request)));
-    assert(record(body), "Send a JSON object.");
-    return body;
-  }
-  catch (error) { if (error instanceof HttpError) throw error; throw new HttpError(400, "Invalid JSON."); }
-}
-function text(value: unknown, max: number, required = false): string {
-  assert(typeof value === "string" && value.trim().length <= max && (!required || value.trim().length > 0), "Please complete the form within the stated limits.");
-  return value.trim();
-}
-async function photo(request: Request, env: Env, path: string) {
+async function photo(request: Request, env: Env, path: string, user: import("./types").Identity) {
   const id = path.split("/")[3];
   if (path === "/api/photos" && request.method === "GET") {
     const { results } = await env.DB.prepare("SELECT person_id, version FROM photos").all<{ person_id: string; version: string }>();
@@ -62,7 +39,7 @@ async function photo(request: Request, env: Env, path: string) {
   }
   assert(await env.DB.prepare("SELECT id FROM people WHERE id = ?").bind(id).first(), "Person not found.", 404);
   if (request.method === "DELETE") {
-    await env.DB.prepare("DELETE FROM photos WHERE person_id = ?").bind(id).run();
+    await audited(env,user,"photo.cleared",[env.DB.prepare("DELETE FROM photos WHERE person_id = ?").bind(id)],id);
     return json({ ok: true });
   }
   assert(request.method === "PUT", "Method not allowed.", 405);
@@ -77,8 +54,8 @@ async function photo(request: Request, env: Env, path: string) {
   await env.PHOTOS.put(key, bytes, { httpMetadata: { contentType: type! } });
   // Immutable uploads are retained. Never delete a relative's contribution on replacement.
   await env.BACKUP.put(key, bytes, { httpMetadata: { contentType: type! } });
-  await env.DB.batch([
-    env.DB.prepare("INSERT INTO photo_uploads(id, person_id, object_key, content_type) VALUES (?, ?, ?, ?)").bind(version, id, key, type),
+  await audited(env,user,"photo.replaced",[
+    env.DB.prepare("INSERT INTO photo_uploads(id, person_id, object_key, content_type, content_hash) VALUES (?, ?, ?, ?, ?)").bind(version, id, key, type, await digest(bytes)),
     env.DB.prepare("INSERT INTO photos(person_id, object_key, version) VALUES (?, ?, ?) ON CONFLICT(person_id) DO UPDATE SET object_key = excluded.object_key, version = excluded.version").bind(id, key, version),
   ]);
   return json({ v: version });
@@ -91,34 +68,29 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (["GET", "HEAD"].includes(method) && path.startsWith("/assets/")) return asset(path, true);
   const user = await identity(request, env);
   if (!["GET", "HEAD"].includes(method)) requireSameOrigin(request, env);
-  if (path === "/api/session" && method === "GET") return json({ ...(user?.role === "owner" ? { backup: await env.DB.prepare("SELECT generation, saved_generation, saved_at, error FROM backup_state WHERE id = 1").first() } : {}), authenticated: !!user, role: user?.role, email: user?.email, name: user?.name, picture: user?.picture, siteName: env.SITE_NAME, googleClientId: env.GOOGLE_CLIENT_ID || "" });
-  if (path === "/api/login" && method === "POST") {
-    assert(env.FAMILY_PASSWORD, "The family password hasn't been configured yet.", 503);
-    await rateLimit(request, env, "password", 10, 900);
-    const body = await bodyOf(request);
-    assert(typeof body.password === "string" && body.password.length <= 200 && await secretMatches(body.password, env.FAMILY_PASSWORD), "That password isn't right.", 403);
-    return json({ ok: true }, 200, { "set-cookie": await newSession(request, env, null) });
+  if (path === "/api/session" && method === "GET") {
+    const site = await env.DB.prepare("SELECT site FROM collections WHERE id='main'").first<{site:string|null}>();
+    return json({ ...(user?.role === "owner" ? { backup: await env.DB.prepare("SELECT generation,saved_generation,saved_at,error FROM backup_state WHERE id=1").first() } : {}),
+      authenticated: !!user, role: user?.role, id: user?.id, email: user?.email, name: user?.name, picture: user?.picture,
+      needsSetup: !(await env.DB.prepare("SELECT id FROM users LIMIT 1").first()),
+      siteName: site?.site ? JSON.parse(site.site).name : env.SITE_NAME, googleClientId: env.GOOGLE_CLIENT_ID || "" });
   }
+  const accounts = await accountRoute(request,env,user,path);
+  if (accounts) return accounts;
   if (path === "/api/google/start" && method === "POST") {
-    const challenge = await googleChallenge(request, env);
+    const challenge = await googleChallenge(request, env, user);
     return json({ nonce: challenge.nonce }, 200, { "set-cookie": challenge.cookie });
   }
   if (path === "/api/google/login" && method === "POST") {
     await rateLimit(request, env, "google-login", 20, 900);
     const body = await bodyOf(request);
     assert(typeof body.credential === "string" && body.credential.length < 20000, "Invalid Google sign-in.");
-    return json({ ok: true }, 200, { "set-cookie": await googleLogin(request, env, body.credential) });
-  }
-  if (path === "/api/logout" && method === "POST") {
-    const { cookie } = await import("./auth");
-    await env.DB.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(await sha256(cookie(request, "family_session"))).run();
-    if (user?.email && user.email !== "MCP") {
-      return json({ ok: true }, 200, { "set-cookie": await newSession(request, env, null) });
-    }
-    return json({ ok: true }, 200, { "set-cookie": sessionCookie(request, env, "family_session", "", 0) });
+    return json({ ok: true }, 200, { "set-cookie": await googleLogin(request, env, body.credential, user) });
   }
   if (path.startsWith("/api/")) {
     requireRole(user);
+    const creator = await creatorRoute(request,env,user,path);
+    if (creator) return creator;
     const exportRoute = new RegExp(`^/api/t/(${shortIdPattern})/gedcom$`).exec(path);
     if (exportRoute && method === "GET") {
       const { collection } = await readCollection(env);
@@ -133,7 +105,7 @@ async function route(request: Request, env: Env): Promise<Response> {
     }
     if (path.startsWith("/api/photos")) {
       if (method === "DELETE") requireRole(user, "editor");
-      return photo(request, env, path);
+      return photo(request, env, path, user);
     }
     if (path === "/api/suggestions" && method === "POST") {
       await rateLimit(request, env, "suggestions", 10, 3600);
@@ -148,8 +120,8 @@ async function route(request: Request, env: Env): Promise<Response> {
         personName = collection.people[personId].name;
       }
       const id = crypto.randomUUID();
-      await env.DB.prepare("INSERT INTO suggestions(id, person_id, person_name, sender_name, contact, message) VALUES (?, ?, ?, ?, ?, ?)")
-        .bind(id, personId, personName, name, contact, message).run();
+      await audited(env,user,"suggestion.created",[env.DB.prepare("INSERT INTO suggestions(id, person_id, person_name, sender_name, contact, message) VALUES (?, ?, ?, ?, ?, ?)")
+        .bind(id, personId, personName, name, contact, message)],id);
       return json({ id }, 201);
     }
     if (path === "/api/suggestions" && method === "GET") {
@@ -180,16 +152,6 @@ async function route(request: Request, env: Env): Promise<Response> {
         const body = await bodyOf(request);
         const revision = await saveCollection(env, body.collection, body.revision, user, "MCP or owner update");
         return json({ revision });
-      }
-    }
-    if (path === "/api/editors") {
-      requireRole(user, "owner");
-      if (method === "GET") return json((await env.DB.prepare("SELECT email FROM editors ORDER BY email").all()).results);
-      if (method === "POST" || method === "DELETE") {
-        const body = await bodyOf(request), email = text(body.email, 254, true).toLowerCase();
-        assert(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email), "Enter a valid email address.");
-        await env.DB.prepare(method === "POST" ? "INSERT OR IGNORE INTO editors(email) VALUES (?)" : "DELETE FROM editors WHERE email = ?").bind(email).run();
-        return json({ ok: true });
       }
     }
     if (path === "/api/people" && method === "GET") {
@@ -262,17 +224,22 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (path === "/favicon.svg") return asset(path);
   const match = new RegExp(`^/t/(${shortIdPattern})/?$`).exec(path);
   const treeRoute = Boolean(match);
-  assert(path === "/" || treeRoute || path === "/index.html", "Not found.", 404);
-  if (!user) return asset("/login.html");
+  assert(path === "/" || treeRoute || path === "/index.html" || path === "/join" || path === "/recover", "Not found.", 404);
+  if (!user || path === "/join" || path === "/recover") return asset("/login.html");
   if (match) assert(await env.DB.prepare("SELECT 1 FROM public_ids p JOIN trees t ON t.id = p.entity_id WHERE p.kind = 'tree' AND p.short_id = ?").bind(match[1]).first(), "Family tree not found.", 404);
   return asset(treeRoute ? "/tree.html" : "/index.html");
 }
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     let response: Response;
-    try { response = await route(request, env); }
+    try {
+      const version = await env.DB.prepare("SELECT version FROM schema_version WHERE id=1").first<{version:number}>();
+      assert(version?.version === 2,"This installation requires an explicit schema upgrade.",503);
+      response = await route(request, env);
+    }
     catch (error) {
       if (error instanceof HttpError) response = json({ error: error.message }, error.status);
+      else if (error instanceof Error && /UNIQUE constraint failed/.test(error.message)) response = json({error:"That username or identity is already in use."},409);
       else { console.error(JSON.stringify({ event: "request_failed", method: request.method, path: new URL(request.url).pathname })); response = json({ error: "Something went wrong. Please try again." }, 500); }
     }
     if (response.ok && !["GET", "HEAD"].includes(request.method) && !new URL(request.url).pathname.match(/\/(login|logout|google\/[^/]+)$/)) ctx.waitUntil(refreshBackup(env));

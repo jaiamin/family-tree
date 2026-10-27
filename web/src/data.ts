@@ -10,7 +10,7 @@ export const collectionQueries = (env: Env) => [
     env.DB.prepare("SELECT * FROM trees ORDER BY rowid"),
     env.DB.prepare("SELECT * FROM tree_members ORDER BY position"),
   ];
-export function collectionFromRows(rows: D1Result<Record<string, unknown>>[]): Snapshot {
+export function collectionFromRows(rows: import("./platform/storage").QueryResult<Record<string, unknown>>[]): Snapshot {
   const c = emptyCollection();
   const meta = rows[0].results[0];
   c.site = meta?.site ? JSON.parse(String(meta.site)) : null;
@@ -102,6 +102,8 @@ async function saveCollectionOnce(env: Env, collection: unknown, revision: unkno
     statement(`INSERT INTO tree_members(tree_id,person_id,position) SELECT json_extract(value,'$[0]'),json_extract(value,'$[1]'),json_extract(value,'$[2]') FROM json_each(?) WHERE ${guard}
       ON CONFLICT(tree_id,person_id) DO UPDATE SET position=excluded.position WHERE position != excluded.position`, members, operation),
     statement(`INSERT INTO public_ids(kind,entity_id,short_id) SELECT json_extract(value,'$.kind'),json_extract(value,'$.entity_id'),json_extract(value,'$.short_id') FROM json_each(?) WHERE ${guard} ON CONFLICT(kind,entity_id) DO NOTHING`, JSON.stringify(additions), operation),
+    env.DB.prepare(`INSERT INTO activity(actor_id,actor_name,action,target) SELECT ?,?,?,? WHERE ${guard}`).bind(user.automationId || user.id,user.name,"genealogy.updated",null,operation),
+    env.DB.prepare("DELETE FROM activity WHERE id NOT IN (SELECT id FROM activity ORDER BY id DESC LIMIT 1000)"),
   ]);
   assert(results[1].results.length === 1, "Someone else updated the family tree. Reload before saving.", 409);
   return revision + 1;

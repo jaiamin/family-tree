@@ -1,0 +1,22 @@
+services:
+  family-tree:
+    build: ./web
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Set your HTTPS origin}
+      BASE_PATH: ${BASE_PATH:-/family-tree}
+      SETUP_TOKEN: ${SETUP_TOKEN:?Set a strong single-use setup credential}
+    volumes:
+      - family-data:/data
+      - ${BACKUP_DIRECTORY:?Choose a private backup directory}:/backup
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+volumes:
+  family-data:

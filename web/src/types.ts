@@ -1,14 +1,7 @@
+import type { SqlStore, BlobStore } from "./platform/storage";
 export interface Env {
-  DB: D1Database;
-  PHOTOS: R2Bucket;
-  BACKUP: R2Bucket;
-  BASE_PATH: string;
-  SITE_NAME: string;
-  PUBLIC_ORIGIN?: string;
-  OWNER_EMAIL: string;
-  GOOGLE_CLIENT_ID?: string;
-  FAMILY_PASSWORD?: string;
-  MCP_TOKEN?: string;
-  LOCAL_MODE?: string;
+  DB: SqlStore; PHOTOS: BlobStore; BACKUP: BlobStore;
+  BASE_PATH: string; SITE_NAME: string; PUBLIC_ORIGIN?: string;
+  GOOGLE_CLIENT_ID?: string; SETUP_TOKEN?: string; DEVELOPMENT?: string; CLIENT_IP?: string;
 }
-export interface Identity { role: "member" | "editor" | "owner"; email: string | null; name?: string; picture?: string }
+export interface Identity { id: string; role: "viewer" | "editor" | "owner"; email: string | null; name: string; picture?: string; automationId?: string }

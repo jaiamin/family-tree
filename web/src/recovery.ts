@@ -1,18 +1,17 @@
+import { digest, type Backup } from "./backup";
 import { isShortId } from "./public-ids";
 import type { Env } from "./types";
 import { assert, validateCollection } from "./model";
 
 // Maintenance-only operation: never exposed through a browser or public API.
 // Use a fresh database and primary bucket; the backup bucket is read-only here.
-export async function recoverBackup(env: Env) {
-  const object = await env.BACKUP.get("collection.json");
+export async function recoverBackup(env: Env, key = "collection.json") {
+  const object = await env.BACKUP.get(key);
   assert(object, "No backup is available.");
-  const snapshot = await object.json<{
-    format: number; collection: unknown;
-    tables: Record<string, Record<string, string | number | null>[]>;
-    uploads: { object_key: string; content_type: string }[];
-  }>();
-  assert(snapshot.format === 2 && snapshot.tables, "Unsupported backup format.");
+  const snapshot = await object.json<Backup>();
+  assert(snapshot.format === 3 && snapshot.schemaVersion === 2 && snapshot.tables, "Unsupported backup format.");
+  const { checksum, ...content } = snapshot;
+  assert(checksum === await digest(new TextEncoder().encode(JSON.stringify(content))), "Backup integrity verification failed.");
   validateCollection(snapshot.collection);
   const mappings = snapshot.tables.public_ids;
   assert(Array.isArray(mappings), "Backup is missing public IDs.");
@@ -32,9 +31,10 @@ export async function recoverBackup(env: Env) {
     partnerships: ["person_a", "person_b", "status", "marriage_date", "marriage_place", "divorce_date", "has_details"],
     trees: ["id", "name", "description"], tree_members: ["tree_id", "person_id", "position"],
     photos: ["person_id", "object_key", "version"],
-    photo_uploads: ["id", "person_id", "object_key", "content_type", "uploaded_at"],
+    photo_uploads: ["id", "person_id", "object_key", "content_type", "content_hash", "uploaded_at"],
     suggestions: ["id", "person_id", "person_name", "sender_name", "contact", "message", "status", "created_at"],
-    editors: ["email"], public_ids: ["kind", "entity_id", "short_id"],
+    users: ["id","username","name","email","picture","role","enabled","password_hash","recovery_hash","auth_version","created_at"],
+    identities: ["provider","subject","user_id"], activity: ["id","actor_id","actor_name","action","target","created_at"], public_ids: ["kind", "entity_id", "short_id"],
   };
   const tables = Object.keys(columns);
   const counts = await env.DB.batch<{ n: number }>(tables.map(table => env.DB.prepare(`SELECT count(*) AS n FROM ${table}`)));
@@ -43,6 +43,8 @@ export async function recoverBackup(env: Env) {
   for (const upload of snapshot.uploads) {
     const original = await env.BACKUP.head(upload.object_key);
     assert(original, "A backup photo is missing. Recovery stopped.");
+    const bytes = await (await env.BACKUP.get(upload.object_key))!.arrayBuffer();
+    assert(await digest(bytes) === upload.content_hash, "A backup photo failed integrity verification.");
     const existing = await env.PHOTOS.head(upload.object_key);
     assert(!existing || existing.etag === original.etag, "Destination contains a conflicting photo. Recovery stopped.", 409);
   }

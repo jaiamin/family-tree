@@ -71,6 +71,7 @@ export function gedcom(tree: Tree): string {
     for (const [i, id] of parents.entries()) pointer(1, parents.length === 1 && tree.people[id].sex === "female" ? "WIFE" : i ? "WIFE" : "HUSB", ids.get(id)!);
     for (const id of f.children) pointer(1, "CHIL", ids.get(id)!);
     const partnership = tree.partnerships[key];
+    if (f.parents.length === 2 && tree.people[f.parents[0]].partners.includes(f.parents[1])) add(1,"_PARTNERS","Y");
     if (partnership?.status === "married" || partnership?.marriage_date || partnership?.marriage_place) {
       if (!partnership.marriage_date && !partnership.marriage_place) lines.push("1 MARR Y");
       else event("MARR", partnership.marriage_date, partnership.marriage_place);

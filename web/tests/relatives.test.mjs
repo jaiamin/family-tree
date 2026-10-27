@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { runtime } from "../scripts/runtime.mjs";
+import { runtime } from "./support.mjs";
 const ids = Array.from({ length: 6 }, randomUUID);
 const [parent, other, child, third, tree, outsideTree] = ids;
 const fixture = () => ({ version: 1, site: null, people: Object.fromEntries([

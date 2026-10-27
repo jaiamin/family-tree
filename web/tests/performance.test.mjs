@@ -1,7 +1,7 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID, createHash } from "node:crypto";
-import { runtime } from "../scripts/runtime.mjs";
+import { runtime } from "./support.mjs";
 
 const origin = "http://localhost", base = `${origin}/family-tree`;
 const treeId = randomUUID(), emptyTree = randomUUID(), personId = randomUUID();
@@ -17,7 +17,7 @@ before(async () => {
     trees: { [treeId]: { id: treeId, name: "Family", members: [personId] }, [emptyTree]: { id: emptyTree, name: "Empty family", members: [] } } };
   const saved = await mf.dispatchFetch(`${base}/api/collection`, { method: "PUT", headers: { ...owner, origin, "content-type": "application/json" }, body: JSON.stringify({ collection, revision: 0 }) });
   assert.equal(saved.status, 200, await saved.text());
-  const login = await mf.dispatchFetch(`${base}/api/login`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ password: "local-preview-only" }) });
+  const login = await mf.dispatchFetch(`${base}/api/login`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ username: "viewer", password: "local-preview-only" }) });
   cookie = login.headers.get("set-cookie").split(";")[0];
   treeShortId = (await db.prepare("SELECT short_id FROM public_ids WHERE kind = 'tree' AND entity_id = ?").bind(treeId).first()).short_id;
   emptyShortId = (await db.prepare("SELECT short_id FROM public_ids WHERE kind = 'tree' AND entity_id = ?").bind(emptyTree).first()).short_id;
@@ -30,11 +30,11 @@ test("only versioned code is publicly cacheable; HTML and records stay private",
     const page = await call(route), html = await page.text();
     assert.equal(page.headers.get("cache-control"), "private, no-store");
     assert.ok(!html.includes("Private relative"));
-    const scripts = [...html.matchAll(/<script src="([^"]+)"[^>]*defer/g)].map(match => match[1]);
+    const scripts = [...html.matchAll(/<script[^>]* src="([^"]+)"[^>]*>/g)].map(match => match[1]);
     assert.equal(scripts.length, route ? 3 : 1);
     assert.ok(html.length < 60000, "HTML must not embed the layout engine");
     for (const script of scripts) {
-      assert.match(script, /\/assets\/(app|elk|viewer)\.[a-f0-9]{16}\.js$/);
+      assert.match(script, /\/assets\/(app|elk|viewer)\.[A-Za-z0-9_-]+\.js$/);
       const response = await mf.dispatchFetch(origin + script);
       assert.equal(response.status, 200);
       assert.equal(response.headers.get("cache-control"), "public, max-age=31536000, immutable");
@@ -76,12 +76,12 @@ test("photo revalidation authenticates first and respects replacements, removal 
   assert.equal(replaced.status, 200); assert.equal(replaced.headers.get("etag"), `"${next}"`);
   const token = randomUUID(), email = "temporary@example.com";
   await db.batch([
-    db.prepare("INSERT INTO editors(email) VALUES (?)").bind(email),
-    db.prepare("INSERT INTO sessions(token_hash,email,credential,expires) VALUES (?,?,?,?)").bind(createHash("sha256").update(token).digest("hex"), email, "{}", Math.floor(Date.now()/1000)+3600),
+    db.prepare("INSERT INTO users(id,username,name,email,role,password_hash) VALUES(?,?,?,?,'editor','unused')").bind(email,email,"Temporary",email),
+    db.prepare("INSERT INTO sessions(token_hash,user_id,auth_version,expires) VALUES (?,?,?,?)").bind(createHash("sha256").update(token).digest("hex"), email, 1, Math.floor(Date.now()/1000)+3600),
   ]);
   const signed = { cookie: `family_session=${token}`, "if-none-match": `"${next}"` };
   assert.equal((await call(path, signed)).status, 304);
-  await db.prepare("DELETE FROM editors WHERE email = ?").bind(email).run();
+  await db.prepare("UPDATE users SET enabled=0,auth_version=auth_version+1 WHERE email = ?").bind(email).run();
   assert.equal((await call(path, signed)).status, 401);
   const removed = await mf.dispatchFetch(base + path, { method: "DELETE", headers: { ...owner, origin } });
   assert.equal(removed.status, 200);
