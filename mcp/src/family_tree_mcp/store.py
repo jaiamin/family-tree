@@ -104,9 +104,11 @@ class Store:
         request = Request(
             f"{self.url}/api{path}",
             data=json.dumps(body).encode() if body is not None else None,
-            headers={"Authorization": f"Bearer {self._token}", "Content-Type": "application/json"},
+            headers={"Content-Type": "application/json"},
             method=method or ("POST" if body is not None else "GET"),
         )
+        # urllib otherwise forwards ordinary headers to redirected origins.
+        request.add_unredirected_header("Authorization", f"Bearer {self._token}")
         try:
             with urlopen(request, timeout=30) as response:
                 return json.load(response)
