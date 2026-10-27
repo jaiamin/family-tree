@@ -387,13 +387,17 @@
     }
     return data.tree;
   }
-  window.familySite = { base, loadTree: async () => { await ready; return loadTree(); }, editPerson,
+  window.familySite = { base, openDialog: dialog, loadTree: async () => { await ready; return loadTree(); }, editPerson,
     canEdit: () => session?.role === "editor" || session?.role === "owner",
-    suggestionAction: id => button("Suggest a change", () => suggest(id), "text-button suggest-action"),
+    suggestionAction: id => {
+      const action = button("Suggest", () => suggest(id), "action suggest-action");
+      action.setAttribute("aria-label", "Suggest a change");
+      return action;
+    },
     personActions: id => {
       if (session.role === "member") return null;
       const tools = el("div", { class: "person-tools" });
-      tools.append(button("Edit details", () => editPerson(id), "site-button primary"), button("Add relative", () => addRelative(id)));
+      tools.append(button("Edit details", () => editPerson(id)), button("Add relative", () => addRelative(id)));
       return tools;
     },
   };
