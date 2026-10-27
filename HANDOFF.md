@@ -29,3 +29,9 @@ Suggestions follow-up: New/Reviewed/All filters with counts stay fixed above the
 User declined prior critique recommendations; scope only: mobile search-focus zoom, graph control sizing, and moving editing/account into Family menu. Mobile search and comparison inputs now16px to avoid iOS focus zoom without disabling user zoom; graph buttons36px match header controls. Viewer Edit uses pencil icon in Family menu; editor identity/photo/email and Sign out of editing move into same menu; obsolete separate account-trigger styles removed. Mobile graph grid remains2 rows/112px with empty actions hidden.
 
 Verification:34 web tests, build, TypeScript and whitespace pass. Browser checked viewer Edit opens sign-in, synthetic editor name/email/image load, desktop/mobile320/390, dark/light; header112px, top/bottom controls36px, search/compare fonts16px. Chromium focus scale1; real iPhone Safari zoom behavior requires user confirmation. Existing two-stage sign-out API unchanged. No production mutation. Local preview8000 restarted; do not push until reviewed.
+
+## Local visible-action simplification
+
+User approved only Share beside search and Family menu in trees; overview only Family menu. Added Share text beside icon and show it on mobile; removed duplicate mobile menu share. Moved theme and GitHub into labeled menu rows; centralized duplicate home/tree theme handlers into shared client and removed obsolete sun/moon styles. Mobile header retains112px height and complete placeholder at320px. Previous14px placeholder tweak included; mobile input remains16px.
+
+Verification:34 web tests, TypeScript/build/whitespace pass; browser320px tree and desktop tree/overview, light/dark toggling and persisted theme across routes. Existing share handler reused. No backend changes or production data touched. Keep local on8000 until approved; no push.

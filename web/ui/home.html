@@ -35,12 +35,5 @@ __HEADER__
 <h2>Family trees (__TREE_COUNT__)</h2>
 __TREES__
 </main>
-<script>
-  document.getElementById("theme").onclick = () => {
-    const dark = document.documentElement.dataset.theme !== "dark";
-    dark ? document.documentElement.dataset.theme = "dark" : delete document.documentElement.dataset.theme;
-    try { localStorage.setItem("theme", dark ? "dark" : "light"); } catch {}
-  };
-</script>
 </body>
 </html>

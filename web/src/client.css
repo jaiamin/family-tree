@@ -40,7 +40,6 @@
 .site-menu .menu-items { position: fixed; overflow-y: auto; width: 224px; max-width: calc(100vw - 32px); padding: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow-lg); z-index: 20; }
 .menu-items button, .menu-items a { display: flex; align-items: center; justify-content: flex-start; gap: 10px; min-height: 44px; width: 100%; padding: 11px 12px; border: 0; border-radius: 5px; background: none; color: var(--fg); font: inherit; font-size: 13px; text-align: left; text-decoration: none; cursor: pointer; }
 .menu-items button:hover, .menu-items a:hover { background: var(--chip); }
-.menu-items .mobile-menu-item { display: none; }
 .menu-items .icon { color: var(--muted); }
 header > .actions:empty { display: none; }
 .person-picker-results { max-height: 220px; overflow-y: auto; margin-top: 8px; }
@@ -95,16 +94,14 @@ header > .actions:empty { display: none; }
 .inbox-meta { color: var(--muted); font-size: 12px; }
 .inbox-item .text-button { padding-left: 0; }
 @media (max-width: 640px) {
-  #share-tree { display: none; }
-  .menu-items .mobile-menu-item { display: flex; }
   body[data-family-base] header { gap: 8px; }
   body[data-family-base]:has(#family-list) header { flex-wrap: nowrap; }
   body[data-family-base]:has(#family-list) header .title { flex: 1; min-width: 0; }
   header > .actions, .header-utilities { flex: none; gap: 4px; }
-  body[data-family-base]:has(#canvas) header { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
-  body[data-family-base]:has(#canvas) header > .actions { display: none; }
+  body[data-family-base]:has(#canvas) header { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; }
+  body[data-family-base]:has(#canvas) header > .actions { grid-column: 2; grid-row: 2; }
   body[data-family-base]:has(#canvas) header .title { grid-column: 1 / -1; grid-row: 1; }
-  body[data-family-base]:has(#canvas) header .header-utilities { grid-column: 2; grid-row: 2; justify-self: end; }
+  body[data-family-base]:has(#canvas) header .header-utilities { grid-column: 3; grid-row: 2; justify-self: end; }
   body[data-family-base]:has(#canvas) header .search { grid-column: 1; grid-row: 2; width: auto; min-width: 0; }
   body[data-family-base]:has(#canvas) .search input { min-width: 0; text-overflow: ellipsis; }
   body[data-family-base]:has(#canvas) .results { width: min(320px, calc(100vw - 32px)); right: auto; }
@@ -147,3 +144,5 @@ header > .actions:empty { display: none; }
 .inbox-actions .text-button { min-height: 40px; padding: 8px 0; }
 .inbox-actions .danger { margin-left: auto; }
 .suggestions-empty { margin: 20px 0 4px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+
+header .share-tree-button { display: flex; gap: 6px; width: auto; padding: 0 10px; font-size: 13px; font-weight: 500; }
