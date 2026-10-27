@@ -78,7 +78,7 @@
   }
   #card .photo .badge svg.icon { width: 12px; height: 12px; }
   #card .photo:hover .avatar { filter: brightness(.94); }
-  #card .photo-label { display: block; min-height: 28px; margin-top: 0; padding: 0; border: 0; background: none; color: var(--muted); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+  #card .photo-label { display: block; min-height: 28px; line-height: 20px; text-align: left; margin-top: 0; padding: 0; border: 0; background: none; color: var(--muted); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
   #card .photo-label:hover { color: var(--fg); }
   .photo-person { margin: 0 0 20px; color: var(--muted); text-align: center; overflow-wrap: anywhere; }
   .photo-dialog .dialog-body > .avatar { width: 96px; height: 96px; margin: 8px auto 12px; font-size: 28px; }
@@ -138,7 +138,7 @@
   }
   #card .action:hover { background: var(--chip); }
   #card .action:disabled { opacity: .6; cursor: default; }
-  #card .who { min-width: 0; }
+  #card .who { position: relative; top: 2px; min-width: 0; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; }
   #card .none { margin: 14px 0 0; color: var(--muted); font-size: 13px; }
   #share-status { position: fixed; bottom: max(20px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); z-index: 5; max-width: calc(100% - 100px); padding: 8px 12px; border-radius: 8px; background: var(--fg); color: var(--surface); pointer-events: none; }
   #share-status:empty { display: none; }
@@ -166,7 +166,7 @@
   }
   @media (prefers-reduced-motion: reduce) { #stage.glide, #card { transition: none; animation: none; } }
   #card.comparing .top { padding-bottom: 16px; border-bottom: 1px solid var(--border); }
-  .compare-person { display: flex; align-items: center; gap: 10px; padding: 12px 8px 0; font-size: 13px; font-weight: 500; }
+  .compare-person { display: flex; align-items: center; gap: 10px; padding: 20px 8px 0; font-size: 13px; font-weight: 500; }
   .compare-person .name { overflow-wrap: anywhere; }
   .compare-label { display: block; margin: 24px 0 8px; padding: 0 8px; font-size: 12px; font-weight: 500; }
   #compare-search { width: 100%; height: 40px; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--fg); font: inherit; font-size: 13px; }

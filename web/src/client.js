@@ -123,25 +123,66 @@
   async function inbox() {
     const panel = dialog("Family suggestions");
     if (!panel) return;
-    const status = el("p", { class: "form-status", role: "status" }, "Loading…"); panel.body.append(status);
-    panel.footer.append(button("Done", () => panel.box.dismiss()));
-    try {
-      const items = await api("/suggestions"); status.remove();
-      if (!items.length) panel.body.append(el("p", { class: "form-note" }, "No suggestions yet."));
-      for (const item of items) {
-        const row = el("div", { class: "inbox-item" }, el("strong", {}, item.person_name || "General suggestion"), el("p", {}, item.message),
-          el("p", { class: "inbox-meta" }, `From ${item.sender_name}${item.contact ? ` · ${item.contact}` : ""}`), el("p", { class: "inbox-meta" }, new Date(item.created_at).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })));
-        const toggle = button(item.status === "done" ? "Reopen" : "Mark as reviewed", async () => {
-          try { await api(`/suggestions/${item.id}`, { status: item.status === "done" ? "open" : "done" }, "PATCH"); item.status = item.status === "done" ? "open" : "done"; toggle.textContent = item.status === "done" ? "Reopen" : "Mark as reviewed"; }
-          catch (error) { status.classList.add("is-error"); status.textContent = error.message; panel.body.prepend(status); }
-        }, "text-button");
-        if (item.person_id && data?.tree?.people[item.person_id]) row.append(button("Open person", () => {
+    panel.box.classList.add("suggestions-dialog");
+    panel.footer.remove();
+    const status = el("p", { class: "form-status", role: "status" }, "Loading…");
+    const list = el("div", { class: "suggestions-list" });
+    const filters = el("div", { class: "suggestion-filters", role: "group", "aria-label": "Filter suggestions" });
+    panel.box.querySelector(".dialog-top").after(filters);
+    panel.body.append(status, list);
+    let items = [], filter = "open";
+    const choices = [["open", "New"], ["done", "Reviewed"], ["all", "All"]];
+    const tabs = choices.map(([value, label]) => {
+      const tab = button(label, () => { filter = value; render(); }, "site-button");
+      filters.append(tab); return tab;
+    });
+    const fail = error => { status.classList.add("is-error"); status.textContent = error.message; status.scrollIntoView({ block: "nearest" }); };
+    function render() {
+      choices.forEach(([value, label], index) => {
+        tabs[index].textContent = `${label} (${items.filter(item => value === "all" || item.status === value).length})`;
+        tabs[index].setAttribute("aria-pressed", String(filter === value));
+      });
+      const visible = items.filter(item => filter === "all" || item.status === filter);
+      list.replaceChildren();
+      if (!visible.length) list.append(el("p", { class: "suggestions-empty" }, items.length ? `No ${filter === "done" ? "reviewed" : "new"} suggestions.` : "No suggestions yet."));
+      for (const item of visible) {
+        const date = new Date(item.created_at).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+        const row = el("article", { class: "inbox-item" },
+          el("div", { class: "inbox-heading" }, el("strong", {}, item.person_name || "General suggestion"), el("span", { class: "inbox-meta" }, `${item.status === "done" ? "Reviewed · " : ""}${date}`)),
+          el("p", { class: "inbox-message" }, item.message),
+          el("p", { class: "inbox-meta" }, `From ${item.sender_name}`),
+          item.contact ? el("p", { class: "inbox-meta" }, item.contact) : null);
+        const actions = el("div", { class: "inbox-actions" });
+        if (item.person_id && (data?.tree?.people[item.person_id] || item.tree_id)) actions.append(button("Open person", () => {
+          if (!data?.tree?.people[item.person_id]) { location.href = `${base}/trees/${item.tree_id}#${item.person_id}`; return; }
           panel.box.close(); location.hash = item.person_id;
           document.dispatchEvent(new CustomEvent("family-person-select", { detail: item.person_id }));
         }, "text-button"));
-        row.append(toggle); panel.body.append(row);
+        const change = async (action, operation) => {
+          if (panel.box.saving) return;
+          panel.box.saving = true;
+          status.textContent = ""; status.classList.remove("is-error");
+          const controls = [...panel.box.querySelectorAll("button")];
+          controls.forEach(control => control.disabled = true);
+          action.textContent = "Saving…";
+          try { await operation(); render(); }
+          catch (error) { action.textContent = action === remove ? "Delete" : item.status === "done" ? "Reopen" : "Mark reviewed"; fail(error); }
+          finally { panel.box.saving = false; controls.forEach(control => control.disabled = false); }
+        };
+        const review = button(item.status === "done" ? "Reopen" : "Mark reviewed", () => change(review, async () => {
+          const next = item.status === "done" ? "open" : "done";
+          await api(`/suggestions/${item.id}`, { status: next }, "PATCH"); item.status = next;
+        }), "text-button");
+        const remove = button("Delete", () => {
+          if (confirm("Permanently delete this suggestion? This cannot be undone.")) change(remove, async () => {
+            await api(`/suggestions/${item.id}`, undefined, "DELETE"); items = items.filter(other => other.id !== item.id);
+          });
+        }, "text-button danger");
+        actions.append(review, remove); row.append(actions); list.append(row);
       }
-    } catch (error) { status.classList.add("is-error"); status.textContent = error.message; }
+    }
+    try { items = await api("/suggestions"); status.textContent = ""; render(); }
+    catch (error) { fail(error); }
   }
   const detailFields = (form, p) => {
     const fields = {};
@@ -299,7 +340,7 @@
     if (!panel) return;
     panel.box.classList.add("editor-access");
     const list = el("div", { class: "editor-access-list" });
-    panel.body.append(el("p", { class: "form-note" }, `Owner: ${session.email}. Editors sign in with their own Google account.`), list);
+    panel.body.append(el("p", { class: "form-note" }, `Owner: ${session.email}`), list);
     let input;
     const { form, status, finish } = formIn(panel, "Add editor", async () => { await api("/editors", { email: input.value }); input.value = ""; await refresh(); });
     input = field(form, "Google account email", "", { required: true, type: "email", max: 254 }); finish();

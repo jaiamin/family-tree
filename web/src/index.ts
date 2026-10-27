@@ -151,7 +151,7 @@ async function route(request: Request, env: Env): Promise<Response> {
     }
     if (path === "/api/suggestions" && method === "GET") {
       requireRole(user, "editor");
-      const { results } = await env.DB.prepare("SELECT * FROM suggestions ORDER BY created_at DESC LIMIT 200").all();
+      const { results } = await env.DB.prepare("SELECT suggestions.*, (SELECT tree_id FROM tree_members WHERE person_id = suggestions.person_id ORDER BY tree_id LIMIT 1) AS tree_id FROM suggestions ORDER BY created_at DESC LIMIT 200").all();
       return json(results);
     }
     if (path.startsWith("/api/suggestions/") && method === "PATCH") {
@@ -159,6 +159,14 @@ async function route(request: Request, env: Env): Promise<Response> {
       const body = await bodyOf(request), id = path.split("/")[3];
       assert(uuid(id) && (body.status === "open" || body.status === "done"), "Invalid suggestion status.");
       const result = await env.DB.prepare("UPDATE suggestions SET status = ? WHERE id = ?").bind(body.status, id).run();
+      assert(result.meta.changes, "Suggestion not found.", 404);
+      return json({ ok: true });
+    }
+    if (/^\/api\/suggestions\/[^/]+$/.test(path) && method === "DELETE") {
+      requireRole(user, "editor");
+      const id = path.split("/")[3];
+      assert(uuid(id), "Invalid suggestion.");
+      const result = await env.DB.prepare("DELETE FROM suggestions WHERE id = ?").bind(id).run();
       assert(result.meta.changes, "Suggestion not found.", 404);
       return json({ ok: true });
     }

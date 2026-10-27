@@ -133,3 +133,19 @@ header > .actions:empty { display: none; }
 .editor-access-list .connection-row:first-child { padding-top: 0; }
 .editor-access-list .connection-row:last-child { border-bottom: 0; }
 .editor-access-list:not(:empty) + form { padding-top: 20px; border-top: 1px solid var(--border); }
+
+.suggestion-filters { flex: none; display: flex; gap: 6px; padding: 0 20px 16px; border-bottom: 1px solid var(--border); }
+.suggestion-filters .site-button { flex: 1; min-height: 40px; padding: 0 8px; white-space: nowrap; }
+.suggestion-filters [aria-pressed="true"] { background: var(--chip); border-color: var(--muted); }
+.suggestions-dialog .dialog-body { padding-top: 4px; }
+.suggestions-dialog .inbox-item { padding: 20px 0; }
+.suggestions-dialog .inbox-item:last-child { border-bottom: 0; padding-bottom: 0; }
+.inbox-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 6px 12px; }
+.inbox-heading strong { font-weight: 600; overflow-wrap: anywhere; }
+.inbox-heading .inbox-meta { flex: none; }
+.inbox-item .inbox-message { margin: 12px 0; font-size: 14px; line-height: 1.6; }
+.inbox-item p.inbox-meta { margin: 4px 0; }
+.inbox-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0 16px; margin-top: 12px; }
+.inbox-actions .text-button { min-height: 40px; padding: 8px 0; }
+.inbox-actions .danger { margin-left: auto; }
+.suggestions-empty { margin: 20px 0 4px; color: var(--muted); font-size: 13px; line-height: 1.5; }
