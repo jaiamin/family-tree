@@ -58,11 +58,6 @@ function avatar(id, size = "") {
   return circle;
 }
 
-$("theme").onclick = () => {
-  const dark = document.documentElement.dataset.theme !== "dark";
-  dark ? (document.documentElement.dataset.theme = "dark") : delete document.documentElement.dataset.theme;
-  try { localStorage.setItem("theme", dark ? "dark" : "light"); } catch {}
-};
 const treeSwitch = $("tree-switch"), treeOptions = $("tree-options");
 function closeTreeOptions() {
   treeOptions.hidden = true;

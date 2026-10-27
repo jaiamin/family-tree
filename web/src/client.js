@@ -20,6 +20,15 @@
     }
     return result;
   }
+  let toastNotice, toastTimer;
+  function toast(message, kind) {
+    clearTimeout(toastTimer); toastNotice?.remove();
+    const notice = el("div", { class: "site-toast", "data-kind": kind, role: kind === "error" ? "alert" : "status", popover: "manual" });
+    notice.append(icon(kind === "error" ? ["M12 8v5m0 3h.01", "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18"] : ["m5 12 4 4L19 6"]), el("span", {}, message));
+    (activeDialog || document.body).append(notice);
+    notice.showPopover(); toastNotice = notice;
+    toastTimer = setTimeout(() => notice.remove(), kind === "error" ? 8000 : 5000);
+  }
   let session, data;
   let activeDialog;
   function dialog(title) {
@@ -75,7 +84,10 @@
     };
     return { form, status, finish: () => form.append(status) };
   }
-  async function googleSignIn(container, status) {
+  async function googleSignIn(container) {
+    container.signInObserver?.disconnect();
+    container.textContent = "Loading Google sign-in…";
+    container.setAttribute("aria-busy", "true");
     try {
       if (!session.googleClientId) throw new Error("Editor sign-in hasn't been configured yet.");
       const challenge = await api("/google/start", {});
@@ -85,22 +97,46 @@
           script.onload = resolve; script.onerror = () => reject(new Error("Google sign-in couldn't load. Please try again.")); document.head.append(script);
         });
       }
+      if (!container.isConnected) return;
       window.google.accounts.id.initialize({ client_id: session.googleClientId, nonce: challenge.nonce, auto_select: false,
-        callback: async response => { try { await api("/google/login", { credential: response.credential }); location.reload(); } catch (error) { status.classList.add("is-error"); status.textContent = error.message; } },
+        callback: async response => {
+          try {
+            await api("/google/login", { credential: response.credential });
+            try { sessionStorage.setItem("family-editor-signed-in", "1"); location.reload(); }
+            catch { activeDialog?.close(); toast("Signed in to edit.", "success"); setTimeout(() => location.reload(), 3000); }
+          } catch (error) {
+            if (!container.isConnected) return;
+            toast(error.message, "error");
+            await googleSignIn(container);
+          }
+        },
       });
-      status.textContent = "";
-      container.replaceChildren();
-      window.google.accounts.id.renderButton(container, { type: "standard", theme: "outline", size: "large", text: "signin_with", width: 232 });
-    } catch (error) { container.replaceChildren(); status.classList.add("is-error"); status.textContent = error.message; }
+      let width = 0;
+      const render = () => {
+        const next = Math.min(400, Math.floor(container.clientWidth));
+        if (!next || next === width) return;
+        width = next; container.replaceChildren();
+        window.google.accounts.id.renderButton(container, { type: "standard", theme: document.documentElement.dataset.theme === "dark" ? "filled_black" : "outline", size: "large", shape: "rectangular", text: "signin_with", width });
+      };
+      render();
+      if (!container.signInObserver) container.closest("dialog").addEventListener("close", () => container.signInObserver?.disconnect(), { once: true });
+      container.signInObserver = new ResizeObserver(render); container.signInObserver.observe(container);
+    } catch (error) {
+      if (!container.isConnected) return;
+      container.replaceChildren(); toast(error instanceof TypeError ? "Google sign-in couldn’t load. Please try again." : error.message, "error");
+      if (session.googleClientId) container.append(button("Try again", () => googleSignIn(container)));
+    } finally { container.setAttribute("aria-busy", "false"); }
   }
   function editorSignIn() {
-    const panel = dialog("Editor sign-in");
+    const panel = dialog("Sign in to edit");
     if (!panel) return;
     panel.box.classList.add("editor-sign-in");
     panel.footer.remove();
-    const holder = el("div", { class: "google-sign-in" }, "Loading sign-in…"), status = el("p", { class: "form-status", role: "status" });
-    panel.body.append(el("p", { class: "form-note" }, "Use your approved Google account."), holder, status);
-    googleSignIn(holder, status);
+    const holder = el("div", { class: "google-sign-in" });
+    const note = el("p", { class: "form-note", id: "editor-sign-in-note" }, "Use an approved Google account.");
+    panel.box.setAttribute("aria-describedby", note.id);
+    panel.body.append(note, holder);
+    googleSignIn(holder);
   }
   function suggest(personId) {
     const panel = dialog(personId ? "Suggest a change" : "Send a suggestion");
@@ -356,36 +392,23 @@
   function mountHeader() {
     const actions = document.querySelector("header > .actions");
     const signOut = async () => { await api("/logout", {}); location.reload(); };
-    if (session.role === "member") actions.prepend(button("Edit", editorSignIn, "site-button edit-button"));
-    else {
-      const account = el("details", { class: "site-menu account-menu", name: "family-header-menu" });
-      const accountAvatar = () => {
-        const avatar = el("span", { class: "account-avatar", "aria-hidden": "true" },
-          (session.name || session.email).trim().split(/\s+/).slice(0, 2).map(part => part.charAt(0)).join("").toUpperCase());
-        if (session.picture) {
-          const image = el("img", { src: session.picture, alt: "", referrerpolicy: "no-referrer", hidden: "" });
-          image.onload = () => { image.hidden = false; };
-          avatar.append(image);
-        }
-        return avatar;
-      };
-      const trigger = el("summary", { class: "account-trigger", title: session.email, "aria-label": `Account: ${session.email}` },
-        accountAvatar(), icon(["m6 9 6 6 6-6"]));
-      const signOutButton = button("", signOut);
-      signOutButton.append(icon(["M9 5H5v14h4M14 8l4 4-4 4M9 12h9"]), el("span", {}, "Sign out of editing"));
-      const options = el("div", { class: "menu-items" }, el("div", { class: "account-identity" }, accountAvatar(),
-        el("div", { class: "account-address" }, session.name ? el("strong", { class: "account-name" }, session.name) : null, el("span", {}, session.email))), signOutButton);
-      account.append(trigger, options); actions.prepend(account);
-    }
     const menu = el("details", { class: "site-menu", name: "family-header-menu" }), summary = el("summary", { "aria-label": "Family menu", title: "Family menu" }, icon(["M5 12h.01M12 12h.01M19 12h.01"]));
     const items = el("div", { class: "menu-items" });
     const item = (label, paths, action) => {
       const entry = button("", () => { menu.open = false; action(); });
       entry.append(icon(paths), el("span", {}, label)); items.append(entry); return entry;
     };
+    if (session.role !== "member") {
+      const avatar = el("span", { class: "account-avatar", "aria-hidden": "true" },
+        (session.name || session.email).trim().split(/\s+/).slice(0, 2).map(part => part.charAt(0)).join("").toUpperCase());
+      if (session.picture) {
+        const image = el("img", { src: session.picture, alt: "", referrerpolicy: "no-referrer", hidden: "" });
+        image.onload = () => { image.hidden = false; }; avatar.append(image);
+      }
+      items.append(el("div", { class: "account-identity" }, avatar,
+        el("div", { class: "account-address" }, session.name ? el("strong", { class: "account-name" }, session.name) : null, el("span", {}, session.email))));
+    }
     const treeId = location.pathname.slice(base.length).match(/^\/trees\/([0-9a-f-]+)\/?$/)?.[1];
-    if (treeId) item("Share tree", ["M12 16V3m-4 4 4-4 4 4M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"], () => $("share-tree").click()).classList.add("mobile-menu-item");
-    if (treeId) items.append(el("a", { href: `${base}/api/trees/${treeId}/gedcom`, download: "" }, icon(["M12 3v12m-4-4 4 4 4-4M5 16v5h14v-5"]), el("span", {}, "Download GEDCOM")));
     item("Send a suggestion", ["M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9H13a8.5 8.5 0 0 1 8 8v.5Z"], () => suggest());
     if (session.role !== "member") item("Family suggestions", ["M4 4h16v16H4zM4 13h4l2 3h4l2-3h4"], inbox);
     if (session.role === "owner") {
@@ -395,7 +418,19 @@
         items.append(notice);
       }
     }
-    if (session.role === "member") item("Sign out", ["M9 5H5v14h4M14 8l4 4-4 4M9 12h9"], signOut);
+    if (treeId) items.append(el("a", { href: `${base}/api/trees/${treeId}/gedcom`, download: "" }, icon(["M12 3v12m-4-4 4 4 4-4M5 16v5h14v-5"]), el("span", {}, "Download GEDCOM")));
+    items.append(el("hr", { class: "menu-divider" }));
+    const theme = item("Light or dark", ["M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"], () => {
+      const dark = document.documentElement.dataset.theme !== "dark";
+      dark ? document.documentElement.dataset.theme = "dark" : delete document.documentElement.dataset.theme;
+      try { localStorage.setItem("theme", dark ? "dark" : "light"); } catch {}
+    });
+    theme.id = "theme";
+    items.append(el("a", { href: "https://github.com/jaiamin/family-tree", target: "_blank", rel: "noopener" },
+      icon(["M9 19c-4 1-4-2-6-2M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5a5.4 5.4 0 0 0-1-3.5c.3-1.2.3-2.4 0-3.5 0 0-1 0-3 1.5a15.4 15.4 0 0 0-8 0C6 2 5 2 5 2c-.3 1.1-.3 2.3 0 3.5A5.4 5.4 0 0 0 4 9c0 3.5 3 5.5 6 5.5A4.8 4.8 0 0 0 9 18v4"]), el("span", {}, "GitHub")));
+    items.append(el("hr", { class: "menu-divider" }));
+    if (session.role === "member") item("Edit", ["M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L9 17l-4 1 1-4Z"], editorSignIn);
+    item(session.role === "member" ? "Sign out" : "Sign out of editing", ["M9 5H5v14h4M14 8l4 4-4 4M9 12h9"], signOut);
     menu.append(summary, items); document.querySelector(".header-utilities").append(menu);
     const headerMenus = [...actions.parentElement.querySelectorAll("details")];
     for (const dropdown of headerMenus) dropdown.addEventListener("toggle", () => {
@@ -473,6 +508,11 @@
         };
       } else {
         mountHeader();
+        try {
+          const signedIn = sessionStorage.getItem("family-editor-signed-in");
+          sessionStorage.removeItem("family-editor-signed-in");
+          if (signedIn && session.role !== "member") toast("Signed in to edit.", "success");
+        } catch {}
         if ($("family-list")) await loadTree();
       }
       resolve();

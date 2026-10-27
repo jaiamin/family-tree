@@ -12,7 +12,7 @@ const homeHeader = render(header, shared);
 const treeHeader = render(header, { ...shared,
   __COUNT__: '<div class="count" id="count"></div>', __SEARCH__: await source("search.html"),
   __TREE_SWITCH__: '<span class="tree-crumb"><span class="divider" aria-hidden="true">/</span><a class="current-tree" href="/">Family tree</a><span class="tree-picker"><button id="tree-switch" aria-label="Switch family tree" aria-expanded="false" aria-controls="tree-options" title="Switch family tree"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><ul id="tree-options" class="tree-options" aria-label="Family trees" hidden></ul></span></span>',
-  __SHARE_TREE__: '<button class="icon-button" id="share-tree" aria-label="Share tree" title="Share tree"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V3m-4 4 4-4 4 4M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg></button>',
+  __SHARE_TREE__: '<button class="icon-button share-tree-button" id="share-tree" aria-label="Share tree" title="Share tree"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V3m-4 4 4-4 4 4M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg><span>Share</span></button>',
 });
 const css = await source("shell.css"), clientCss = await readFile("src/client.css", "utf8");
 const pages = {};
