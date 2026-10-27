@@ -1,6 +1,6 @@
-# Family tree
+# Family Tree
 
-A private family website with shared people across trees, photos, search, two graph layouts, relationship comparison, and person/tree links. A local MCP client supports larger edits against the same hosted data.
+A private family-tree web app with photos, search, relationship comparison, and sharing. People can belong to multiple trees. The website and local MCP edit the same hosted data.
 
 - **Family password:** view, upload/replace photos, send private suggestions.
 - **Approved Google editors:** edit details, add relatives, connect existing people, remove displayed photos, review suggestions.
@@ -8,9 +8,11 @@ A private family website with shared people across trees, photos, search, two gr
 
 ## Develop
 
-Requires Node.js 26, pnpm, and [uv](https://docs.astral.sh/uv/).
+Requires Node.js 26, pnpm, Python 3.10+, and [uv](https://docs.astral.sh/uv/).
 
 ```sh
+git clone https://github.com/jaiamin/family-tree.git
+cd family-tree
 pnpm --dir web install --frozen-lockfile
 pnpm --dir web build
 pnpm --dir web dev

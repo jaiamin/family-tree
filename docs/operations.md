@@ -27,7 +27,7 @@ Ensure the portfolio middleware does not intercept this path. Test Google sign-i
 
 ## Repository name
 
-Renaming the repository does not change the website, Worker, database, or MCP command. GitHub redirects the old repository URL. Update your Git remote, the GitHub link in `web/ui/header.html`, and any Cloudflare build connection after a rename. The Python package/command can remain `family-tree-mcp`.
+Repository: [jaiamin/family-tree](https://github.com/jaiamin/family-tree). The local MCP package and command remain `family-tree-mcp`. Repository renames do not change the website, Worker, or data; update the Git remote, source link, and any connected Cloudflare build afterward.
 
 ## GitHub deployments
 
