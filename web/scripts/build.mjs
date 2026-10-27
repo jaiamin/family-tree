@@ -24,7 +24,7 @@ const templates = {
   }),
 };
 for (const [name, template] of Object.entries(templates)) {
-  pages[name] = template.replace('<body>', `<body data-family-base="${base}">`).replaceAll('href="/', `href="${base}/`).replace('</head>', `<style>${clientCss}</style><script src="${base}/app.js"></script></head>`);
+  pages[name] = template.replace('<body>', `<body data-family-base="${base}">`).replaceAll('href="/', `href="${base}/`).replaceAll(`href="${base}/"`, `href="${base || '/'}"`).replace('</head>', `<style>${clientCss}</style><script src="${base}/app.js"></script></head>`);
 }
 pages["/login.html"] = (await readFile("src/login.html", "utf8")).replaceAll("__BASE__", base).replace("__SHELL_CSS__", css).replace("__CLIENT_CSS__", clientCss);
 pages["/favicon.svg"] = await source("favicon.svg");

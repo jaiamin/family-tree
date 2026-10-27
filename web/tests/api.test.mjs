@@ -62,6 +62,17 @@ test("family password grants viewing, with a private path-scoped session", async
   const page = await mf.dispatchFetch(`${origin}${base}/trees/${treeId}/`, { headers: { cookie: familyCookie } });
   assert.ok(!(await page.text()).includes("Private family note"), "HTML is a data-free shell, records arrive only through authenticated API");
 });
+test("canonical home and deep tree URLs render authenticated shells without redirecting", async () => {
+  for (const path of [base, `${base}/trees/${treeId}`, `${base}/trees/${treeId}/`]) {
+    const response = await mf.dispatchFetch(`${origin}${path}`, { headers: { cookie: familyCookie } });
+    assert.equal(response.status, 200, path);
+    assert.equal(response.headers.get("location"), null, path);
+    const html = await response.text();
+    assert.match(html, /id="title"/);
+    assert.ok(html.includes(`href="${base}"`), "home link uses the proxy-safe canonical path");
+    assert.ok(!html.includes(`href="${base}/"`), "home link must not reintroduce the failing trailing slash");
+  }
+});
 test("family members may suggest but cannot read suggestions, edit records, or create trees", async () => {
   const added = await call("/suggestions", { cookie: familyCookie, body: { personId: parentId, name: "A relative", message: "Please check this date", contact: "" } });
   assert.equal(added.status, 201);
