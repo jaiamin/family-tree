@@ -109,10 +109,9 @@
   #card h2 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
   #card .close { position: absolute; top: 10px; right: 10px; display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 6px; background: none; color: var(--muted); cursor: pointer; }
   #card .close:hover { background: var(--chip); color: var(--fg); }
-  #card dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 14px 0 0; font-size: 13px; }
-  #card dt { color: var(--muted); }
-  #card dd { margin: 0; }
-  #card .notes { margin: 12px 0 0; font-size: 13px; white-space: pre-line; }
+  #card .person-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: baseline; gap: 10px 16px; margin: 18px 0 0; font-size: 13px; line-height: 1.5; }
+  #card .person-facts dt { color: var(--muted); }
+  #card .person-facts dd { min-width: 0; margin: 0; white-space: pre-line; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
   #card section { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
   #card h3 { margin: 0 0 6px; padding-left: 8px; font-size: 12px; font-weight: 500; color: var(--muted); }
   .relative {

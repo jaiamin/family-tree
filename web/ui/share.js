@@ -20,10 +20,14 @@ function years(p) {
   if (p.death_date) return `d. ${year(p.death_date)}`;
   return "";
 }
-// "1915–1998 · 83 years" when both years are known.
-function lifespan(p) {
-  const [born, died] = [p.birth_date, p.death_date].map((d) => Number(d?.match(/\d{4}/)?.[0]));
-  return born && died && died >= born ? `${years(p)} · ${died - born} years` : "";
+function formatDate(value) {
+  if (!value) return "";
+  const match = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(value);
+  if (!match) return value;
+  const [, year, month, day] = match;
+  const date = new Date(`${year}-${month}-${day || "01"}T00:00:00Z`);
+  if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== `${year}-${month}-${day || "01"}`) return value;
+  return new Intl.DateTimeFormat("en-GB", { ...day ? { day: "numeric" } : {}, month: "short", year: "numeric", timeZone: "UTC" }).format(date);
 }
 function el(tag, attrs = {}, ...kids) {
   const node = document.createElement(tag);
@@ -580,19 +584,20 @@ function select(id, preserveComparison = false) {
   const compare = el("button", { class: "action", "aria-label": "Compare relationship" }, "Compare");
   compare.onclick = () => startComparison(id);
   const facts = [
-    ["Born", [p.birth_date, p.birth_place && `in ${p.birth_place}`].filter(Boolean).join(" ")],
-    ["Died", p.death_date],
+    ["Born", formatDate(p.birth_date)],
+    ["Birthplace", p.birth_place],
+    ["Died", formatDate(p.death_date)],
+    ["Notes", p.notes],
   ].filter(([, v]) => v);
   const photo = photoEditor(id);
   const box = el(
     "div",
     { id: "card", role: "dialog", "aria-label": p.name },
-    el("div", { class: "top" }, photo.circle, el("div", { class: "who" }, el("h2", {}, displayName(id)), lifespan(p) && el("span", { class: "years" }, lifespan(p)))),
+    el("div", { class: "top" }, photo.circle, el("div", { class: "who" }, el("h2", {}, displayName(id)))),
     el("div", { class: "details-body", id: "details-body" },
-      facts.length ? el("dl", {}, ...facts.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)])) : null,
+      facts.length ? el("dl", { class: "person-facts" }, ...facts.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)])) : null,
       window.familySite?.personActions(id),
       photo.panel,
-      p.notes && el("p", { class: "notes" }, p.notes),
       group("Parents", parentsOf(tree, id)),
       group(partners.length > 1 ? "Partners" : "Partner", partners, (o) => partnerNote(id, o)),
       group("Siblings", siblings(tree, id), (o) => (halfSiblings(tree, id, o) ? "Half" : "")),
