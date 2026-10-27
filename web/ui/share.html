@@ -70,6 +70,7 @@
   .avatar[data-gender]:has(img) { background: var(--chip); }
   .avatar.lg { width: 56px; height: 56px; font-size: 17px; }
   .avatar { position: relative; overflow: hidden; }
+  .avatar[data-loading]::after { content: ""; position: absolute; inset: 0; background: var(--border); border-radius: inherit; }
   .avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
   #card .photo { position: relative; flex: none; padding: 0; border: 0; border-radius: 50%; background: none; cursor: pointer; }
   #card .photo .badge {
@@ -190,6 +191,19 @@
     #card.comparing { height: 50dvh; max-height: none; }
     #card.comparing.expanded { height: 70dvh; }
   }
+  #stage[hidden], #people-list[hidden], #zoom-controls[hidden] { display: none; }
+  #canvas.list-mode { cursor: default; touch-action: auto; }
+  #people-list { height: 100%; overflow: auto; overscroll-behavior: contain; }
+  .directory { max-width: 720px; margin: 0 auto; padding: 24px 24px 100px; }
+  .directory-person { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 68px; padding: 12px; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: none; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+  .directory-person:hover { background: var(--chip); }
+  .directory-person[aria-pressed="true"] { background: var(--chip); }
+  .directory-person:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .directory-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .directory-text .name { font-size: 15px; font-weight: 500; overflow-wrap: anywhere; }
+  .directory-text .years { color: var(--muted); font-size: 12px; }
+  .directory-empty { margin: 40px 12px; color: var(--muted); font-size: 14px; }
+  @media (max-width: 640px) { .directory { padding: 12px 12px 84px; } }
 </style>
 </head>
 <body>
@@ -198,12 +212,14 @@ __HEADER__
 <main id="view" aria-label="Family tree">
   <div id="canvas">
   <div id="stage"><svg id="lines"></svg></div>
+  <div id="people-list" aria-label="People" hidden></div>
   <div class="zoom">
-    <div class="canvas-control-group" role="group" aria-label="Tree layout">
+    <div class="canvas-control-group" role="group" aria-label="Tree view">
     <button id="layout-down" title="Top-down" aria-label="Top-down layout" aria-pressed="true"><svg class="icon" viewBox="0 0 24 24"><rect x="8" y="3" width="8" height="5" rx="1"/><path d="M12 8v5M5 16v-3h14v3"/><rect x="2" y="16" width="6" height="5" rx="1"/><rect x="16" y="16" width="6" height="5" rx="1"/></svg></button>
     <button id="layout-right" title="Left-to-right" aria-label="Left-to-right layout" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24"><rect x="3" y="8" width="5" height="8" rx="1"/><path d="M8 12h5M16 5h-3v14h3"/><rect x="16" y="2" width="5" height="6" rx="1"/><rect x="16" y="16" width="5" height="6" rx="1"/></svg></button>
+    <button id="layout-list" title="List" aria-label="List view" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24"><path d="M9 6h12M9 12h12M9 18h12M3 6h1M3 12h1M3 18h1"/></svg></button>
     </div>
-    <div class="canvas-control-group" role="group" aria-label="Zoom">
+    <div id="zoom-controls" class="canvas-control-group" role="group" aria-label="Zoom">
     <button id="zoom-in" aria-label="Zoom in"><svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
     <button id="zoom-out" aria-label="Zoom out"><svg class="icon" viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
     <button id="zoom-fit" aria-label="Show everyone"><svg class="icon" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></button>

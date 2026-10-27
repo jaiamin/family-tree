@@ -1,15 +1,15 @@
-# Header and editor sign-in refinement
+# List view (local review)
 
-Status: user approved local review and authorized push. Previous profile/performance work merged in PR29. Preserve this base-branch handoff file.
+Goal: add a simple alphabetical List as the third tree view, preserving the graph and existing profile. User requested local testing before publication. Do not push or deploy this task.
 
-Completed: only Share and Family menu remain beside graph search; overview has Family menu. Menu groups family actions, theme/GitHub, and editing/sign-out with dividers and no headings. Signed-in identity/photo/email appear inside it.
+Acceptance: Top-down / Left-to-right / List are mutually exclusive and remembered; list shows photos, names and known years for the selected tree; header search filters directly; rows open the existing profile and all its actions; zoom is hidden in List; desktop sidebar and mobile bottom sheet remain unchanged; native list scrolling works.
 
-Mobile: search inputs remain16px to avoid iPhone focus zoom, with14px placeholder; graph controls36px match header buttons. Count shares the title row, saving20px (92px header); desktop remains68px.
+Implemented: frontend-only extension in share.html/share.js using existing tokens, avatars, profiles and view controls. Keeps the last graph direction separately from List preference. Graph engine and backend are unchanged. List uses native buttons and scroll, readable desktop width and full mobile width. Photos repaint through the existing shared avatar mechanism.
 
-Editor sign-in: compact dialog and responsive official Google button, light/dark themes, load retry and observer cleanup. Success uses a green toast after reload; failures use a red toast above the dialog. A denied attempt refreshes the nonce for retry. Authentication and permissions remain server enforced.
+Verification complete: build, TypeScript, all 34 web tests and 88 Python tests passed; git diff --check clean. Browser verified desktop/mobile/dark rendering, native scrolling, search/empty results, Enter selection, comparison, List persistence, return to graph, and photo replacement while a person's row is filtered out. Real local Patel tree shows all64 people with no horizontal page overflow at320px. Independent Impeccable reviewer scored both required fixes resolved and returned ship; incumbent design system remains unchanged.
 
-Verification:34 web tests and88 Python tests; TypeScript, Ruff lint/format, ty, production Vite build and Cloudflare deployment dry run passed. Browser checked320/390px and desktop, long titles/counts, theme persistence, viewer/editor menus, native Google button, failed loading/retry, responsive button resizing and simulated successful/denied sign-in toasts. Real Google account authentication and physical iPhone Safari focus behavior were not repeated.
+Additional user request: replace loading placeholders with fitted skeletons. Shared static skeletons now cover initial header/login names/count, header menu slot, Google sign-in button, suggestions, editor list, relative form and photo loading. They inherit text line boxes and existing control/avatar dimensions. Unknown text lengths and collection counts cannot be predetermined; skeleton widths indicate text slots, not exact future string widths. Existing names, initials for people without photos, inputs, errors and empty-state copy remain real content. Suggestion filters stay disabled until loading settles; photo errors restore initials. No new dependency or animation.
 
-No backend, schema, dependency or production-data changes. Local preview runs on0.0.0.0:8000/family-tree/. Disposable QA services/browser sessions closed. Preexisting untracked.impeccable remains uncommitted.
+Local preview: http://localhost:8000/family-tree/ (development password: local-preview-only), bound to 0.0.0.0. Disposable synthetic QA and named browser sessions are closed after verification. Preexisting .impeccable/ is untracked and must remain uncommitted. This HANDOFF.md predates the task and must be preserved.
 
-Next: review CI and merge PR when approved. Main merges trigger the existing Cloudflare Workers Build. Do not merge or manually deploy without authorization.
+Next: user tests the local List view and skeletons. Port8000 is running with the final build; changes are committed locally. No production data changes, push, PR or deployment.

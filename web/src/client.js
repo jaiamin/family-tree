@@ -7,6 +7,7 @@
     node.append(...children.filter(value => value !== null && value !== undefined && value !== false));
     return node;
   };
+  const skeleton = (size = "") => el("span", { class: `skeleton ${size}`, "aria-hidden": "true" }, "\u00a0");
   const button = (label, onclick, className = "site-button") => {
     const node = el("button", { class: className, type: "button" }, label); node.onclick = onclick; return node;
   };
@@ -86,7 +87,8 @@
   }
   async function googleSignIn(container) {
     container.signInObserver?.disconnect();
-    container.textContent = "Loading Google sign-in…";
+    container.replaceChildren(skeleton("skeleton-google"));
+    container.setAttribute("aria-label", "Loading Google sign-in");
     container.setAttribute("aria-busy", "true");
     try {
       if (!session.googleClientId) throw new Error("Editor sign-in hasn't been configured yet.");
@@ -125,7 +127,7 @@
       if (!container.isConnected) return;
       container.replaceChildren(); toast(error instanceof TypeError ? "Google sign-in couldn’t load. Please try again." : error.message, "error");
       if (session.googleClientId) container.append(button("Try again", () => googleSignIn(container)));
-    } finally { container.setAttribute("aria-busy", "false"); }
+    } finally { container.setAttribute("aria-busy", "false"); container.removeAttribute("aria-label"); }
   }
   function editorSignIn() {
     const panel = dialog("Sign in to edit");
@@ -161,16 +163,22 @@
     if (!panel) return;
     panel.box.classList.add("suggestions-dialog");
     panel.footer.remove();
-    const status = el("p", { class: "form-status", role: "status" }, "Loading…");
+    const status = el("p", { class: "form-status", role: "status" });
     const list = el("div", { class: "suggestions-list" });
     const filters = el("div", { class: "suggestion-filters", role: "group", "aria-label": "Filter suggestions" });
     panel.box.querySelector(".dialog-top").after(filters);
+    list.setAttribute("aria-busy", "true");
+    list.setAttribute("aria-label", "Loading suggestions");
+    list.append(el("article", { class: "inbox-item", "aria-hidden": "true" },
+      el("div", { class: "inbox-heading" }, skeleton("skeleton-medium")),
+      el("p", { class: "skeleton-paragraph" }, skeleton(), skeleton("skeleton-medium")),
+      el("p", { class: "inbox-meta" }, skeleton("skeleton-medium"))));
     panel.body.append(status, list);
     let items = [], filter = "open";
     const choices = [["open", "New"], ["done", "Reviewed"], ["all", "All"]];
     const tabs = choices.map(([value, label]) => {
       const tab = button(label, () => { filter = value; render(); }, "site-button");
-      filters.append(tab); return tab;
+      tab.disabled = true; filters.append(tab); return tab;
     });
     const fail = error => { status.classList.add("is-error"); status.textContent = error.message; status.scrollIntoView({ block: "nearest" }); };
     function render() {
@@ -218,7 +226,8 @@
       }
     }
     try { items = await api("/suggestions"); status.textContent = ""; render(); }
-    catch (error) { fail(error); }
+    catch (error) { list.replaceChildren(); fail(error); }
+    finally { list.removeAttribute("aria-label"); list.removeAttribute("aria-busy"); tabs.forEach(tab => tab.disabled = false); }
   }
   const detailFields = (form, p) => {
     const fields = {};
@@ -316,10 +325,14 @@
     const p = data.tree.people[id], panel = dialog("Add a relative");
     if (!panel) return;
     panel.box.classList.add("add-relative");
-    const loading = el("p", { class: "form-note", role: "status" }, "Loading people…"); panel.body.append(loading);
+    const loading = el("div", { class: "skeleton-form", "aria-busy": "true", "aria-label": "Loading people" },
+      el("p", { class: "form-note" }, p.name),
+      el("span", { class: "skeleton-label" }, `Relationship to ${p.name}`), skeleton("skeleton-field"),
+      el("span", { class: "skeleton-label" }, "Person"), skeleton("skeleton-field"));
+    panel.body.append(loading);
     let people, photos;
     try { [people, photos] = await Promise.all([api("/people"), api("/photos")]); }
-    catch (error) { loading.textContent = error.message; panel.footer.append(button("Close", () => panel.box.dismiss())); return; }
+    catch (error) { loading.className = "form-note is-error"; loading.removeAttribute("aria-busy"); loading.removeAttribute("aria-label"); loading.textContent = error.message; panel.footer.append(button("Close", () => panel.box.dismiss())); return; }
     if (!panel.box.isConnected) return;
     loading.remove();
     let relation, partnership, fields;
@@ -375,7 +388,7 @@
     const panel = dialog("Editor access");
     if (!panel) return;
     panel.box.classList.add("editor-access");
-    const list = el("div", { class: "editor-access-list" });
+    const list = el("div", { class: "editor-access-list", "aria-busy": "true", "aria-label": "Loading editors" }, el("div", { class: "connection-row" }, skeleton("skeleton-medium")));
     panel.body.append(el("p", { class: "form-note" }, `Owner: ${session.email}`), list);
     let input;
     const { form, status, finish } = formIn(panel, "Add editor", async () => { await api("/editors", { email: input.value }); input.value = ""; await refresh(); });
@@ -386,7 +399,8 @@
         catch (error) { status.classList.add("is-error"); status.textContent = error.message; }
       }, "text-button"))));
     }
-    try { await refresh(); } catch (error) { status.classList.add("is-error"); status.textContent = error.message; }
+    try { await refresh(); } catch (error) { list.replaceChildren(); status.classList.add("is-error"); status.textContent = error.message; }
+    finally { list.removeAttribute("aria-busy"); list.removeAttribute("aria-label"); }
     if (panel.box.isConnected) input.focus();
   }
   function mountHeader() {
@@ -431,7 +445,7 @@
     items.append(el("hr", { class: "menu-divider" }));
     if (session.role === "member") item("Edit", ["M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L9 17l-4 1 1-4Z"], editorSignIn);
     item(session.role === "member" ? "Sign out" : "Sign out of editing", ["M9 5H5v14h4M14 8l4 4-4 4M9 12h9"], signOut);
-    menu.append(summary, items); document.querySelector(".header-utilities").append(menu);
+    menu.append(summary, items); document.querySelector(".header-utilities").replaceChildren(menu);
     const headerMenus = [...actions.parentElement.querySelectorAll("details")];
     for (const dropdown of headerMenus) dropdown.addEventListener("toggle", () => {
       if (!dropdown.open) return;
