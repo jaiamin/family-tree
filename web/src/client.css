@@ -157,3 +157,19 @@ header .share-tree-button { display: flex; gap: 6px; width: auto; padding: 0 10p
 .site-toast[data-kind="error"] { color: var(--danger); background: #fff1f0; }
 :root[data-theme="dark"] .site-toast[data-kind="success"] { color: #a6dfb6; background: #173423; }
 :root[data-theme="dark"] .site-toast[data-kind="error"] { background: #3c2426; }
+
+/* Skeletons inherit the final text line box; field and provider slots use their control height. */
+.skeleton { display: inline-block; width: 100%; max-width: 100%; height: .8em; vertical-align: -.05em; border-radius: 3px; background: var(--border); }
+.skeleton-site { width: 10ch; }
+.skeleton-tree { width: 12ch; }
+.skeleton-count { width: 8ch; }
+.skeleton-short { width: 8ch; }
+.skeleton-medium { width: 20ch; }
+.skeleton-field { display: block; height: 44px; border-radius: 8px; }
+.skeleton-google { width: min(100%, 400px); height: 40px; border-radius: 4px; }
+.skeleton-label { display: block; margin: 16px 0 8px; font-size: 13px; line-height: 1.45; }
+.skeleton-form > .skeleton-label:first-child { margin-top: 0; }
+.skeleton-paragraph { margin: 12px 0; line-height: 1.6; }
+.skeleton-paragraph .skeleton { display: block; margin: .8em 0; }
+
+.skeleton-control { flex: none; width: 36px; height: 36px; border-radius: 8px; }

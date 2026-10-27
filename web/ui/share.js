@@ -42,9 +42,12 @@ function paint(circle) {
   const current = circle.querySelector("img");
   if (current && current.dataset.version === photos[id]) return;
   current?.remove();
+  circle.removeAttribute("data-loading");
   if (!photos[id]) return;
   const img = el("img", { src: apiUrl(`/api/photos/${id}?v=${photos[id]}`), alt: "", decoding: "async", "data-version": photos[id] });
-  img.onerror = () => img.remove();
+  circle.setAttribute("data-loading", "true");
+  img.onload = () => { if (img.parentElement === circle) circle.removeAttribute("data-loading"); };
+  img.onerror = () => { if (img.parentElement === circle) circle.removeAttribute("data-loading"); img.remove(); };
   circle.append(img);
 }
 const repaint = (id) => document.querySelectorAll(`[data-avatar="${id}"]`).forEach(paint);
@@ -144,8 +147,10 @@ $("share-tree").onclick = () => shareLink($("share-tree"), `${tree.name} · ${tr
 
 // Tree
 
+let listMode = false;
 let direction = "DOWN";
 try { if (localStorage.getItem("tree-layout") === "RIGHT") direction = "RIGHT"; } catch {}
+try { listMode = localStorage.getItem("tree-view") === "LIST"; } catch {}
 let geometry = await layout(tree, direction);
 let { pos, card, width, height } = geometry;
 const PAD = 48;
@@ -233,6 +238,7 @@ function inView(group) {
 }
 // Frames the person with their line, zooming out only as far as needed.
 function centreOn([id, ...group], { fitAll = false } = {}) {
+  if (listMode) return false;
   const b = bounds([id, ...group]);
   const { w, h } = room();
   const fitScale = Math.min(1, Math.max(1, w - 48) / b.w, Math.max(1, h - 48) / b.h);
@@ -258,7 +264,7 @@ const pointers = new Map();
 let moved = false;
 let pinch = null;
 view.addEventListener("pointerdown", (e) => {
-  if (e.target.closest("#card, .zoom")) return;
+  if (listMode || e.target.closest("#card, .zoom")) return;
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   moved = false;
   if (pointers.size === 2) {
@@ -294,7 +300,7 @@ const release = (e) => {
 view.addEventListener("pointerup", release);
 view.addEventListener("pointercancel", release);
 view.addEventListener("wheel", (e) => {
-  if (e.target.closest("#card")) return;
+  if (listMode || e.target.closest("#card")) return;
   e.preventDefault();
   const box = view.getBoundingClientRect();
   zoomAt(camera.scale * Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)), e.clientX - box.left, e.clientY - box.top);
@@ -312,12 +318,42 @@ $("zoom-out").onclick = () => zoomAt(camera.scale / 1.3, undefined, undefined, t
 $("zoom-fit").onclick = () => { close(); fit(true); };
 
 function updateLayoutButtons() {
-  $("layout-down").setAttribute("aria-pressed", String(direction === "DOWN"));
-  $("layout-right").setAttribute("aria-pressed", String(direction === "RIGHT"));
+  const input = $("search");
+  input.setAttribute("role", listMode ? "searchbox" : "combobox");
+  input.setAttribute("aria-controls", listMode ? "people-list" : "results");
+  if (listMode) {
+    input.removeAttribute("aria-autocomplete");
+    input.removeAttribute("aria-expanded");
+  } else {
+    input.setAttribute("aria-autocomplete", "list");
+    input.setAttribute("aria-expanded", "false");
+  }
+  $("layout-list").setAttribute("aria-pressed", String(listMode));
+  view.classList.toggle("list-mode", listMode);
+  stage.hidden = listMode;
+  $("people-list").hidden = !listMode;
+  $("zoom-controls").hidden = listMode;
+  $("layout-down").setAttribute("aria-pressed", String(!listMode && direction === "DOWN"));
+  $("layout-right").setAttribute("aria-pressed", String(!listMode && direction === "RIGHT"));
 }
 async function switchLayout(next) {
-  if (next === direction) return;
-  const buttons = [$("layout-down"), $("layout-right")];
+  if (next === "LIST") {
+    listMode = true;
+    updateLayoutButtons();
+    showResults();
+    try { localStorage.setItem("tree-view", "LIST"); } catch {}
+    return;
+  }
+  const wasList = listMode;
+  listMode = false;
+  updateLayoutButtons();
+  showResults();
+  try { localStorage.setItem("tree-view", "GRAPH"); } catch {}
+  if (next === direction) {
+    if (wasList && selected) centreOn(comparison?.to ? comparisonFrame() : [selected], { fitAll: Boolean(comparison?.to) });
+    return;
+  }
+  const buttons = [$("layout-down"), $("layout-right"), $("layout-list")];
   buttons.forEach((button) => button.disabled = true);
   try {
     const nextGeometry = await layout(tree, next);
@@ -352,6 +388,7 @@ async function switchLayout(next) {
     buttons.forEach((button) => button.disabled = false);
   }
 }
+$("layout-list").onclick = () => switchLayout("LIST");
 $("layout-down").onclick = () => switchLayout("DOWN");
 $("layout-right").onclick = () => switchLayout("RIGHT");
 window.addEventListener("resize", () => {
@@ -585,6 +622,7 @@ function select(id, preserveComparison = false) {
     } else if (!preserveComparison && comparison?.to) resetComparison();
   clear();
   selected = id;
+  updateListSelection();
   const p = person(id);
   const partners = partnersOf(tree, id);
   const up = parentsOf(tree, id);
@@ -665,6 +703,7 @@ function close() {
   resetComparison();
   clear();
   selected = null;
+  updateListSelection();
   stage.classList.remove("dim");
   history.replaceState(null, "", location.pathname);
 }
@@ -679,6 +718,25 @@ addEventListener("keydown", (e) => { if (e.key === "Escape" && !e.defaultPrevent
 // Search
 
 const search = $("search");
+const listRows = new Map();
+const alphabetical = [...ids].sort((a, b) => displayName(a).localeCompare(displayName(b), undefined, { sensitivity: "base", numeric: true }) || a.localeCompare(b));
+for (const id of alphabetical) {
+  const row = el("button", { class: "directory-person", "data-id": id, "aria-pressed": "false" },
+    avatar(id), el("span", { class: "directory-text" }, el("span", { class: "name" }, displayName(id)),
+      years(person(id)) && el("span", { class: "years" }, years(person(id)))));
+  row.onclick = () => select(id);
+  listRows.set(id, row);
+}
+function updateListSelection() {
+  for (const [id, row] of listRows) row.setAttribute("aria-pressed", String(id === selected));
+}
+function renderPeopleList(terms = []) {
+  const visible = alphabetical.filter(id => terms.every(term => displayName(id).toLowerCase().includes(term)));
+  $("people-list").replaceChildren(el("div", { class: "directory" },
+    ...visible.map(id => { const row = listRows.get(id); paint(row.querySelector("[data-avatar]")); return row; }),
+    !visible.length ? el("p", { class: "directory-empty", role: "status" }, ids.length ? "No one by that name" : "This family tree is empty.") : null));
+  return visible;
+}
 const results = $("results");
 let matches = [];
 let active = 0;
@@ -691,6 +749,14 @@ function activateResult(index) {
 }
 function showResults() {
   const terms = search.value.toLowerCase().split(/\s+/).filter(Boolean);
+  if (listMode) {
+    matches = renderPeopleList(terms);
+    active = 0;
+    results.hidden = true;
+    search.removeAttribute("aria-expanded");
+    search.removeAttribute("aria-activedescendant");
+    return;
+  }
   const name = (id) => person(id).name.toLowerCase();
   const starts = (id) => name(id).split(/\s+/).some((w) => w.startsWith(terms[0]));
   matches = terms.length
@@ -712,9 +778,9 @@ function showResults() {
   search.setAttribute("aria-expanded", String(!results.hidden));
 }
 function choose(id) {
-  search.value = "";
+  if (!listMode) search.value = "";
   results.hidden = true;
-  search.setAttribute("aria-expanded", "false");
+  if (!listMode) search.setAttribute("aria-expanded", "false");
   search.removeAttribute("aria-activedescendant");
   search.blur();
   select(id);
@@ -724,12 +790,17 @@ search.addEventListener("blur", () => { results.hidden = true; });
 search.addEventListener("keydown", (e) => {
   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
     e.preventDefault();
+    if (listMode) {
+      if (matches.length) listRows.get(matches[e.key === "ArrowUp" ? matches.length - 1 : 0]).focus();
+      return;
+    }
     activateResult((active + (e.key === "ArrowDown" ? 1 : -1) + matches.length) % Math.max(1, matches.length));
   } else if (e.key === "Enter" && matches[active]) choose(matches[active]);
   else if (e.key === "Escape") { search.value = ""; showResults(); }
 });
 
-if (!ids.length) view.replaceChildren(el("div", { class: "empty-tree" }, "This family tree is empty."));
+renderPeopleList();
+if (!ids.length) stage.append(el("div", { class: "empty-tree" }, "This family tree is empty."));
 else {
   // Start at a readable scale. The full graph remains available by panning or Show everyone.
   const roots = ids.filter((id) => !parentsOf(tree, id).length);
