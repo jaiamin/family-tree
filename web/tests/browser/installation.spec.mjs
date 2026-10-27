@@ -51,5 +51,16 @@ test("a family can set up, invite, browse and suggest through the private interf
   await expect(relative.getByRole("dialog",{name:"Suggest a change",exact:true})).toBeInViewport();
   expect(await relative.evaluate(()=>document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await viewer.close();
+  await page.getByRole("dialog",{name:"Family access",exact:true}).getByRole("button",{name:"Close",exact:true}).click();
+  await page.locator('summary[aria-label="Family menu"]').click();
+  await page.getByRole("button",{name:"Import GEDCOM",exact:true}).click();
+  await page.getByLabel("Tree name",{exact:true}).fill("Imported family");
+  await page.getByLabel("GEDCOM file",{exact:true}).setInputFiles({name:"family.ged",mimeType:"text/plain",buffer:Buffer.from("0 HEAD\n1 CHAR UTF-8\n0 @I1@ INDI\n1 NAME Imported Relative\n0 TRLR\n")});
+  await page.getByRole("button",{name:"Preview import",exact:true}).click();
+  await expect(page.getByText("1 person · A new tree will be created.",{exact:true})).toBeVisible();
+  await page.getByRole("button",{name:"Import tree",exact:true}).click();
+  await expect(page.getByRole("dialog",{name:"Import GEDCOM",exact:true})).toHaveCount(0);
+  const overview=await(await page.request.get("/family-tree/api/view")).json();
+  expect(overview.trees.some(tree=>tree.name === "Imported family" && tree.people === 1)).toBe(true);
   expect(errors).toEqual([]);
 });

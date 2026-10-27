@@ -218,3 +218,10 @@ test("GEDCOM preview validates relationships without implicit name merging",asyn
   await assert.rejects(previewGedcom(source.replace("1 CHIL @I2@","1 CHIL @missing@"),"Broken"),/Unresolved/);
   const extra=await previewGedcom(source.replace("1 NAME Same Name","1 NAME Same Name\n1 OCCU Researcher"),"Warnings");assert.ok(extra.warnings.some(warning=>warning.includes("OCCU")));
 });
+
+test("GEDCOM preview reports omitted event fields and preserves free-text partnership dates", async () => {
+  const source="0 HEAD\n1 CHAR UTF-8\n0 @I1@ INDI\n1 NAME First\n1 DEAT\n2 PLAC Unmodeled place\n0 @I2@ INDI\n1 NAME Second\n0 @F1@ FAM\n1 HUSB @I1@\n1 WIFE @I2@\n1 MARR\n2 NOTE Date: Around spring 1980\n0 TRLR\n";
+  const draft=await previewGedcom(source,"Imported");
+  assert.ok(draft.warnings.some(warning=>warning.includes("DEAT.PLAC")));
+  assert.equal(Object.values(draft.collection.partnerships)[0].marriage_date,"Around spring 1980");
+});

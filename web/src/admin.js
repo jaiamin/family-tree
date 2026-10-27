@@ -116,11 +116,13 @@ export function administration({ api, dialog, field, formIn, el, button, base, r
     const panel=dialog("Import GEDCOM"); if (!panel) return;
     let name, file, preview;
     const {form,finish}=formIn(panel,"Preview import",async()=>{
-      const source=await file.files[0]?.text();
-      if (!source) throw Error("Choose a GEDCOM file.");
+      const selected=file.files[0];
+      if (!selected) throw Error("Choose a GEDCOM file.");
+      if (selected.size > 1_000_000) throw Error("Choose a GEDCOM file smaller than 1 MB.");
+      const source=await selected.text();
       preview=await api("/imports/preview",{name:name.value,source});
       const view=await api("/view");
-      panel.body.replaceChildren(el("p",{},`${preview.people} people · A new tree will be created.`),...preview.warnings.map(warning=>el("p",{class:"form-note"},warning)));
+      panel.body.replaceChildren(el("p",{},`${preview.people} ${preview.people === 1 ? "person" : "people"} · A new tree will be created.`),...preview.warnings.map(warning=>el("p",{class:"form-note"},warning)));
       panel.footer.replaceChildren(button("Import tree",async()=>{
         try { await api("/imports/commit",{name:name.value,source,checksum:preview.checksum,revision:view.revision}); reload(); }
         catch(failure){error(panel,failure);}
