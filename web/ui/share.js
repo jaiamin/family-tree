@@ -302,6 +302,14 @@ view.addEventListener("wheel", (e) => {
   const box = view.getBoundingClientRect();
   zoomAt(camera.scale * Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)), e.clientX - box.left, e.clientY - box.top);
 }, { passive: false });
+const mobileZoom = matchMedia("(max-width: 640px)");
+function orderZoomButtons() {
+  const first = $(mobileZoom.matches ? "zoom-out" : "zoom-in");
+  const second = $(mobileZoom.matches ? "zoom-in" : "zoom-out");
+  if (first.nextElementSibling !== second) first.parentElement.insertBefore(first, second);
+}
+mobileZoom.addEventListener("change", orderZoomButtons);
+orderZoomButtons();
 $("zoom-in").onclick = () => zoomAt(camera.scale * 1.3, undefined, undefined, true);
 $("zoom-out").onclick = () => zoomAt(camera.scale / 1.3, undefined, undefined, true);
 $("zoom-fit").onclick = () => { close(); fit(true); };

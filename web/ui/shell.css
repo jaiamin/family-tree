@@ -1,4 +1,5 @@
   :root {
+    --header-height: 68px;
     --bg: #fafafa; --surface: #ffffff; --fg: #09090b; --muted: #71717a; --border: #e4e4e7;
     --border-strong: #a1a1aa; --line: #c4c4cc; --line-on: #176b63; --chip: #f4f4f5;
     --accent: #176b63; --accent-soft: #e8f3f0; --danger: #b13838;
@@ -27,6 +28,7 @@
   svg.icon { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 
   header {
+    height: calc(var(--header-height) + max(0px, env(safe-area-inset-top) - 12px)); flex: none;
     display: flex; align-items: center; gap: 8px; padding: 12px max(16px, env(safe-area-inset-right)) 12px max(16px, env(safe-area-inset-left));
     padding-top: max(12px, env(safe-area-inset-top)); border-bottom: 1px solid var(--border); background: var(--surface); z-index: 3;
   }
@@ -56,3 +58,5 @@
   .tree-options { position: fixed; min-width: 160px; max-width: calc(100vw - 32px); margin: 0; padding: 4px; list-style: none; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow-lg); z-index: 4; }
   .tree-options a { display: block; padding: 8px 10px; border-radius: 4px; font-size: 14px; font-weight: 400; white-space: normal; overflow-wrap: anywhere; }
   .tree-options a:hover, .tree-options a[aria-current="page"] { background: var(--chip); color: var(--fg); }
+
+  @media (max-width: 640px) { body:has(#canvas) { --header-height: 112px; } }

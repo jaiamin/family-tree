@@ -104,7 +104,6 @@ header > .actions:empty { display: none; }
   body[data-family-base] header { gap: 8px; }
   body[data-family-base]:has(#family-list) header { flex-wrap: nowrap; }
   body[data-family-base]:has(#family-list) header .title { flex: 1; min-width: 0; }
-  body[data-family-base]:has(#family-list) header h1 { font-size: 18px; }
   header > .actions, .header-utilities { flex: none; gap: 4px; }
   body[data-family-base]:has(#canvas) header { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; }
   body[data-family-base]:has(#canvas) header .title { grid-column: 1 / -1; grid-row: 1; }
