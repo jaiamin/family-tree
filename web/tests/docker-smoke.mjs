@@ -7,7 +7,7 @@ const exec = promisify(execFile), prefix = `family-contract-${process.pid}`;
 const image = `${prefix}:local`, data = `${prefix}-data`, backup = `${prefix}-backup`;
 const docker = (...args) => exec("docker", args, {maxBuffer: 4 * 1024 * 1024});
 const settings = ["--network=none", "--read-only", "--tmpfs=/tmp", "--cap-drop=ALL", "--security-opt=no-new-privileges",
-  "-v",`${data}:/data`,"-v",`${backup}:/backup`,"-e","PUBLIC_ORIGIN=https://family.test","-e","SETUP_TOKEN=local-test-claim"];
+  "-v",`${data}:/data`,"-v",`${backup}:/backup`,"-e","PUBLIC_ORIGIN=https://family.test","-e","SETUP_TOKEN=local-test-claim","-e","TRUST_PROXY_HOPS=1"];
 async function inContainer(source) {
   const child = execFile("docker",["exec","-i",prefix,"node","--input-type=module"],{maxBuffer:1024*1024});
   child.stdin.end(source);

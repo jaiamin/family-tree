@@ -15,9 +15,10 @@ Requires Docker Compose and an HTTPS reverse proxy forwarding the configured pat
    docker compose up -d
    ```
 
-3. Visit the HTTPS app URL. Enter the setup credential, create your owner account and save the recovery code separately. Create a tree and its first person. Use **Family access** to share single-use invitations (48 hours).
+3. Configure your HTTPS proxy to forward the app path and append the actual client address to `X-Forwarded-For`. Set `TRUST_PROXY_HOPS=1` for one trusted proxy (or the exact number of controlled proxy hops, up to 9). Keep port 8000 private: forwarded headers are trusted only when explicitly configured, so bypassing the proxy must be impossible. The default `0` ignores forwarding and shares abuse limits among clients of the same socket peer.
+4. Visit the HTTPS app URL. Enter the setup credential, create your owner account and save the recovery code separately. Create a tree and its first person. Use **Family access** to share single-use invitations (48 hours).
 
-The process runs unprivileged with private persistent data/backup mounts. Do not run `init` against an existing installation or remove its volumes. Changing `BASE_PATH` requires rebuilding the image as well as changing runtime configuration. Back up before upgrading; retain the previous image until verified.
+The process runs unprivileged with private persistent data/backup mounts. Do not run `init` against an existing installation or remove its volumes. Changing `BASE_PATH` requires rebuilding the image as well as changing runtime configuration. Startup rejects a frontend/runtime path mismatch; builds reject a conflicting Cloudflare installation path. Back up before upgrading; retain the previous image until verified.
 
 ## Cloudflare production
 

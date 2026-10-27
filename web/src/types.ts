@@ -5,3 +5,5 @@ export interface Env {
   GOOGLE_CLIENT_ID?: string; SETUP_TOKEN?: string; DEVELOPMENT?: string; CLIENT_IP?: string;
 }
 export interface Identity { id: string; role: "viewer" | "editor" | "owner"; email: string | null; name: string; picture?: string; automationId?: string }
+
+export interface BackgroundTasks { waitUntil(promise: Promise<unknown>): void }

@@ -10,6 +10,7 @@ services:
     environment:
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Set your HTTPS origin}
       BASE_PATH: ${BASE_PATH-/family-tree}
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-0}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       SETUP_TOKEN: ${SETUP_TOKEN:?Set a strong single-use setup credential}
     volumes:

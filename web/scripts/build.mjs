@@ -6,7 +6,8 @@ import { existsSync } from "node:fs";
 import { installationConfig } from "./config.mjs";
 process.chdir(fileURLToPath(new URL("..", import.meta.url)));
 const config = process.env.FAMILY_INSTALLATION_CONFIG_JSON || process.env.FAMILY_INSTALLATION_CONFIG || existsSync("installation.json") ? installationConfig() : null;
-const base = config ? config.basePath : process.env.BASE_PATH ?? "/family-tree";
+const base = process.env.BASE_PATH ?? config?.basePath ?? "/family-tree";
+if (config && base !== config.basePath) throw Error("BASE_PATH conflicts with the installation configuration. Use matching values or build Docker separately.");
 if (!/^(\/[a-zA-Z0-9_-]+)*$/.test(base)) throw Error("Invalid BASE_PATH.");
 const source = name => readFile(`ui/${name}`, "utf8");
 const render = (template, values) => template.replace(/__[A-Z_]+__/g, token => { if (!(token in values)) throw Error(`Missing ${token}`); return values[token]; });
@@ -59,8 +60,12 @@ for (const [name, template] of Object.entries(templates)) {
 pages["/login.html"] = (await readFile("src/login.html", "utf8")).replaceAll("__BASE__", base).replace("__SHELL_CSS__", css).replace("__CLIENT_CSS__", clientCss).replace(`<script src="${base}/app.js" defer></script>`, appScript);
 pages["/favicon.svg"] = await source("favicon.svg");
 await mkdir("generated", { recursive: true });
+await mkdir("dist", { recursive: true });
+await writeFile("dist/build.json", JSON.stringify({ basePath: base }));
 await writeFile("generated/pages.json", JSON.stringify(pages));
 await build({ entryPoints: ["src/index.ts"], bundle: true, format: "esm", target: "es2022", outfile: "dist/worker.mjs", minify: true, sourcemap: true });
+
+await build({ entryPoints: ["src/app.ts"], bundle: true, format: "esm", target: "es2022", outfile: "dist/app.mjs", minify: true });
 
 await build({ entryPoints: ["src/public-ids.ts"], bundle: true, format: "esm", platform: "node", outfile: "dist/public-ids.mjs" });
 

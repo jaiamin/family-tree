@@ -1,9 +1,10 @@
 import { test, expect } from "@playwright/test";
+const basePath = process.env.BASE_PATH ?? "/family-tree";
 
 test("a family can set up, invite, browse and suggest through the private interface", async ({page,browser}) => {
   const errors=[];page.on("pageerror",error=>errors.push(error.message));
   await page.route("**/*",route => new URL(route.request().url()).hostname === "localhost" ? route.continue() : route.abort());
-  await page.goto("/family-tree/");
+  await page.goto(`${basePath}/`);
   await page.getByLabel("Setup credential").fill("local-setup-only");
   await page.getByLabel("Your name").fill("Family owner");
   await page.getByLabel("Username",{exact:true}).fill("owner");
@@ -60,7 +61,7 @@ test("a family can set up, invite, browse and suggest through the private interf
   await expect(page.getByText("1 person · A new tree will be created.",{exact:true})).toBeVisible();
   await page.getByRole("button",{name:"Import tree",exact:true}).click();
   await expect(page.getByRole("dialog",{name:"Import GEDCOM",exact:true})).toHaveCount(0);
-  const overview=await(await page.request.get("/family-tree/api/view")).json();
+  const overview=await(await page.request.get(`${basePath}/api/view`)).json();
   expect(overview.trees.some(tree=>tree.name === "Imported family" && tree.people === 1)).toBe(true);
   expect(errors).toEqual([]);
 });

@@ -1,3 +1,15 @@
+# Deployment interchangeability audit — active
+
+Goal: audit/refactor both deployment adapters while preserving one frontend/domain and optional URL/token MCP. Keep production untouched and update draft PR55.
+
+Acceptance: runtime-specific types/config stay at the deployment seam; equivalent storage/maintenance semantics; concise README with both setup choices; meaningful cross-adapter tests, Docker/browser/build/type/Python verification, independent review, green CI. Preserve IDs/photos/data/layout.
+
+Plan: inspect config/runtime/storage/operator/MCP end to end; fix evidenced coupling or correctness issues; run shared contracts and both builds; update PR/review. No new framework, database, fallback or production change. Existing untracked research artifacts stay excluded.
+
+Progress: shared app extracted from tiny Worker lifecycle/address adapter; Node serves the same app/assets. Public settings validation aligned, conflicting build configuration rejected, serving-only baked path guard leaves maintenance independent. Explicit trusted proxy hops prevent family-wide shared login limits without blindly accepting forwarding. Encrypted recovery now crosses both runtimes and compares records, public IDs and retained photo bytes. README uses short setup/role/MCP tables; operations hold deployment details. Browser setup/invite/import/mobile flows pass at /family-tree, root and /our/family. Offline Docker proxy isolation and recovery pass; 88 Python tests pass; build/type/Vite/dry-run pass. Final web checks/review and refreshed CI pending. No production changes.
+
+Decisions: keep existing narrow SQLite/blob contracts; no generic framework or duplicate frontend. One opted-in, exactly counted trusted proxy chain; direct app access must stay private. Baked path validation runs only on HTTP startup so maintenance/conversion can open data without frontend settings. Supported hosts share encrypted format; changing origin/base path requires configuration and a matching build, not changing records.
+
 # Private installation implementation — active
 
 Goal: implement tickets #35–#54 under #34 on agent/ux-c8284e07. Both local Docker and Cloudflare are explicitly authorized; live production stays on Cloudflare and has not been modified. Preserve all family data and viewer layout.

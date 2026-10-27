@@ -57,6 +57,11 @@ jobs:
       - run: pnpm --dir web test
       - run: pnpm --dir web exec playwright install --with-deps chromium
       - run: pnpm --dir web test:browser
+      - name: Verify root and custom deployment paths
+        run: |
+          env -u FAMILY_INSTALLATION_CONFIG BASE_PATH= pnpm --dir web test:browser
+          env -u FAMILY_INSTALLATION_CONFIG BASE_PATH=/our/family pnpm --dir web test:browser
+          pnpm --dir web build
       - run: pnpm --dir web exec vite build
       - run: pnpm --dir web exec cf deploy --prebuilt --mode production --dry-run
   local:

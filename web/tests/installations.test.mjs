@@ -169,8 +169,8 @@ for(const kind of ["Cloudflare","Local"]) {
       assert.equal((await (await relative.call("/automation")).json()).length,0);
     } finally { await runtime.close(); }
   });
-  test(`${kind}: retained photos, encrypted portability and daily recovery`,async()=>{
-    const source=await installation(kind),target=await installation(kind),owner=client(source);
+  test(`${kind}: retained photos, cross-runtime encrypted portability and daily recovery`,async()=>{
+    const source=await installation(kind),target=await installation(kind === "Cloudflare" ? "Local" : "Cloudflare"),owner=client(source);
     try{
       await owner.call("/setup",{token:"local-setup-only",username:"owner",name:"Owner",password});
       const tree=await(await owner.call("/trees",{name:"Family",revision:0})).json();
@@ -207,6 +207,14 @@ for(const kind of ["Cloudflare","Local"]) {
       assert.equal((await target.env.DB.prepare("SELECT count(*) AS n FROM automation_credentials").first()).n,0);
       assert.equal((await target.env.DB.prepare("SELECT count(*) AS n FROM photo_uploads").first()).n,2);
       assert.equal((await target.env.DB.prepare("SELECT name FROM people").first()).name,"Relative");
+      for (const table of ["people","trees","tree_members","parents","partnerships","public_ids","photos","photo_uploads","users"]) {
+        const rows=async env=>(await env.DB.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all()).results.map(row=>({...row}));
+        assert.deepEqual(await rows(target.env),await rows(source.env),`${kind}: ${table} survives changing deployment`);
+      }
+      for (const upload of (await target.env.DB.prepare("SELECT object_key FROM photo_uploads").all()).results) {
+        assert.deepEqual(new Uint8Array(await(await target.env.PHOTOS.get(upload.object_key)).arrayBuffer()),image);
+        assert.deepEqual(new Uint8Array(await(await target.env.BACKUP.get(upload.object_key)).arrayBuffer()),image);
+      }
       await assert.rejects(recoverBackup(target.env),/empty database/);
     }finally{await source.close();await target.close();}
   });

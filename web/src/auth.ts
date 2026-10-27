@@ -49,7 +49,7 @@ export function requireSameOrigin(request: Request, env: Env) {
   assert(origin === allowed || origin === new URL(request.url).origin || (request.headers.get("authorization") || "").startsWith("Bearer "), "This request must come from the family website.", 403);
 }
 export async function rateLimit(request: Request, env: Env, action: string, limit: number, seconds: number) {
-  const ip = env.CLIENT_IP || request.headers.get("cf-connecting-ip") || "unknown";
+  const ip = env.CLIENT_IP || "unknown";
   const key = await sha256(`${action}:${ip}`);
   const row = await env.DB.prepare(`INSERT INTO rate_limits(key, count, expires) VALUES (?, 1, ?)
     ON CONFLICT(key) DO UPDATE SET count = CASE WHEN expires <= ? THEN 1 ELSE count + 1 END,

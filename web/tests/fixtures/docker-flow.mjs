@@ -32,3 +32,12 @@ try {
   assert.equal((await target.env.DB.prepare("SELECT count(*) AS n FROM sessions").first()).n,0);
   assert.equal((await target.env.DB.prepare("SELECT count(*) AS n FROM photo_uploads").first()).n,1);
 } finally {await source.close();await target.close();}
+
+// The HTTPS proxy appends the actual peer after any forged client prefix.
+const loginFrom = address => fetch("http://localhost:8000/family-tree/api/login", {
+  method:"POST", headers:{origin:"https://family.test","content-type":"application/json","x-forwarded-for":`203.0.113.99, ${address}`},
+  body:JSON.stringify({username:"owner",password:"wrong-password"}),
+});
+for(let i=0;i<10;i++) assert.equal((await loginFrom("198.51.100.1")).status,403);
+assert.equal((await loginFrom("198.51.100.1")).status,429);
+assert.equal((await loginFrom("198.51.100.2")).status,403,"another relative has an independent login limit");

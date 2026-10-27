@@ -4,8 +4,15 @@ import { Readable } from "node:stream";
 import { mkdir, readFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import app from "../dist/worker.mjs";
+import { validatePublicSettings } from "./config.mjs";
+import { clientAddress, proxyHops } from "./proxy.mjs";
+import app from "../dist/app.mjs";
 import { LocalDatabase, LocalBlobs } from "../dist/local.mjs";
+
+export async function assertBuiltPath(basePath) {
+  const built = JSON.parse(await readFile(new URL("../dist/build.json", import.meta.url), "utf8"));
+  if (basePath !== built.basePath) throw Error("BASE_PATH differs from the built frontend. Rebuild with the same BASE_PATH.");
+}
 
 export async function localRuntime({ directory, backupDirectory, origin, basePath = "/family-tree", setupToken, googleClientId = "", initialize = false }) {
   directory = resolve(directory);
@@ -21,11 +28,13 @@ export async function localRuntime({ directory, backupDirectory, origin, basePat
   const ctx = { waitUntil(promise) { pending.add(promise); promise.finally(() => pending.delete(promise)).catch(() => {}); } };
   return { env, fetch: (request, address = "local") => app.fetch(request, { ...env, CLIENT_IP: address }, ctx),
     async close() { await Promise.allSettled([...pending]); DB.close(); },
-    async backup() { await app.scheduled({}, env, ctx); await Promise.allSettled([...pending]); } };
+    async backup() { await app.backup(env, ctx); await Promise.allSettled([...pending]); } };
 }
 if (import.meta.url === pathToFileURL(process.argv[1] || "").href) {
   const origin = process.env.PUBLIC_ORIGIN;
-  if (!origin || !origin.startsWith("https://")) throw Error("PUBLIC_ORIGIN must be your configured HTTPS origin.");
+  validatePublicSettings({ publicOrigin: origin, basePath: process.env.BASE_PATH ?? "/family-tree" });
+  await assertBuiltPath(process.env.BASE_PATH ?? "/family-tree");
+  const hops = proxyHops(process.env.TRUST_PROXY_HOPS);
   const runtime = await localRuntime({ directory: process.env.DATA_DIR || "/data", backupDirectory: process.env.BACKUP_DIR,
     origin, basePath: process.env.BASE_PATH ?? "/family-tree", setupToken: process.env.SETUP_TOKEN, googleClientId: process.env.GOOGLE_CLIENT_ID });
   const server = createServer(async (req, res) => {
@@ -37,7 +46,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] || "").href) {
 
       const body = ["GET", "HEAD"].includes(req.method) ? undefined : req;
       const request = new Request(new URL(req.url, origin), { method: req.method, headers, body, ...body ? { duplex: "half" } : {} });
-      const response = await runtime.fetch(request, req.socket.remoteAddress || "unknown");
+      const response = await runtime.fetch(request, clientAddress(req.socket.remoteAddress, req.headers["x-forwarded-for"], hops));
       res.writeHead(response.status, Object.fromEntries(response.headers));
       if (response.body) await pipeline(Readable.fromWeb(response.body), res);
       else res.end();

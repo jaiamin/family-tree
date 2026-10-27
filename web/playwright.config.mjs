@@ -2,6 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+const basePath = process.env.BASE_PATH ?? "/family-tree";
 export default defineConfig({
   testDir: "./tests/browser",
   workers: 1,
@@ -11,7 +12,7 @@ export default defineConfig({
     ...process.env.PLAYWRIGHT_CHROMIUM_PATH ? { launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } } : {} } }],
   webServer: {
     command: "pnpm build && pnpm dev",
-    url: "http://localhost:8002/family-tree/api/session",
+    url: `http://localhost:8002${basePath}/api/session`,
     env: { PORT: "8002", DEV_DATA_DIR: mkdtempSync(join(tmpdir(),"family-browser-")) },
     reuseExistingServer: false,
   },

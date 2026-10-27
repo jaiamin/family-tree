@@ -1,22 +1,42 @@
 # Family Tree
 
-A private family-tree app for one family installation. Browse graphs or a list, search, compare relationships, share private links, and contribute photos. People and photos are shared across named trees.
+Private, invite-only family trees. Graph and list views, photos, search, relationship comparison, private sharing and GEDCOM import/export.
 
-| Access | Can do |
+## Deploy
+
+Same app and frontend, two hosting options. [Setup & recovery →](docs/operations.md)
+
+| | Docker | Cloudflare |
+|---|---|---|
+| Runtime | Node.js | Workers |
+| Data | SQLite + private files | D1 + private R2 |
+| Setup | `.env.example` → `.env` | `web/installation.example.json` → `web/installation.json` |
+
+
+Follow [Docker setup](docs/operations.md#local-production) or [Cloudflare setup](docs/operations.md#cloudflare-production), claim the owner in your browser, then invite relatives. Encrypted backups transfer installations between hosts.
+
+| Role | Access |
 |---|---|
 | Viewer | Browse, suggest corrections, add/replace photos |
 | Editor | Also edit people/relationships, review suggestions, clear displayed photos |
-| Owner | Also manage trees/accounts/settings, import GEDCOM, delete people, transfer ownership |
+| Owner | Also manage trees/accounts, import, delete people, transfer ownership |
 
-Invite-only username/password accounts work offline. Google sign-in is optional and explicitly linked. Source code is public; records and images require authentication.
+Username/password accounts work offline. Google linking is optional. Public source code; authenticated family data.
 
-## Run your own
+## Optional MCP
 
-Choose **Docker + SQLite/private files** or **Cloudflare Workers + D1/private R2**. Start with [setup, upgrades and recovery](docs/operations.md). Each installation has independent data and access; this is not a public signup service.
+Requires Python 3.10+ and [uv](https://docs.astral.sh/uv/). Create a credential under **Agent access**, configure your MCP client, then run `uv run family-tree-mcp`:
+
+| Environment | Value |
+|---|---|
+| `FAMILY_TREE_URL` | Your app URL including its base path, e.g. `https://family.example.com/family-tree` |
+| `FAMILY_TREE_TOKEN` | Credential from Agent access; store in client secrets |
+
+Same setup for either host. Edits save directly. Search before adding people; reuse stable IDs across trees.
 
 ## Develop
 
-Requires Node.js 26 and pnpm 12.15.0.
+Node.js 26.12.1+, pnpm 12.15.0; Docker for production-image tests.
 
 ```sh
 pnpm --dir web install --frozen-lockfile
@@ -24,22 +44,17 @@ pnpm --dir web build
 pnpm --dir web dev
 ```
 
-Open **http://localhost:8000/family-tree/** (sandbox forwarding: 8000 → 8000). Claim the empty development installation with `local-setup-only`, then choose your own owner credentials. Preview data stays in ignored `web/.local/`; it never replaces production.
+Open **http://localhost:8000/family-tree/** (forward 8000 → 8000). Claim the empty preview with `local-setup-only`. Ignored preview data never replaces production.
 
 ```sh
-pnpm --dir web check
-pnpm --dir web test
+pnpm --dir web check && pnpm --dir web test
 pnpm --dir web exec playwright install chromium
 pnpm --dir web test:browser
 node web/tests/docker-smoke.mjs
+uv sync --locked
+uv run ruff format --check . && uv run ruff check . && uv run ty check && uv run pytest
 ```
 
-## MCP (optional)
+Code: `web/src/app.ts` shared app; `web/src/platform` storage; `web/src/index.ts` / `web/scripts/server.mjs` runtime entry points; `web/ui` viewer; `mcp/src` optional client.
 
-With Python 3.10+ and [uv](https://docs.astral.sh/uv/), run `uv run family-tree-mcp`. Set `FAMILY_TREE_URL` to your app's base URL and `FAMILY_TREE_TOKEN` through your client's secret settings. The owner creates/revokes individual credentials under **Agent access**. MCP edits the same authoritative API; there is no publish/export step. Search before creating people; reuse their stable IDs across trees.
-
-Python checks: `uv sync --locked`, then `uv run ruff format --check .`, `uv run ruff check .`, `uv run ty check`, `uv run pytest`.
-
-Code: `web/src` shared domain/API/auth, `web/src/platform` storage implementations, `web/ui` viewer/layout, `mcp/src` local MCP client. [Architecture decisions](docs/private-hosting/adr-002-two-deployments-one-application.md).
-
-[MIT](LICENSE) · [ELK.js](web/ui/vendor/README.md) · [Geist (OFL)](https://github.com/vercel/geist-font/blob/main/LICENSE)
+[Operations](docs/operations.md) · [Architecture](docs/private-hosting/adr-002-two-deployments-one-application.md) · [MIT](LICENSE) · [ELK.js](web/ui/vendor/README.md) · [Geist (OFL)](https://github.com/vercel/geist-font/blob/main/LICENSE)
