@@ -320,8 +320,9 @@
         const avatar = el("span", { class: "account-avatar", "aria-hidden": "true" },
           (session.name || session.email).trim().split(/\s+/).slice(0, 2).map(part => part.charAt(0)).join("").toUpperCase());
         if (session.picture) {
-          const image = el("img", { src: session.picture, alt: "", referrerpolicy: "no-referrer" });
-          image.onload = () => avatar.replaceChildren(image);
+          const image = el("img", { src: session.picture, alt: "", referrerpolicy: "no-referrer", hidden: "" });
+          image.onload = () => { image.hidden = false; };
+          avatar.append(image);
         }
         return avatar;
       };
