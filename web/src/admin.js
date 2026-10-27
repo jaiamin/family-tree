@@ -10,7 +10,7 @@ export function administration({ api, dialog, field, formIn, el, button, base, r
       ...[1, 2].map(() => el("div", { class: "admin-row", "aria-hidden": "true" }, el("span", { class: "skeleton skeleton-medium" }))));
     panel.body.append(placeholder); return () => placeholder.remove();
   }
-  const heading = (parent, text) => parent.append(el("h3", {}, text));
+  const heading = (parent, text) => parent.append(el("h3", { class: "admin-section-title" }, text));
   const listIn = panel => { const list = el("div", { class: "admin-list" }); panel.body.append(list); return list; };
   const row = (name, detail, ...actions) => el("div", { class: "admin-row" },
     el("div", { class: "admin-person" }, el("strong", {}, name), detail ? el("small", {}, detail) : null),
@@ -29,16 +29,14 @@ export function administration({ api, dialog, field, formIn, el, button, base, r
   function showSecret(panel, title, note, value, copyLabel) {
     const output = el("textarea", { readonly: "", "aria-label": copyLabel, rows: "3", spellcheck: "false" }); output.value = value;
     panel.box.confirmClose = "Have you saved this key? It won't be shown again.";
-    const status = el("p", { class: "form-status", role: "status" });
-    panel.body.replaceChildren(el("p", { class: "admin-success", role: "status" }, title), el("p", { class: "form-note" }, note), output, status);
+    panel.body.replaceChildren(el("p", { class: "admin-success", role: "status" }, title), el("p", { class: "form-note" }, note), output);
     output.focus({ preventScroll: true });
     panel.footer.replaceChildren(button(copyLabel, async () => {
       try {
         await navigator.clipboard.writeText(value); panel.box.confirmClose = "";
-        status.classList.remove("is-error"); status.textContent = "Copied. Store it somewhere safe.";
         toast("Copied.", "success");
       } catch {
-        output.focus(); output.select(); status.classList.add("is-error"); status.textContent = "Couldn't copy automatically. Copy the selected key and save it somewhere safe.";
+        output.focus(); output.select(); toast("Couldn't copy automatically. Copy the selected key.", "error");
       }
     }, "site-button primary"));
   }
@@ -152,7 +150,7 @@ export function administration({ api, dialog, field, formIn, el, button, base, r
       let name;
       const { form, finish } = formIn(panel, "Create credential", async () => {
         const credential = await api("/automation", { name: name.value });
-        showSecret(panel, `Credential created for ${name.value}.`, "Owner access. Save this credential in your agent settings; it won't be shown again.", credential.token, "Copy credential");
+        showSecret(panel, `Credential created for ${name.value}.`, "Owner access. Copy and save it; shown only once.", credential.token, "Copy credential");
         toast("Agent access saved.", "success");
       }, { cancel: false }); name = field(form, "Agent name", "", { required: true }); finish();
     } catch (failure) { done(); error(panel, failure); }
@@ -206,7 +204,7 @@ export function administration({ api, dialog, field, formIn, el, button, base, r
         if (!response.ok) throw Error((await response.json()).error || "Couldn't export the backup. Please try again.");
         const url = URL.createObjectURL(await response.blob()), link = el("a", { href: url, download: "family-backup.encrypted" });
         link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
-        showSecret(panel, "Your encrypted backup is ready.", "Save this recovery key separately from the downloaded file. You need both to restore the backup.", key, "Copy recovery key");
+        showSecret(panel, "Your encrypted backup is ready.", "Save this key separately. You need it to restore the backup.", key, "Copy recovery key");
       }), "site-button primary");
       panel.footer.replaceChildren(exportButton);
     } catch (failure) { done(); error(panel, failure); }

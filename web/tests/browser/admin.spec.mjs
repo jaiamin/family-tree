@@ -64,7 +64,8 @@ test("access changes update in place, one-time credentials confirm creation and 
   await expect(panel).toBeVisible();
   const credential = await panel.getByRole("textbox", { name: "Copy credential", exact: true }).inputValue();
   await panel.getByRole("button", { name: "Copy credential", exact: true }).click();
-  await expect(panel.getByText("Copied. Store it somewhere safe.", { exact: true })).toBeVisible();
+  await expect(page.locator(".site-toast")).toHaveText("Copied.");
+  await expect(panel.locator(".dialog-body .form-status")).toHaveCount(0);
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(credential);
   await panel.getByRole("button", { name: "Close", exact: true }).click();
   panel = await open(page, "Agent access");
@@ -97,7 +98,7 @@ test("backup export stays open while busy and protects its recovery key", async 
   // A clipboard failure keeps the key selected and protected for manual copying.
   await page.evaluate(() => Object.defineProperty(navigator, "clipboard", { value: { writeText: () => Promise.reject(Error("Denied")) } }));
   await panel.getByRole("button", { name: "Copy recovery key", exact: true }).click();
-  await expect(panel.getByText(/Couldn't copy automatically/)).toBeVisible();
+  await expect(page.locator(".site-toast")).toContainText("Couldn't copy automatically.");
   page.once("dialog", dialog => dialog.accept());
   await panel.getByRole("button", { name: "Close", exact: true }).click();
   await expect(panel).toHaveCount(0);

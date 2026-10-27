@@ -184,6 +184,7 @@ header .share-tree-button { display: flex; gap: 6px; width: auto; padding: 0 10p
 .admin-actions .text-button { min-height: 44px; margin-right: -8px; }
 .admin-role { color: var(--muted); font-size: 12px; }
 .admin-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); }
+.site-dialog .admin-section-title, .admin-section-heading h3 { font-size: 14px; font-weight: 600; }
 .site-dialog .admin-section-heading h3 { margin: 0; }
 .admin-section-heading > .text-button { min-height: 44px; margin-right: -8px; }
 .admin-section-heading + .admin-list { margin-top: 12px; }

@@ -8,4 +8,6 @@ Verification: web build/type checks, 61 unit tests, six Playwright flows, diff c
 
 Local review: synthetic preview on 0.0.0.0:8000/family-tree/, password local-preview-only. A synthetic owner session is seeded; no production data or credentials used. The disposable preview lives under ignored .preview/audit. User requested local testing; UI changes remain unpublished while they review.
 
+Latest review: admin section headings now stand apart from field labels; copy success/failure uses toast only; one-time-secret guidance shortened. Build, type checks, all six browser flows and detector pass. Local owner shortcut: /family-tree/__preview/owner (ignored preview infrastructure only).
+
 Next: incorporate user feedback; before publishing, remove this task-created handoff and update the task PR with final scope and checks. PR58 currently contains only the previous MCP security fix. Preexisting untracked research artifacts are excluded.
