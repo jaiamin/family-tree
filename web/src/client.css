@@ -101,7 +101,9 @@ header > .actions:empty { display: none; }
   header > .actions, .header-utilities { flex: none; gap: 4px; }
   body[data-family-base]:has(#canvas) header { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; }
   body[data-family-base]:has(#canvas) header > .actions { grid-column: 2; grid-row: 2; }
-  body[data-family-base]:has(#canvas) header .title { grid-column: 1 / -1; grid-row: 1; }
+  body[data-family-base]:has(#canvas) header .title { grid-column: 1 / -1; grid-row: 1; display: flex; align-items: center; gap: 12px; }
+  body[data-family-base]:has(#canvas) header h1 { flex: 1; min-width: 0; }
+  body[data-family-base]:has(#canvas) header .count { flex: none; }
   body[data-family-base]:has(#canvas) header .header-utilities { grid-column: 3; grid-row: 2; justify-self: end; }
   body[data-family-base]:has(#canvas) header .search { grid-column: 1; grid-row: 2; width: auto; min-width: 0; }
   body[data-family-base]:has(#canvas) .search input { min-width: 0; text-overflow: ellipsis; }

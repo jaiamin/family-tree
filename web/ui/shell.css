@@ -58,4 +58,4 @@
   .tree-options a { display: block; padding: 8px 10px; border-radius: 4px; font-size: 14px; font-weight: 400; white-space: normal; overflow-wrap: anywhere; }
   .tree-options a:hover, .tree-options a[aria-current="page"] { background: var(--chip); color: var(--fg); }
 
-  @media (max-width: 640px) { body:has(#canvas) { --header-height: 112px; } }
+  @media (max-width: 640px) { body:has(#canvas) { --header-height: 92px; } }
