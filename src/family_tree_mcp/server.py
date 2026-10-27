@@ -86,11 +86,13 @@ def create_server(store: Store, publish_delay: float = 30) -> FastMCP:
         pages, hidden = website_files(data, site)
         written = site_files(pages, site)
         folder = store.root / "exports" / "website"
-        # Remove only generated pages and data, so deleted trees cannot linger in deployments.
+        # Remove generated pages and data that are no longer part of the site, so deleted trees
+        # cannot linger in deployments. Current files are replaced in place, never missing.
         public = folder / "public"
         if public.exists():
             for old in [*public.rglob("*.html"), *public.glob("trees/*/data.json")]:
-                old.unlink()
+                if old.relative_to(folder).as_posix() not in written:
+                    old.unlink()
         for name, content in written.items():
             path = folder / name
             path.parent.mkdir(parents=True, exist_ok=True)
