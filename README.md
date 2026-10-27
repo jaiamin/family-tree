@@ -1,6 +1,6 @@
 # Family Tree
 
-Private family trees with graph/list views, photos, search, relationship comparison, sharing and GEDCOM import/export. Public code; private family data.
+Self-hosted, private family trees with graph/list views, photos, search, relationship comparison, sharing and GEDCOM import/export. Public code; private family data.
 
 ![Fictional family tree with photos, highlighted connections and an open profile](docs/images/family-tree-profile.png)
 
@@ -10,7 +10,7 @@ Private family trees with graph/list views, photos, search, relationship compari
 
 One application, two deployments. Follow [setup & recovery](docs/operations.md).
 
-| | Docker | Cloudflare |
+| | [Docker](docs/operations.md#docker) | [Cloudflare](docs/operations.md#cloudflare) |
 |---|---|---|
 | Runtime | Node.js + SQLite + private files | Workers + D1 + private R2 |
 | Configuration | `.env.example` → `.env` | `web/installation.example.json` → `web/installation.json` |
@@ -45,6 +45,8 @@ pnpm --dir web build
 pnpm --dir web dev
 ```
 
-Open **http://localhost:8000/family-tree/**; password: `local-preview-only`. Preview data is isolated. Editing requires `GOOGLE_CLIENT_ID`, `OWNER_EMAIL` and an authorized localhost origin.
+Open **http://localhost:8000/family-tree/**; password: `local-preview-only`. The preview starts empty and stores data separately; screenshot demo data is not included.
+
+Editing requires [Google sign-in setup](docs/operations.md#google-and-first-sign-in): `GOOGLE_CLIENT_ID`, `OWNER_EMAIL` and an authorized localhost origin.
 
 [Checks & code map](AGENTS.md) · [Operations](docs/operations.md) · [Architecture](docs/private-hosting/adr-002-two-deployments-one-application.md) · [MIT](LICENSE) · [ELK.js](web/ui/vendor/README.md) · [Geist (OFL)](https://github.com/vercel/geist-font/blob/main/LICENSE)
