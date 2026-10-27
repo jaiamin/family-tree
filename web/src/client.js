@@ -20,6 +20,15 @@
     }
     return result;
   }
+  let toastNotice, toastTimer;
+  function toast(message, kind) {
+    clearTimeout(toastTimer); toastNotice?.remove();
+    const notice = el("div", { class: "site-toast", "data-kind": kind, role: kind === "error" ? "alert" : "status", popover: "manual" });
+    notice.append(icon(kind === "error" ? ["M12 8v5m0 3h.01", "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18"] : ["m5 12 4 4L19 6"]), el("span", {}, message));
+    (activeDialog || document.body).append(notice);
+    notice.showPopover(); toastNotice = notice;
+    toastTimer = setTimeout(() => notice.remove(), kind === "error" ? 8000 : 5000);
+  }
   let session, data;
   let activeDialog;
   function dialog(title) {
@@ -75,8 +84,8 @@
     };
     return { form, status, finish: () => form.append(status) };
   }
-  async function googleSignIn(container, status) {
-    status.textContent = ""; status.classList.remove("is-error");
+  async function googleSignIn(container) {
+    container.signInObserver?.disconnect();
     container.textContent = "Loading Google sign-in…";
     container.setAttribute("aria-busy", "true");
     try {
@@ -90,9 +99,18 @@
       }
       if (!container.isConnected) return;
       window.google.accounts.id.initialize({ client_id: session.googleClientId, nonce: challenge.nonce, auto_select: false,
-        callback: async response => { try { await api("/google/login", { credential: response.credential }); location.reload(); } catch (error) { status.classList.add("is-error"); status.textContent = error.message; } },
+        callback: async response => {
+          try {
+            await api("/google/login", { credential: response.credential });
+            try { sessionStorage.setItem("family-editor-signed-in", "1"); location.reload(); }
+            catch { activeDialog?.close(); toast("Signed in to edit.", "success"); setTimeout(() => location.reload(), 3000); }
+          } catch (error) {
+            if (!container.isConnected) return;
+            toast(error.message, "error");
+            await googleSignIn(container);
+          }
+        },
       });
-      status.textContent = "";
       let width = 0;
       const render = () => {
         const next = Math.min(400, Math.floor(container.clientWidth));
@@ -101,11 +119,12 @@
         window.google.accounts.id.renderButton(container, { type: "standard", theme: document.documentElement.dataset.theme === "dark" ? "filled_black" : "outline", size: "large", shape: "rectangular", text: "signin_with", width });
       };
       render();
-      const observer = new ResizeObserver(render); observer.observe(container);
-      container.closest("dialog").addEventListener("close", () => observer.disconnect(), { once: true });
+      if (!container.signInObserver) container.closest("dialog").addEventListener("close", () => container.signInObserver?.disconnect(), { once: true });
+      container.signInObserver = new ResizeObserver(render); container.signInObserver.observe(container);
     } catch (error) {
-      container.replaceChildren(); status.classList.add("is-error"); status.textContent = error instanceof TypeError ? "Google sign-in couldn’t load. Please try again." : error.message;
-      if (session.googleClientId) container.append(button("Try again", () => googleSignIn(container, status)));
+      if (!container.isConnected) return;
+      container.replaceChildren(); toast(error instanceof TypeError ? "Google sign-in couldn’t load. Please try again." : error.message, "error");
+      if (session.googleClientId) container.append(button("Try again", () => googleSignIn(container)));
     } finally { container.setAttribute("aria-busy", "false"); }
   }
   function editorSignIn() {
@@ -113,11 +132,11 @@
     if (!panel) return;
     panel.box.classList.add("editor-sign-in");
     panel.footer.remove();
-    const holder = el("div", { class: "google-sign-in" }), status = el("p", { class: "form-status", role: "status" });
+    const holder = el("div", { class: "google-sign-in" });
     const note = el("p", { class: "form-note", id: "editor-sign-in-note" }, "Use an approved Google account.");
     panel.box.setAttribute("aria-describedby", note.id);
-    panel.body.append(note, holder, status);
-    googleSignIn(holder, status);
+    panel.body.append(note, holder);
+    googleSignIn(holder);
   }
   function suggest(personId) {
     const panel = dialog(personId ? "Suggest a change" : "Send a suggestion");
@@ -489,6 +508,11 @@
         };
       } else {
         mountHeader();
+        try {
+          const signedIn = sessionStorage.getItem("family-editor-signed-in");
+          sessionStorage.removeItem("family-editor-signed-in");
+          if (signedIn && session.role !== "member") toast("Signed in to edit.", "success");
+        } catch {}
         if ($("family-list")) await loadTree();
       }
       resolve();
