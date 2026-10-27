@@ -20,9 +20,11 @@ const treeHeader = render(header, { ...shared,
 });
 const font = await readFile("node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2");
 const fontPath = `/assets/geist.${createHash("sha256").update(font).digest("hex").slice(0,16)}.woff2`;
-const fontCss = `@font-face{font-family:Geist;font-style:normal;font-weight:100 900;font-display:swap;src:url(${base}${fontPath}) format('woff2');}`;
+const fontLicense = await readFile("node_modules/@fontsource-variable/geist/LICENSE", "utf8");
+const licensePath = `/assets/geist-license.${createHash("sha256").update(fontLicense).digest("hex").slice(0,16)}.txt`;
+const fontCss = `/* Geist: SIL OFL 1.1; ${base}${licensePath} */@font-face{font-family:Geist;font-style:normal;font-weight:100 900;font-display:swap;src:url(${base}${fontPath}) format('woff2');}`;
 const css = fontCss + await source("shell.css"), clientCss = await readFile("src/client.css", "utf8");
-const pages = { [fontPath]: font.toString("base64") };
+const pages = { [fontPath]: font.toString("base64"), [licensePath]: fontLicense };
 async function script(name, content, browser = true) {
   // Shared helpers also support Node tests. Remove those exports before wrapping browser code.
   const result = await transform(content, { minify: true, target: "es2022", ...browser ? { define: { module: "undefined" } } : {} });

@@ -20,13 +20,13 @@ async function call(path, { body, method = body === undefined ? "GET" : "POST", 
   }, body: body === undefined ? undefined : JSON.stringify(body) });
 }
 const cookieFrom = response => response.headers.get("set-cookie")?.split(";")[0];
-async function signIn(email, { verified = true, nonceOverride, name, picture, audience = "test-google-client" } = {}) {
-  const challenge = await call("/google/start", { body: {} });
+async function signIn(email, { verified = true, nonceOverride, name, picture, accountCookie, audience = "test-google-client" } = {}) {
+  const challenge = await call("/google/start", { body: {}, cookie: accountCookie });
   const { nonce } = await challenge.json();
   const credential = await new SignJWT({ email, name, picture, email_verified: verified, nonce: nonceOverride || nonce }).setProtectedHeader({ alg: "RS256", kid: jwk.kid }).setSubject(email)
     .setIssuer("https://accounts.google.com").setAudience(audience).setIssuedAt().setExpirationTime("5m").sign(google.privateKey);
   const cookie = cookieFrom(challenge);
-  const response = await call("/google/login", { body: { credential }, cookie });
+  const response = await call("/google/login", { body: { credential }, cookie: accountCookie ? `${cookie}; ${accountCookie}` : cookie });
   return { response, credential, challengeCookie: cookie };
 }
 before(async () => {
@@ -98,6 +98,16 @@ test("Google tokens require a linked subject, audience, verified email, and one-
   await db.prepare("UPDATE users SET enabled=0,auth_version=auth_version+1 WHERE username='editor'").run();
   assert.equal((await call("/suggestions", { cookie })).status, 401, "revocation invalidates existing editor sessions");
   await db.prepare("UPDATE users SET enabled=1 WHERE username='editor'").run();
+});
+test("Google linking requires the authenticated account and does not grant a higher role", async () => {
+  const conflict=await signIn("editor@example.com",{accountCookie:familyCookie});assert.equal(conflict.response.status,409);
+  const linked=await signIn("relative-google@example.com",{accountCookie:familyCookie,picture:"https://lh3.googleusercontent.com/relative"});
+  assert.equal(linked.response.status,200);
+  const profile=await(await call("/session",{cookie:familyCookie})).json();
+  assert.equal(profile.googleLinked,true);assert.equal(profile.role,"viewer");assert.equal(profile.picture,"https://lh3.googleusercontent.com/relative");
+  assert.equal((await signIn("relative-google@example.com")).response.status,200);
+  assert.equal((await call("/google/link",{method:"DELETE",cookie:familyCookie,headers:{origin}})).status,200);
+  assert.equal((await signIn("relative-google@example.com")).response.status,403);
 });
 test("same revision cannot overwrite a concurrent update; invalid ancestry is rejected atomically", async () => {
   const current = await (await call("/collection", { owner: true })).json();

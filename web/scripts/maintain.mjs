@@ -1,7 +1,7 @@
 import { readFile, writeFile, open } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { localRuntime } from "./server.mjs";
-import { createBackup, refreshBackup, preUpgradeBackup, verifyBackupPhotos, digest } from "../dist/maintenance/backup.js";
+import { preUpgradeBackup } from "../dist/maintenance/backup.js";
 import { recoverBackup } from "../dist/maintenance/recovery.js";
 import { encryptedBackup, stageEncryptedBackup } from "../dist/maintenance/backup-export.js";
 import { hashPassword } from "../dist/maintenance/accounts/password.js";
@@ -9,7 +9,7 @@ import { sha256 } from "../dist/maintenance/auth.js";
 
 const command = process.argv[2];
 const remote = process.env.DEPLOYMENT === "cloudflare";
-if (!["init","backup","preflight","export","restore","recover-owner","migrate-legacy","pause","resume"].includes(command)) throw Error("Commands: init, backup, preflight, export, restore, recover-owner, migrate-legacy, pause, resume. Configure DATA_DIR, BACKUP_DIR and PUBLIC_ORIGIN through the environment.");
+if (!["init","preflight","export","restore","recover-owner","migrate-legacy","pause","resume"].includes(command)) throw Error("Commands: init, preflight, export, restore, recover-owner, migrate-legacy, pause, resume. Configure DATA_DIR, BACKUP_DIR and PUBLIC_ORIGIN through the environment.");
 function required(name) {
   if (!process.env[name]) throw Error(`Set ${name}.`);
   return process.env[name];
@@ -39,35 +39,13 @@ try {
       console.log(JSON.stringify(await migrateLegacy(source.env,runtime.env)));
     } finally { await source.close(); }
   }
-  if (command === "backup" && remote) throw Error("Cloudflare runs automatic backups through its native bindings. Use preflight for a maintenance snapshot.");
-  if (command === "backup") {
-    await refreshBackup(runtime.env);
-    const state=await runtime.env.DB.prepare("SELECT error FROM backup_state WHERE id=1").first();
-    if(state.error) throw Error(state.error);
-  }
-  if (command === "preflight") {
-    const version = await runtime.env.DB.prepare("SELECT version,maintenance FROM schema_version WHERE id=1").first();
-    if (version?.version !== 2) throw Error("Unsupported schema. Use the explicit legacy conversion into fresh storage; do not initialize over existing records.");
-    if (!version.maintenance) throw Error("Pause the installation before preflight.");
-    if (remote) {
-      // The operator stops serving writes first. REST has no R2 conditional PUT;
-      // concurrent application backup writes must not race this maintenance step.
-      const snapshot = await createBackup(runtime.env);
-      await verifyBackupPhotos(runtime.env,snapshot);
-      const encoded = JSON.stringify(snapshot);
-      await runtime.env.BACKUP.put("pre-upgrade.json",encoded,{httpMetadata:{contentType:"application/json"}});
-      const saved = await runtime.env.BACKUP.get("pre-upgrade.json");
-      if (!saved || await digest(await saved.arrayBuffer()) !== await digest(new TextEncoder().encode(encoded))) throw Error("Pre-upgrade snapshot verification failed.");
-      const current = await runtime.env.DB.prepare("SELECT generation FROM backup_state WHERE id=1").first();
-      if (current.generation !== snapshot.generation) throw Error("Records changed during preflight. Stop writes and repeat.");
-    } else await preUpgradeBackup(runtime.env);
-  }
+  if (command === "preflight") await preUpgradeBackup(runtime.env);
   if (command === "export") {
     if(!process.env.EXPORT_FILE || !process.env.RECOVERY_KEY_FILE) throw Error("Set EXPORT_FILE and RECOVERY_KEY_FILE to separate private destinations.");
     const key=Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64");
     await writeFile(process.env.RECOVERY_KEY_FILE,key,{mode:0o600,flag:"wx"});
     const file=await open(process.env.EXPORT_FILE,"wx",0o600);
-    try { for await(const chunk of await encryptedBackup(runtime.env,key)) await file.write(chunk); await file.sync(); }
+    try { for await(const chunk of await encryptedBackup(runtime.env,key)) await file.writeFile(chunk); await file.sync(); }
     finally {await file.close();}
   }
   if(command === "restore") {

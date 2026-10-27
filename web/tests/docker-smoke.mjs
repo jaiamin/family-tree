@@ -19,6 +19,15 @@ try {
   await docker("run","--rm",...settings,image,"node","scripts/maintain.mjs","init");
   await docker("run","-d","--name",prefix,...settings,image);
   await inContainer(await readFile(new URL("fixtures/docker-flow.mjs",import.meta.url),"utf8"));
+  await docker("exec","-e","EXPORT_FILE=/tmp/family.encrypted","-e","RECOVERY_KEY_FILE=/tmp/export.key",prefix,"node","scripts/maintain.mjs","export");
+  const restored=["exec","-e","DATA_DIR=/tmp/cli-restored","-e","BACKUP_DIR=/tmp/cli-backup",prefix,"node","scripts/maintain.mjs"];
+  await docker(...restored,"init");
+  await docker("exec","-e","DATA_DIR=/tmp/cli-restored","-e","BACKUP_DIR=/tmp/cli-backup","-e","EXPORT_FILE=/tmp/family.encrypted","-e","RECOVERY_KEY_FILE=/tmp/export.key",prefix,"node","scripts/maintain.mjs","restore");
+  await inContainer(`import assert from 'node:assert/strict'; import {DatabaseSync} from 'node:sqlite';
+    const database=new DatabaseSync('/tmp/cli-restored/family.sqlite');
+    assert.equal(database.prepare('SELECT count(*) AS n FROM people').get().n,1);
+    assert.equal(database.prepare('SELECT count(*) AS n FROM photo_uploads').get().n,1);database.close();`);
+  await docker("exec","-e","OWNER_PASSWORD=synthetic-password","-e","RECOVERY_KEY_FILE=/tmp/recovered-owner.key",prefix,"node","scripts/maintain.mjs","recover-owner");
   await docker("restart",prefix);
   await inContainer(`import assert from 'node:assert/strict';
     let response; for(let i=0;i<40;i++){try{response=await fetch('http://localhost:8000/family-tree/api/session');break;}catch{await new Promise(r=>setTimeout(r,100));}}

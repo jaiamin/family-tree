@@ -48,13 +48,19 @@ export async function verifyBackupPhotos(env: Env, snapshot: Backup) {
   }
 }
 export async function preUpgradeBackup(env: Env) {
-  await refreshBackup(env);
-  const state = await env.DB.prepare("SELECT generation,saved_generation,error FROM backup_state WHERE id=1").first<{ generation:number; saved_generation:number; error:string|null }>();
-  assert(state && !state.error && state.saved_generation >= state.generation, "A successful current backup is required before upgrading.");
-  const object = await env.BACKUP.get("collection.json");
-  assert(object,"No verified backup is available.");
-  const snapshot = await object.json<Backup>();
+  const version = await env.DB.prepare("SELECT version,maintenance FROM schema_version WHERE id=1").first<{version:number;maintenance:number}>();
+  assert(version?.version === 2 && version.maintenance === 1,"Pause the current installation before preflight.",409);
+  const snapshot = await createBackup(env);
   await verifyBackupPhotos(env,snapshot);
-  // Replaces the prior point only after latest backup verification succeeds.
-  await writeSnapshot(env,"pre-upgrade.json",snapshot);
+  const encoded = JSON.stringify(snapshot), candidate = "pre-upgrade.candidate.json";
+  try {
+    await env.BACKUP.put(candidate,encoded,{httpMetadata:{contentType:"application/json"}});
+    const saved = await env.BACKUP.get(candidate);
+    assert(saved && await digest(await saved.arrayBuffer()) === await digest(new TextEncoder().encode(encoded)),"Pre-upgrade snapshot verification failed.");
+    const state = await env.DB.prepare("SELECT generation FROM backup_state WHERE id=1").first<{generation:number}>();
+    assert(state?.generation === snapshot.generation,"Records changed during preflight. Stop writes and repeat.",409);
+    // Publish only a verified candidate. Atomic object replacement preserves the
+    // previous recovery point if staging, validation or publication fails.
+    await env.BACKUP.put("pre-upgrade.json",encoded,{httpMetadata:{contentType:"application/json"}});
+  } finally { await env.BACKUP.delete(candidate).catch(()=>{}); }
 }

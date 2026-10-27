@@ -46,7 +46,11 @@ export function cloudflareStorage(config, credential = process.env.CLOUDFLARE_AP
         if (!response.ok || !result.success) throw Error(`R2 listing failed (${response.status}).`);
         return { objects: result.result, truncated: Boolean(result.result_info?.is_truncated), cursor: result.result_info?.cursor };
       },
-      async delete() { throw Error("Remote deletion is intentionally unavailable to maintenance tools."); },
+      async delete(key) {
+        if (key !== "pre-upgrade.candidate.json") throw Error("Maintenance can delete only its temporary staging object.");
+        const response = await transport(`${url}/${keyPath(key)}`,{method:"DELETE",headers});
+        if (!response.ok && response.status !== 404) throw Error(`R2 staging cleanup failed (${response.status}).`);
+      },
     };
   }
   return { DB, PHOTOS: bucket(config.photosBucket), BACKUP: bucket(config.backupBucket),

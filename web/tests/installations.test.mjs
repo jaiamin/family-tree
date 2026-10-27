@@ -46,6 +46,12 @@ for(const kind of ["Cloudflare","Local"]) {
       assert.equal((await owner.call("/view")).status,200);
       const personResponse=await owner.call("/first-person",{treeId:tree.id,revision:tree.revision,fields:{name:"First relative"}});assert.equal(personResponse.status,200);
       const person=await personResponse.json();
+      const expired=await(await owner.call("/invitations",{role:"viewer"})).json();
+      await runtime.env.DB.prepare("UPDATE invitations SET expires=1 WHERE id=?").bind(expired.id).run();
+      assert.equal((await viewer.call("/join",{token:expired.token,username:"expired",password})).status,403);
+      const revokedLink=await(await owner.call("/invitations",{role:"viewer"})).json();
+      assert.equal((await owner.call(`/invitations/${revokedLink.id}`,undefined,"DELETE")).status,200);
+      assert.equal((await viewer.call("/join",{token:revokedLink.token,username:"revoked",password})).status,403);
       const invitation=await (await owner.call("/invitations",{role:"viewer"})).json();
       const join=await viewer.call("/join",{token:invitation.token,username:"relative",name:"Relative",password});assert.equal(join.status,201);
       assert.equal((await viewer.call("/join",{token:invitation.token,username:"replay",name:"Replay",password})).status,403);
@@ -171,7 +177,23 @@ for(const kind of ["Cloudflare","Local"]) {
       const person=await(await owner.call("/first-person",{treeId:tree.id,revision:tree.revision,fields:{name:"Relative"}})).json();
       const image=new Uint8Array([255,216,255,224,1,2]);
       for(let i=0;i<2;i++)assert.equal((await source.fetch(new Request(`${base}/api/photos/${person.id}`,{method:"PUT",headers:{cookie:owner.cookie,origin,"content-type":"image/jpeg"},body:image}))).status,200);
-      await refreshBackup(source.env);await preUpgradeBackup(source.env);
+      await refreshBackup(source.env);
+      await source.env.DB.prepare("UPDATE schema_version SET maintenance=1 WHERE id=1").run();
+      await preUpgradeBackup(source.env);
+      const previousPoint=await(await source.env.BACKUP.get("pre-upgrade.json")).arrayBuffer();
+      const backup=source.env.BACKUP;
+      const invalidStage={...source.env,BACKUP:{
+        get:key=>key === "pre-upgrade.candidate.json" ? Promise.resolve(new Response("corrupt staging bytes")) : backup.get(key),
+        put:(...args)=>backup.put(...args),delete:key=>backup.delete(key),
+      }};
+      await assert.rejects(preUpgradeBackup(invalidStage),/verification failed/);
+      assert.deepEqual(await(await backup.get("pre-upgrade.json")).arrayBuffer(),previousPoint,"failed verification preserves the last recovery point");
+      for(const key of ["pre-upgrade.json",`daily/${new Date().toISOString().slice(0,10)}.json`]) {
+        const fresh=await installation(kind);
+        try {assert.deepEqual(await recoverBackup({...fresh.env,BACKUP:backup},key),{people:1,photos:2});}
+        finally {await fresh.close();}
+      }
+      await source.env.DB.prepare("UPDATE schema_version SET maintenance=0 WHERE id=1").run();
       assert.equal((await source.env.DB.prepare("SELECT error FROM backup_state").first()).error,null);
       const snapshots=(await source.env.BACKUP.list()).objects.map(object=>object.key);
       assert.ok(snapshots.includes("pre-upgrade.json"));assert.ok(snapshots.some(key=>key.startsWith("daily/")));

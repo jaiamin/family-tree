@@ -14,7 +14,7 @@ function asset(path: string, immutable = false) {
   const value = (pages as Record<string, string>)[path];
   assert(value, "Not found.", 404);
   if (path.endsWith(".woff2")) return new Response(Uint8Array.from(atob(value),char=>char.charCodeAt(0)),{headers:{"content-type":"font/woff2","cache-control":"public, max-age=31536000, immutable"}});
-  const type = path.endsWith(".js") ? "text/javascript" : path.endsWith(".svg") ? "image/svg+xml" : "text/html";
+  const type = path.endsWith(".js") ? "text/javascript" : path.endsWith(".svg") ? "image/svg+xml" : path.endsWith(".txt") ? "text/plain" : "text/html";
   return new Response(value, { headers: { "content-type": `${type}; charset=utf-8`, ...immutable ? { "cache-control": "public, max-age=31536000, immutable" } : {} } });
 }
 
