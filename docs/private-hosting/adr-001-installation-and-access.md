@@ -1,9 +1,7 @@
-# ADR 001: Installation-wide family access
+# ADR 001: Installation-wide access
 
-Status: implemented.
+One installation owns one collection and any number of trees. Trees group shared people; they are not privacy boundaries. A person keeps the same UUID and public ID across trees. Login users are separate from genealogical people.
 
-Each independent installation owns one collection of shared people and relationships and may expose multiple named trees. Trees are membership views, not authorization scopes. A person retains its UUID and public ID across trees; changes propagate wherever included. Login users are separate from people.
+Use one family viewing password, approved Google editors and one deployment-configured owner. Enforce permissions server-side; share links grant no access. Deleting a tree preserves people and uploads.
 
-Use a shared family viewing password and approved Google owner/editor accounts across the installation. Viewers view, suggest and add/replace photos; editors manage genealogy, suggestions and displayed-photo removal; owner manages editor approvals, settings and trees and permanently deletes people. Deleting a tree preserves people and retained uploads. Share links locate records and never grant access.
-
-No public signup, multi-tenant service, per-tree ACLs or automatic name-based person/account matching. Server-side checks apply to every operation. Use one owner with explicit transfer and protection against removing the last owner, as confirmed in the final interview.
+No public signup, per-tree permissions or automatic person/account matching. See [roles](../../README.md#host-your-own) and [identity](adr-003-identity-and-recovery.md).

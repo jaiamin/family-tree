@@ -1,12 +1,12 @@
 # Loading performance
 
-Measured 2026-10-27 against baseline `a0ed317`. These are local lab results, not production Core Web Vitals or a claim about every phone.
+Historical local measurements from 2026-10-27 against `a0ed317`; not current-release timings or production Core Web Vitals.
 
 ## Method
 
-`web/scripts/benchmark.mjs` starts disposable Miniflare D1/R2, seeds a synthetic 256-person binary ancestry tree and 16 tiny PNG avatars, and drives Chromium through CDP. No live data or persistent local family records are read or changed. Five cold/warm navigation pairs use 4x CPU throttling, 100 ms network latency and 1.6 Mbps download at 1280×800. Every navigation starts from a blank document; cold runs clear browser cache. Browser values are medians. UI-ready timings observe DOM/card visibility and decoded selected images, not completion of fade animations. App transfer excludes third-party fonts. Tiny images isolate request latency and understate byte savings for real photos.
+The benchmark uses disposable Miniflare, 256 synthetic people and 16 tiny PNGs; no family data. Browser results are medians of five cold/warm pairs: Chromium, 4× CPU throttle, 100 ms latency, 1.6 Mbps, 1280×800. Cold runs clear cache. Readiness measures visible cards/decoded photos, not fade completion; transfer excludes third-party fonts. Tiny photos understate real image-byte savings.
 
-API samples use 20 measured local dispatches after one warm-up. They exclude real D1 geography, proxy/network latency and concurrent family traffic. Differences below a millisecond can be noise. Baseline and candidate use the same harness and fixture shape; UUIDs are regenerated. The baseline compiled Worker was captured before implementation in ignored `.preview/performance/baseline-worker.mjs`.
+API median/p95 uses 20 local dispatches after warm-up, excluding real network/D1 geography. Submillisecond differences may be noise. Both versions accepted one of 12 same-revision writes and rejected 11 with HTTP 409; concurrency protection was unchanged.
 
 ## Browser and payload
 
@@ -34,27 +34,21 @@ API samples use 20 measured local dispatches after one warm-up. They exclude rea
 | `/api/view?tree=TREE` | 2.97 / 3.29 ms | 2.98 / 3.44 ms |
 | `/api/photos/PERSON` | 2.59 / 2.77 ms | 1.45 / 2.34 ms |
 
-The tree view now includes current photo pointers in the same D1 batch; its local API time is effectively unchanged while eliminating the later photo-index request. Overview queries read summaries instead of all people and relationships. A photo read needs two SQL statements including session validation (previously eight), with no R2 read or image body for a matching ETag.
+## What changed
 
-Both versions correctly accept one of 12 simultaneous same-revision edits and reject the other 11 with HTTP409. A separate regression overlaps 12 readers with these writes and verifies each response has a consistent revision and photo map. No concurrency mechanism was relaxed.
+- Content-hashed scripts cache immutably; authenticated HTML/JSON/errors remain private/no-store.
+- Session/view requests overlap. Initial rendering includes photo pointers; deep links preload the selected photo.
+- Indexed photo queries reauthenticate before ETag/304 responses; selection shows details immediately.
 
-## Changes and boundaries
-
-- Content-hashed, minified scripts use public immutable browser caching. Authenticated HTML, JSON and errors remain private/no-store; code contains no family records. Hashes change automatically when content changes.
-- Session and view fetches overlap; a shared link preloads its current person's photo while the layout engine downloads. Photos are included at initial render, and unchanged avatar images are retained.
-- Photo lookups use an indexed join. Private/no-cache responses reauthenticate and check the current pointer before returning304. Replaced, removed and revoked-access cases are tested. All immutable uploads and backup copies remain retained.
-- Details appear immediately on selection while the camera still animates. Shared links start at the selected person without an initial glide. Graph layout options and geometry are unchanged.
-- No new package, service, database schema, Cloudflare binding or deployment is required. Production settings were inspected read-only; logs/traces and expected bindings are present. First visits still download and execute ELK, so their improvement is modest.
+First visits still download and execute ELK. Layout geometry was unchanged.
 
 ## Reproduce
 
-Requires the project's dependencies and `agent-browser`. From repository root:
+Install project dependencies and `agent-browser`, then run from the repository root:
 
 ```sh
 pnpm --dir web build
 node web/scripts/benchmark.mjs web/dist/worker.mjs .preview/performance/after.json
 ```
 
-Optional first argument accepts a previously compiled baseline Worker; second controls the aggregate/sample JSON output. The runner closes its named browser and disposable runtime. Synthetic fixture mutations never reach production.
-
-Verification: 33 web tests (auth/revocation, concurrent edits/reads, photo retention and cache freshness, backup/recovery, GEDCOM, and identical original/minified engine geometry), 88 Python tests, TypeScript, Ruff and ty. Browser QA uses a separate synthetic family for real edit/save, relative creation, photo crop/upload/reload, search, comparison, both orientations and desktop/mobile. Production build and deployment dry run pass; real Google login and physical touch are not repeated. Nothing was deployed.
+The runner closes its named browser and disposable runtime. Arguments select the compiled Worker and JSON output. The historical baseline artifact is not tracked; reproducing that comparison requires a separately built baseline. Results vary by machine and release.

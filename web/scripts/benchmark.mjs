@@ -62,7 +62,7 @@ try {
   const { sessionId } = await send("Target.attachToTarget", { targetId, flatten: true });
   const cdp = (method, params) => send(method, params, sessionId);
   await cdp("Page.enable"); await cdp("Network.enable");
-  await cdp("Network.setCookie", { name: "family_session", value: cookie.split("=")[1], url: base, path: "/family-tree" });
+  await cdp("Network.setCookie", { name: cookie.split("=")[0], value: cookie.split("=")[1], url: base, path: "/family-tree" });
   await cdp("Network.emulateNetworkConditions", { offline: false, latency: 100, downloadThroughput: 200000, uploadThroughput: 100000 });
   await cdp("Emulation.setCPUThrottlingRate", { rate: 4 });
   await cdp("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
