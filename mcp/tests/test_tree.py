@@ -236,6 +236,10 @@ def test_merge_replaces_placeholder_parent(tree: Tree) -> None:
     tree.link("shashank", "sibling", "mukul")
     [placeholder] = tree.get("shashank").parents
     tree.merge("grandpa", placeholder)
+    assert tree.relationship("mukul", "dad")["relationship"] == "brother"
+    assert not tree.half_siblings("mukul", "dad")
+    seed(tree, "Other Mother")
+    tree.link("mukul", "parent", "other-mother")
     assert tree.relationship("mukul", "dad")["relationship"] == "half-brother"
 
 
@@ -328,3 +332,15 @@ def test_apply_changes_details_then_links(tree: Tree) -> None:
     assert tree.people["kid"].name == "Kiddo" and tree.people["kid"].parents == ["me", "stranger"]
     assert tree.people["aunt"].partners == []
     assert tree.partnership("me", "ex") == Partnership(status="married")
+
+
+def test_missing_parent_does_not_assert_half_sibling(tree: Tree) -> None:
+    tree.people["sis"].parents = ["dad"]
+    assert not tree.half_siblings("me", "sis")
+    assert tree.relationship("me", "sis")["relationship"] == "sister"
+    assert not any(s.get("half") for s in tree.profile("me")["siblings"] if s["id"] == "sis")
+
+
+def test_direct_partner_precedes_blood_relationship(tree: Tree) -> None:
+    tree.link("me", "partner", "cousin", status="married")
+    assert tree.relationship("me", "cousin")["relationship"] == "spouse"

@@ -15,13 +15,14 @@
 <style>
   __SHELL_CSS__
   body { min-height: 100%; }
-  header { padding-top: max(16px, env(safe-area-inset-top)); padding-bottom: 16px; }
-  h1 { font-size: 20px; }
+  header h1 { font-size: 20px; }
   main { width: min(100%, 1000px); margin: 0 auto; padding: 40px 24px; }
   h2 { margin: 0 0 24px; font-size: 22px; font-weight: 600; letter-spacing: -.02em; }
   .trees { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 16px; list-style: none; margin: 0; padding: 0; }
-  .tree-card { display: block; height: 100%; padding: 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: inherit; text-decoration: none; transition: border-color .15s; }
-  .tree-card:hover { border-color: var(--border-strong); }
+  .tree-card { display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 100%; padding: 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: inherit; text-decoration: none; transition: border-color .15s, background-color .15s; }
+  .tree-card:hover { border-color: var(--border-strong); background: var(--chip); }
+  .tree-card > div { min-width: 0; }
+  .tree-card > .icon { color: var(--muted); }
   .tree-card h3 { margin: 0; font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
   .tree-card p { margin: 6px 0 0; color: var(--muted); font-variant-numeric: tabular-nums; }
   @media (max-width: 640px) { main { padding: 28px 16px; } }

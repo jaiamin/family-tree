@@ -20,7 +20,7 @@ const templates = {
   "/tree.html": render(await source("share.html"), {
     __TITLE__: "Family tree", __SHELL_CSS__: css, __HEADER__: treeHeader,
     __LAYOUT_ENGINE__: await source("vendor/elk.bundled.js"),
-    __LAYOUT_JS__: await source("layout.js") + "\n" + await source("relationship.js"), __SHARE_JS__: await source("share.js"),
+    __LAYOUT_JS__: await source("layout.js") + "\n" + await source("relationship.js"), __SHARE_JS__: await source("photo-crop.js") + "\n" + await source("share.js"),
   }),
 };
 for (const [name, template] of Object.entries(templates)) {

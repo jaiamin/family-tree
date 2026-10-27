@@ -46,7 +46,7 @@ After this code is merged, connect the Worker to the GitHub repository in **Sett
 
 - After each successful data/photo/access/suggestion write, the Worker asynchronously refreshes **one** `collection.json` manifest in the private backup bucket. It includes all records, current photo pointers, every registered upload, suggestions, and editor access.
 - A scheduled trigger retries every 15 minutes. Owner session/MCP `get_website` exposes backup status; failures appear in the owner's menu. This is not per-edit undo: accidental deletions also enter the next backup.
-- Each photo upload gets an immutable key containing the person UUID and upload UUID. Both buckets receive the bytes **before** the current-photo reference changes. Editors may remove the displayed photo; this clears only its current reference and keeps every upload. Replacing a photo retains all previous uploads; no automated pruning or deployment cleanup removes them. The browser uploads a square profile crop, not the untouched camera file.
+- Each photo upload gets an immutable key containing the person UUID and upload UUID. Both buckets receive the bytes **before** the current-photo reference changes. Editors may remove the displayed photo; this clears only its current reference and keeps every upload. Replacing a photo retains all previous uploads; no automated pruning or deployment cleanup removes them. The browser lets the uploader position and zoom a square profile crop; it uploads that crop, not the untouched camera file.
 - Sessions and temporary login/rate-limit data are intentionally excluded. People sign in again after recovery. Separate buckets protect against main-storage failure, not loss of the entire Cloudflare account; no zero-loss guarantee.
 
 ## Disaster recovery

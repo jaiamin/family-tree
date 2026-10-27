@@ -155,7 +155,7 @@ class Tree(BaseModel):
 
     def half_siblings(self, a: str, b: str) -> bool:
         pa, pb = self.people[a].parents, self.people[b].parents
-        return len(set(pa) & set(pb)) == 1 and max(len(pa), len(pb)) == 2
+        return len(pa) == len(pb) == 2 and len(set(pa) & set(pb)) == 1
 
     def add_person(self, name: str, **fields: Any) -> Person:
         person_id = str(uuid4())
@@ -412,13 +412,13 @@ class Tree(BaseModel):
         result: dict[str, Any] = {"person": self.ref(a.id), "relative": self.ref(b.id)}
         if a.id == b.id:
             return {**result, "relationship": "same person"}
-        if blood := self._blood(a.id, b.id):
+        if b.id in a.partners:
+            term = self._partner_term(a.id, b)
+        elif blood := self._blood(a.id, b.id):
             da, db, common = blood
             term = kinship(da, db, b.sex, da == db == 1 and self.half_siblings(a.id, b.id))
             if common := [self.ref(i) for i in common if i not in (a.id, b.id)]:
                 result["common_ancestors"] = common
-        elif b.id in a.partners:
-            term = self._partner_term(a.id, b)
         elif via := next(((r, d) for r in b.partners if (d := self._blood(a.id, r))), None):
             # b is the partner of a's relative r.
             r, (da, db, _) = via
