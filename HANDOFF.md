@@ -13,3 +13,19 @@ Additional user request: replace loading placeholders with fitted skeletons. Sha
 Local preview: http://localhost:8000/family-tree/ (development password: local-preview-only), bound to 0.0.0.0. Disposable synthetic QA and named browser sessions are closed after verification. Preexisting .impeccable/ is untracked and must remain uncommitted. This HANDOFF.md predates the task and must be preserved.
 
 Next: review and merge the PR. Main merges use the existing Cloudflare deployment pipeline. Port8000 remains available for local review. No production data changes or manual deployment.
+
+## Tree dropdown experiment (local only)
+
+User approved trying people counts and a current-tree checkmark. Rows now use the existing SVG icon style, aligned names, muted tabular counts,44px minimum height and existing current-page semantics. Screen readers get person/people labels. Counts reuse the overview response; no extra request or backend change.
+
+Build, TypeScript and diff checks passed. Browser verified desktop/light and320px mobile, dark rendering and switching trees updates the current selection. Port8000 serves this experiment. Do not push until user approves it.
+
+Dropdown hover follow-up: current tree is indicated only by its checkmark. Gray background now follows hover/keyboard focus rather than persisting on the current row. Browser computed styles confirmed the current row is transparent and the hovered alternative uses the chip surface. Build/type checks passed. Local only.
+
+Editor identity follow-up: reduced name/email separation from4px to1px. Build/type checks passed; browser confirmed1px computed margin with a synthetic editor session response (no account or auth changes). Local only.
+
+Landing review: independent Impeccable design/evidence assessments inspected password entry and overview in desktop/mobile light/dark. Existing minimal layout is sound; no redesign warranted. Recommend plain network-error wording and explicit destination labels for theme toggle. Larger utility targets were noted but are intentionally consistent with user-approved36px controls. No landing redesign applied. No production data mutations.
+
+Landing copy improvements (user approved, local only): shared API fetch failures now say "Couldn't connect. Please try again." while server-supplied validation messages remain intact. Theme menu names its destination, Use dark mode / Use light mode, and updates after toggling. Browser verified simulated network failure, successful retry, both toggles and persistence across reload. Build, TypeScript and34 web tests pass. Port8000 updated; no push/deploy.
+
+Publication: user has now authorized pushing all dropdown, editor spacing and landing-copy changes. Earlier local-only restrictions are superseded for these changes. Open a PR for review; do not merge or manually deploy. Untracked .impeccable/ review artifacts remain excluded.
