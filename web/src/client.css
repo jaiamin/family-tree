@@ -38,8 +38,8 @@ header .site-menu .account-trigger { display: flex; width: auto; gap: 6px; paddi
 .site-menu summary::-webkit-details-marker { display: none; }
 .site-menu summary:hover { background: var(--chip); }
 .site-menu .menu-items { position: absolute; right: 0; top: calc(100% + 8px); width: 190px; padding: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow-lg); z-index: 20; }
-.menu-items button { display: block; width: 100%; padding: 11px 12px; border: 0; border-radius: 5px; background: none; color: var(--fg); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
-.menu-items button:hover { background: var(--chip); }
+.menu-items button, .menu-items a { display: block; width: 100%; padding: 11px 12px; border: 0; border-radius: 5px; background: none; color: var(--fg); font: inherit; font-size: 13px; text-align: left; text-decoration: none; cursor: pointer; }
+.menu-items button:hover, .menu-items a:hover { background: var(--chip); }
 .menu-items .mobile-menu-item { display: none; }
 .person-picker-results { max-height: 220px; overflow-y: auto; margin-top: 8px; }
 .person-picker-option { display: block; width: 100%; padding: 12px; border: 0; border-radius: 6px; background: none; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }

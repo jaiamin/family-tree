@@ -283,6 +283,8 @@
     const themeItem = button("Switch light or dark mode", () => { $("theme").click(); menu.open = false; }, "mobile-menu-item");
     items.append(themeItem);
     const item = (label, action) => items.append(button(label, () => { menu.open = false; action(); }));
+    const treeId = location.pathname.slice(base.length).match(/^\/trees\/([0-9a-f-]+)\/?$/)?.[1];
+    if (treeId) items.append(el("a", { href: `${base}/api/trees/${treeId}/gedcom`, download: "" }, "Download GEDCOM"));
     item("Send a suggestion", () => suggest());
     if (session.role !== "member") item("Family suggestions", inbox);
     if (session.role === "owner") {

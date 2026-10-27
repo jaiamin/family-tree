@@ -4,6 +4,7 @@ import { readCollection, saveCollection, treeView } from "./data";
 import type { Env } from "./types";
 import pages from "../generated/pages.json";
 import { refreshBackup } from "./backup";
+import { gedcom } from "./gedcom";
 function asset(path: string) {
   const value = (pages as Record<string, string>)[path];
   assert(value, "Not found.", 404);
@@ -113,6 +114,13 @@ async function route(request: Request, env: Env): Promise<Response> {
   }
   if (path.startsWith("/api/")) {
     requireRole(user);
+    const exportRoute = /^\/api\/trees\/([0-9a-f-]+)\/gedcom$/.exec(path);
+    if (exportRoute && method === "GET") {
+      const { collection } = await readCollection(env);
+      const tree = treeView(collection, exportRoute[1], env.SITE_NAME);
+      const name = tree.name.normalize("NFKD").replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80) || "family-tree";
+      return new Response(gedcom(tree), { headers: { "content-type": "application/octet-stream", "content-disposition": `attachment; filename="${name}.ged"` } });
+    }
     if (path === "/api/view" && method === "GET") {
       const { collection: c, revision } = await readCollection(env);
       const trees = Object.values(c.trees).map(t => ({ id: t.id, name: t.name, people: t.members.length }));

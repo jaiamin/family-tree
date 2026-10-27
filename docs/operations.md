@@ -61,3 +61,7 @@ After this code is merged, connect the Worker to the GitHub repository in **Sett
 The automated recovery test restores into fresh D1/R2 storage and compares photo bytes. Run a production restore drill before relying on a new installation.
 
 Owner-only person deletion removes the person from all trees, relationship links, and current photo references, with name/revision confirmation. Immutable uploads stay in both buckets. Deletion is reflected in the rolling backup; it is not an undo history.
+
+## GEDCOM export
+
+Open a tree and choose **Download GEDCOM** from the top-right menu. Any signed-in family viewer can export that tree as GEDCOM 5.5.1, including people, recorded gender, dates, places, notes, and relationships. People outside the tree and photos are excluded. Person UUIDs are retained in `_UID` fields; free-text dates are preserved as event notes. This is a portable download, separate from the automatic recovery backup.
