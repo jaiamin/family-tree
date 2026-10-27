@@ -76,6 +76,9 @@
     return { form, status, finish: () => form.append(status) };
   }
   async function googleSignIn(container, status) {
+    status.textContent = ""; status.classList.remove("is-error");
+    container.textContent = "Loading Google sign-in…";
+    container.setAttribute("aria-busy", "true");
     try {
       if (!session.googleClientId) throw new Error("Editor sign-in hasn't been configured yet.");
       const challenge = await api("/google/start", {});
@@ -85,21 +88,35 @@
           script.onload = resolve; script.onerror = () => reject(new Error("Google sign-in couldn't load. Please try again.")); document.head.append(script);
         });
       }
+      if (!container.isConnected) return;
       window.google.accounts.id.initialize({ client_id: session.googleClientId, nonce: challenge.nonce, auto_select: false,
         callback: async response => { try { await api("/google/login", { credential: response.credential }); location.reload(); } catch (error) { status.classList.add("is-error"); status.textContent = error.message; } },
       });
       status.textContent = "";
-      container.replaceChildren();
-      window.google.accounts.id.renderButton(container, { type: "standard", theme: "outline", size: "large", text: "signin_with", width: 232 });
-    } catch (error) { container.replaceChildren(); status.classList.add("is-error"); status.textContent = error.message; }
+      let width = 0;
+      const render = () => {
+        const next = Math.min(400, Math.floor(container.clientWidth));
+        if (!next || next === width) return;
+        width = next; container.replaceChildren();
+        window.google.accounts.id.renderButton(container, { type: "standard", theme: document.documentElement.dataset.theme === "dark" ? "filled_black" : "outline", size: "large", shape: "rectangular", text: "signin_with", width });
+      };
+      render();
+      const observer = new ResizeObserver(render); observer.observe(container);
+      container.closest("dialog").addEventListener("close", () => observer.disconnect(), { once: true });
+    } catch (error) {
+      container.replaceChildren(); status.classList.add("is-error"); status.textContent = error instanceof TypeError ? "Google sign-in couldn’t load. Please try again." : error.message;
+      if (session.googleClientId) container.append(button("Try again", () => googleSignIn(container, status)));
+    } finally { container.setAttribute("aria-busy", "false"); }
   }
   function editorSignIn() {
-    const panel = dialog("Editor sign-in");
+    const panel = dialog("Sign in to edit");
     if (!panel) return;
     panel.box.classList.add("editor-sign-in");
     panel.footer.remove();
-    const holder = el("div", { class: "google-sign-in" }, "Loading sign-in…"), status = el("p", { class: "form-status", role: "status" });
-    panel.body.append(el("p", { class: "form-note" }, "Use your approved Google account."), holder, status);
+    const holder = el("div", { class: "google-sign-in" }), status = el("p", { class: "form-status", role: "status" });
+    const note = el("p", { class: "form-note", id: "editor-sign-in-note" }, "Use an approved Google account.");
+    panel.box.setAttribute("aria-describedby", note.id);
+    panel.body.append(note, holder, status);
     googleSignIn(holder, status);
   }
   function suggest(personId) {
