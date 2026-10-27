@@ -225,19 +225,23 @@ function inView(group) {
   return x + b.x * s >= 0 && y + b.y * s >= 0 && x + (b.x + b.w) * s <= w && y + (b.y + b.h) * s <= h && s >= 0.6;
 }
 // Frames the person with their line, zooming out only as far as needed.
-function centreOn([id, ...group]) {
+function centreOn([id, ...group], { fitAll = false } = {}) {
   const b = bounds([id, ...group]);
   const { w, h } = room();
-  const scale = Math.max(0.6, Math.min(camera.scale, 1, (w - 48) / b.w, (h - 48) / b.h));
+  const fitScale = Math.min(1, Math.max(1, w - 48) / b.w, Math.max(1, h - 48) / b.h);
+  const scale = fitAll ? fitScale : Math.max(0.6, Math.min(camera.scale, fitScale));
   camera.scale = scale;
   camera.x = w / 2 - (b.x + b.w / 2) * scale;
   // Leave room below the selection for relatives and the details panel.
-  camera.y = Math.min(h / 2 - (b.y + b.h / 2) * scale, 64 - b.y * scale);
+  camera.y = h / 2 - (b.y + b.h / 2) * scale;
+  if (!fitAll) camera.y = Math.min(camera.y, 64 - b.y * scale);
   // When the whole line can't fit at a readable size, keep the person in view.
-  const p = at(id);
-  const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
-  camera.x = clamp(camera.x, 24 - p.x * scale, w - 24 - (p.x + card.w) * scale);
-  camera.y = clamp(camera.y, 24 - p.y * scale, h - 24 - (p.y + card.h) * scale);
+  if (!fitAll) {
+    const p = at(id);
+    const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+    camera.x = clamp(camera.x, 24 - p.x * scale, w - 24 - (p.x + card.w) * scale);
+    camera.y = clamp(camera.y, 24 - p.y * scale, h - 24 - (p.y + card.h) * scale);
+  }
   const before = stage.style.transform;
   apply(true);
   return stage.style.transform !== before;
@@ -317,10 +321,13 @@ async function switchLayout(next) {
     for (const e of connections(geometry, PAD)) edge(e);
     if (selected) {
       comparison?.to ? highlightComparison() : highlight(selected);
-      const p = at(selected);
-      camera.x = view.clientWidth / 2 - (p.x + card.w / 2) * camera.scale;
-      camera.y = view.clientHeight / 2 - (p.y + card.h / 2) * camera.scale;
-      apply();
+      if (comparison?.to) centreOn(comparisonFrame(), { fitAll: true });
+      else {
+        const p = at(selected);
+        camera.x = view.clientWidth / 2 - (p.x + card.w / 2) * camera.scale;
+        camera.y = view.clientHeight / 2 - (p.y + card.h / 2) * camera.scale;
+        apply();
+      }
     } else fit();
     updateLayoutButtons();
     try { localStorage.setItem("tree-layout", direction); } catch {}
@@ -333,7 +340,7 @@ async function switchLayout(next) {
 $("layout-down").onclick = () => switchLayout("DOWN");
 $("layout-right").onclick = () => switchLayout("RIGHT");
 window.addEventListener("resize", () => {
-  if (comparison?.to) centreOn(comparison.result.path.length ? comparison.result.path : [comparison.from]);
+  if (comparison?.to) centreOn(comparisonFrame(), { fitAll: true });
 });
 updateLayoutButtons();
 
@@ -341,6 +348,9 @@ updateLayoutButtons();
 
 let selected = null;
 let comparison = null;
+function comparisonFrame() {
+  return comparison.result.path.length ? comparison.result.path : [comparison.from, comparison.to];
+}
 function resetComparison() {
   comparison = null;
 }
@@ -623,7 +633,7 @@ function select(id, preserveComparison = false) {
     const expanded = box.classList.toggle("expanded");
     expand.setAttribute("aria-expanded", String(expanded));
     expand.textContent = expanded ? "Collapse details" : "Expand details";
-    if (!inView(frame)) centreOn(frame);
+    if (comparison?.to || !inView(frame)) centreOn(frame, { fitAll: Boolean(comparison?.to) });
   };
   box.querySelector(".top").after(expand);
   box.append(shut);
@@ -631,8 +641,9 @@ function select(id, preserveComparison = false) {
   if (comparison) renderComparison(box);
 
   // While the tree glides to the person, the card waits at its final spot and appears on arrival.
-  const frame = comparison ? (comparison.result?.path.length ? comparison.result.path : [id]) : [id, ...up, ...children(tree, id), ...partners];
-  if (!inView(frame)) {
+  const comparing = Boolean(comparison?.to);
+  const frame = comparing ? comparisonFrame() : comparison ? [id] : [id, ...up, ...children(tree, id), ...partners];
+  if (comparing || !inView(frame)) {
     box.classList.add("waiting");
     const show = () => {
       box.classList.remove("waiting");
@@ -640,14 +651,13 @@ function select(id, preserveComparison = false) {
     };
     // Cards fade too; only the stage's own move counts as arriving.
     const arrived = (e) => e.target === stage && e.propertyName === "transform" && show();
-    if (centreOn(frame)) {
+    if (centreOn(frame, { fitAll: comparing })) {
       stage.addEventListener("transitionend", arrived);
       setTimeout(show, 600);
     } else show();
   }
   if (comparison?.to) {
     highlightComparison();
-    centreOn(comparison.result.path.length ? comparison.result.path : [id]);
     box.querySelector(".compare-summary").focus({ preventScroll: true });
   }
   history.replaceState(null, "", `#${id}`);
