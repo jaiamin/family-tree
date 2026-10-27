@@ -35,3 +35,5 @@ Verification:34 web tests, build, TypeScript and whitespace pass. Browser checke
 User approved only Share beside search and Family menu in trees; overview only Family menu. Added Share text beside icon and show it on mobile; removed duplicate mobile menu share. Moved theme and GitHub into labeled menu rows; centralized duplicate home/tree theme handlers into shared client and removed obsolete sun/moon styles. Mobile header retains112px height and complete placeholder at320px. Previous14px placeholder tweak included; mobile input remains16px.
 
 Verification:34 web tests, TypeScript/build/whitespace pass; browser320px tree and desktop tree/overview, light/dark toggling and persisted theme across routes. Existing share handler reused. No backend changes or production data touched. Keep local on8000 until approved; no push.
+
+Local menu-order polish: kept ellipsis for secondary actions; ordered suggestions/management then GEDCOM, divider, theme/GitHub, divider, Edit/sign-out. No section headers.320px browser verified full owner menu fits and dividers separate groups; desktop inspected; build/type/whitespace pass. Keep local.
