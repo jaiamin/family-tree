@@ -154,6 +154,7 @@ test("editors can add relatives, reuse a shared UUID across trees, and review pr
   assert.deepEqual(current.collection.people[id].parents, [childId]);
   assert.deepEqual(current.collection.people[sharedId].parents, [], "Adding a child never assumes the partner is a parent");
   const suggestions = await (await call("/suggestions", { cookie })).json();
+  assert.equal(suggestions[0].tree_id, treeId, "Suggestions link back to the person’s tree");
   assert.equal((await call(`/suggestions/${suggestions[0].id}`, { cookie, method: "PATCH", body: { status: "done" } })).status, 200);
   assert.equal((await (await call("/suggestions", { cookie })).json())[0].status, "done");
 });
@@ -247,4 +248,21 @@ test("only the owner can delete a person everywhere, with revision and name conf
   assert.equal(await db.prepare("SELECT * FROM photos WHERE person_id = ?").bind(victim).first(), null);
   assert.ok(await db.prepare("SELECT * FROM photo_uploads WHERE id = ?").bind(upload.id).first());
   for (const binding of ["PHOTOS", "BACKUP"]) assert.ok(await (await mf.getR2Bucket(binding)).head(upload.object_key));
+});
+
+test("only editors may delete suggestions, without changing people or other suggestions", async () => {
+  const signed = await signIn("mehul@mehulamin.com"), cookie = cookieFrom(signed.response);
+  const first = await call("/suggestions", { cookie: familyCookie, body: { name: "Test sender", message: "Delete this test suggestion" } });
+  assert.equal(first.status, 201);
+  const { id } = await first.json();
+  const before = await (await call("/collection", { owner: true })).json();
+  const remaining = (await (await call("/suggestions", { owner: true })).json()).filter(item => item.id !== id);
+  assert.equal((await call(`/suggestions/${id}`, { cookie: familyCookie, method: "DELETE", headers: { origin } })).status, 403);
+  assert.equal((await call(`/suggestions/${id}`, { method: "DELETE", headers: { origin } })).status, 401);
+  assert.equal((await call(`/suggestions/${id}`, { cookie, method: "DELETE", headers: { origin: "https://other.example" } })).status, 403);
+  assert.equal((await call(`/suggestions/${id}`, { cookie, method: "DELETE", headers: { origin } })).status, 200);
+  assert.deepEqual(await (await call("/suggestions", { owner: true })).json(), remaining);
+  assert.deepEqual(await (await call("/collection", { owner: true })).json(), before);
+  assert.equal((await call(`/suggestions/${id}`, { cookie, method: "DELETE", headers: { origin } })).status, 404);
+  assert.equal((await call("/suggestions/invalid", { cookie, method: "DELETE", headers: { origin } })).status, 400);
 });

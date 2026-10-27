@@ -1,15 +1,15 @@
 import { applyLink, applyPersonEdit, assert, HttpError, uuid, record } from "./model";
 import { googleChallenge, googleLogin, identity, newSession, rateLimit, requireRole, requireSameOrigin, sessionCookie, sha256, secretMatches } from "./auth";
-import { readCollection, saveCollection, treeView } from "./data";
+import { readCollection, readView, saveCollection, treeView } from "./data";
 import type { Env } from "./types";
 import pages from "../generated/pages.json";
 import { refreshBackup } from "./backup";
 import { gedcom } from "./gedcom";
-function asset(path: string) {
+function asset(path: string, immutable = false) {
   const value = (pages as Record<string, string>)[path];
   assert(value, "Not found.", 404);
   const type = path.endsWith(".js") ? "text/javascript" : path.endsWith(".svg") ? "image/svg+xml" : "text/html";
-  return new Response(value, { headers: { "content-type": `${type}; charset=utf-8` } });
+  return new Response(value, { headers: { "content-type": `${type}; charset=utf-8`, ...immutable ? { "cache-control": "public, max-age=31536000, immutable" } : {} } });
 }
 
 const json = (body: unknown, status = 200, headers: HeadersInit = {}) => Response.json(body, { status, headers });
@@ -48,15 +48,18 @@ async function photo(request: Request, env: Env, path: string) {
     return json(Object.fromEntries(results.map(p => [p.person_id, p.version])));
   }
   assert(uuid(id) && path === `/api/photos/${id}`, "Not found.", 404);
-  const { collection } = await readCollection(env);
-  assert(collection.people[id], "Person not found.", 404);
   if (request.method === "GET") {
-    const head = await env.DB.prepare("SELECT object_key FROM photos WHERE person_id = ?").bind(id).first<{ object_key: string }>();
+    const head = await env.DB.prepare("SELECT p.object_key, p.version FROM photos p JOIN people ON people.id = p.person_id WHERE p.person_id = ?").bind(id).first<{ object_key: string; version: string }>();
     assert(head, "Photo not found.", 404);
+    const etag = `"${head.version}"`;
+    const headers = { "cache-control": "private, no-cache", etag, vary: "Cookie, Authorization" };
+    const matches = request.headers.get("if-none-match")?.split(",").some(value => value.trim().replace(/^W\//, "") === etag || value.trim() === "*");
+    if (matches) return new Response(null, { status: 304, headers });
     const object = await env.PHOTOS.get(head.object_key);
     assert(object, "Photo not found.", 404);
-    return new Response(object.body, { headers: { "content-type": object.httpMetadata?.contentType || "image/jpeg" } });
+    return new Response(object.body, { headers: { ...headers, "content-type": object.httpMetadata?.contentType || "image/jpeg" } });
   }
+  assert(await env.DB.prepare("SELECT id FROM people WHERE id = ?").bind(id).first(), "Person not found.", 404);
   if (request.method === "DELETE") {
     await env.DB.prepare("DELETE FROM photos WHERE person_id = ?").bind(id).run();
     return json({ ok: true });
@@ -84,6 +87,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   assert(!base || url.pathname === base || url.pathname.startsWith(`${base}/`), "Not found.", 404);
   const path = url.pathname.slice(base.length) || "/";
   const method = request.method;
+  if (["GET", "HEAD"].includes(method) && path.startsWith("/assets/")) return asset(path, true);
   const user = await identity(request, env);
   if (!["GET", "HEAD"].includes(method)) requireSameOrigin(request, env);
   if (path === "/api/session" && method === "GET") return json({ ...(user?.role === "owner" ? { backup: await env.DB.prepare("SELECT generation, saved_generation, saved_at, error FROM backup_state WHERE id = 1").first() } : {}), authenticated: !!user, role: user?.role, email: user?.email, name: user?.name, picture: user?.picture, siteName: env.SITE_NAME, googleClientId: env.GOOGLE_CLIENT_ID || "" });
@@ -122,10 +126,7 @@ async function route(request: Request, env: Env): Promise<Response> {
       return new Response(gedcom(tree), { headers: { "content-type": "application/octet-stream", "content-disposition": `attachment; filename="${name}.ged"` } });
     }
     if (path === "/api/view" && method === "GET") {
-      const { collection: c, revision } = await readCollection(env);
-      const trees = Object.values(c.trees).map(t => ({ id: t.id, name: t.name, people: t.members.length }));
-      const id = url.searchParams.get("tree");
-      return json({ siteName: c.site?.name || env.SITE_NAME, trees, revision, tree: id ? treeView(c, id, env.SITE_NAME) : null });
+      return json(await readView(env, url.searchParams.get("tree")));
     }
     if (path.startsWith("/api/photos")) {
       if (method === "DELETE") requireRole(user, "editor");
@@ -150,7 +151,7 @@ async function route(request: Request, env: Env): Promise<Response> {
     }
     if (path === "/api/suggestions" && method === "GET") {
       requireRole(user, "editor");
-      const { results } = await env.DB.prepare("SELECT * FROM suggestions ORDER BY created_at DESC LIMIT 200").all();
+      const { results } = await env.DB.prepare("SELECT suggestions.*, (SELECT tree_id FROM tree_members WHERE person_id = suggestions.person_id ORDER BY tree_id LIMIT 1) AS tree_id FROM suggestions ORDER BY created_at DESC LIMIT 200").all();
       return json(results);
     }
     if (path.startsWith("/api/suggestions/") && method === "PATCH") {
@@ -158,6 +159,14 @@ async function route(request: Request, env: Env): Promise<Response> {
       const body = await bodyOf(request), id = path.split("/")[3];
       assert(uuid(id) && (body.status === "open" || body.status === "done"), "Invalid suggestion status.");
       const result = await env.DB.prepare("UPDATE suggestions SET status = ? WHERE id = ?").bind(body.status, id).run();
+      assert(result.meta.changes, "Suggestion not found.", 404);
+      return json({ ok: true });
+    }
+    if (/^\/api\/suggestions\/[^/]+$/.test(path) && method === "DELETE") {
+      requireRole(user, "editor");
+      const id = path.split("/")[3];
+      assert(uuid(id), "Invalid suggestion.");
+      const result = await env.DB.prepare("DELETE FROM suggestions WHERE id = ?").bind(id).run();
       assert(result.meta.changes, "Suggestion not found.", 404);
       return json({ ok: true });
     }
@@ -247,7 +256,7 @@ async function route(request: Request, env: Env): Promise<Response> {
     throw new HttpError(404, "Not found.");
   }
   assert(method === "GET" || method === "HEAD", "Not allowed.", 405);
-  if (path === "/favicon.svg" || path === "/app.js") return asset(path);
+  if (path === "/favicon.svg") return asset(path);
   if (!user) return asset("/login.html");
   const treeRoute = /^\/trees\/[0-9a-f-]+\/?$/.test(path);
   assert(path === "/" || treeRoute || path === "/index.html", "Not found.", 404);
@@ -263,7 +272,7 @@ export default {
     }
     if (response.ok && !["GET", "HEAD"].includes(request.method) && !new URL(request.url).pathname.match(/\/(login|logout|google\/[^/]+)$/)) ctx.waitUntil(refreshBackup(env));
     const headers = new Headers(response.headers);
-    headers.set("cache-control", "private, no-store");
+    if (!headers.has("cache-control")) headers.set("cache-control", "private, no-store");
     headers.set("x-content-type-options", "nosniff");
     headers.set("referrer-policy", "same-origin");
     headers.set("x-frame-options", "DENY");

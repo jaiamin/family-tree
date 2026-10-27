@@ -36,12 +36,14 @@ function el(tag, attrs = {}, ...kids) {
   return node;
 }
 // A person's current photo is shared across every tree and relationship list.
-let photos = {}; // person id -> photo version
+const photos = tree.photo_versions; // person id -> current photo version
 function paint(circle) {
-  circle.querySelector("img")?.remove();
   const id = circle.dataset.avatar;
+  const current = circle.querySelector("img");
+  if (current && current.dataset.version === photos[id]) return;
+  current?.remove();
   if (!photos[id]) return;
-  const img = el("img", { src: apiUrl(`/api/photos/${id}?v=${photos[id]}`), alt: "", decoding: "async" });
+  const img = el("img", { src: apiUrl(`/api/photos/${id}?v=${photos[id]}`), alt: "", decoding: "async", "data-version": photos[id] });
   img.onerror = () => img.remove();
   circle.append(img);
 }
@@ -493,79 +495,72 @@ const errorOf = async response => (await response.json().catch(() => ({}))).erro
 
 function photoEditor(id) {
   const circle = avatar(id, "lg");
-  if (PLACEHOLDER.test(person(id).name)) return { circle, panel: null };
+  if (PLACEHOLDER.test(person(id).name)) return { circle };
   const badge = el("span", { class: "badge", "aria-hidden": "true" });
   badge.innerHTML = '<svg class="icon" viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3"/></svg>';
-  const button = el("button", { class: "photo", "aria-label": ["Photo", genderLabel(id)].filter(Boolean).join(", "), "aria-expanded": "false" }, circle, badge);
-  const panel = el("div", { class: "photo-panel", hidden: "" });
-  const picker = el("input", { type: "file", accept: "image/*", hidden: "" });
-  let crop, preparation = 0;
-  const show = (...kids) => {
-    panel.replaceChildren(...kids.filter(Boolean), picker);
-    panel.hidden = false;
-    button.setAttribute("aria-expanded", "true");
-    const card = panel.closest("#card");
-    if (card && matchMedia("(max-width: 640px)").matches && !card.classList.contains("expanded")) card.querySelector(".sheet-toggle").click();
+  const button = el("button", { class: "photo", "aria-label": `Photo of ${displayName(id)}`, "aria-haspopup": "dialog" }, circle, badge);
+  const label = el("button", { class: "photo-label" }, photos[id] ? "Change photo" : "Add photo");
+  let panel, crop, preparation = 0;
+  const cleanup = () => { preparation++; crop?.destroy(); crop = null; };
+  const hide = () => { if (panel) { panel.box.dirty = false; panel.box.close(); } };
+  const note = (text, error = false) => text && el("p", { class: `form-status${error ? " is-error" : ""}`, role: "status" }, text);
+  const action = (text, onclick, primary = false) => {
+    const node = el("button", { class: `site-button${primary ? " primary" : ""}` }, text);
+    node.onclick = onclick; return node;
   };
-  const hide = () => {
-    preparation++; crop?.destroy(); crop = null;
-    panel.hidden = true; panel.replaceChildren(picker);
-    button.setAttribute("aria-expanded", "false");
-  };
-  const note = (text, error = false) => text && el("p", { class: `status${error ? " error" : ""}` }, text);
-
   function menu(message = "", error = false) {
-    const choose = el("button", { class: "action" }, photos[id] ? "Change photo" : "Add photo");
-    choose.onclick = () => picker.click();
-    const remove = photos[id] && window.familySite?.canEdit() ? el("button", { class: "text-button danger" }, "Remove photo") : null;
-    if (remove) remove.onclick = async () => {
+    const choose = action(photos[id] ? "Change photo" : "Add photo", () => picker.click(), true);
+    const remove = photos[id] && window.familySite.canEdit() ? action("Remove photo", async () => {
       if (!confirm("Remove this profile photo? Uploaded photos will be kept.")) return;
-      choose.disabled = remove.disabled = button.disabled = true;
-      remove.textContent = "Removing…";
-      const response = await send("DELETE", id).catch(() => null);
-      button.disabled = false;
-      if (response?.ok) {
-        delete photos[id]; repaint(id); return hide();
-      }
-      if (panel.isConnected) menu(response ? await errorOf(response) : "Couldn't connect. Try again.", true);
-    };
-    show(note(message, error), el("div", { class: "row" }, choose), remove);
+      choose.disabled = remove.disabled = true; panel.box.saving = true; remove.textContent = "Removing…";
+      try {
+        const response = await send("DELETE", id);
+        if (!response.ok) throw new Error(await errorOf(response));
+        delete photos[id]; repaint(id); label.textContent = "Add photo"; hide();
+      } catch (error) { menu(error.message || "Couldn't connect. Try again.", true); }
+      finally { if (panel) panel.box.saving = false; }
+    }) : null;
+    if (remove) remove.classList.add("danger");
+    panel.body.replaceChildren(el("p", { class: "photo-person" }, displayName(id)), avatar(id, "lg"), note(message, error), picker);
+    panel.footer.replaceChildren(...[remove, choose].filter(Boolean));
   }
+  const picker = el("input", { type: "file", accept: "image/*", hidden: "" });
   picker.onchange = async () => {
-    const chosen = picker.files[0];
-    picker.value = "";
-    if (!chosen) return;
+    const chosen = picker.files[0]; picker.value = "";
+    if (!chosen || !panel) return;
     const current = ++preparation;
     crop?.destroy(); crop = null;
-    show(note("Preparing preview…"));
+    panel.body.replaceChildren(note("Preparing preview…"), picker); panel.footer.replaceChildren();
     let prepared;
     try { prepared = await createPhotoCrop(chosen); }
-    catch { if (panel.isConnected && current === preparation) menu("Couldn't read that image. Try a JPEG or PNG.", true); return; }
-    if (!panel.isConnected || current !== preparation) { prepared.destroy(); return; }
-    crop = prepared;
+    catch { if (panel && current === preparation) menu("Couldn't read that image. Try a JPEG or PNG.", true); return; }
+    if (!panel || current !== preparation) { prepared.destroy(); return; }
+    crop = prepared; panel.box.dirty = true;
     function preview(message = "") {
-      const save = el("button", { class: "action" }, "Save photo");
-      const another = el("button", { class: "action" }, "Choose another");
-      const cancel = el("button", { class: "action" }, "Cancel");
-      another.onclick = () => picker.click(); cancel.onclick = hide;
-      save.onclick = async () => {
-        save.disabled = another.disabled = cancel.disabled = button.disabled = true;
-        save.textContent = "Saving…";
+      const save = action("Save photo", async () => {
+        save.disabled = another.disabled = true; panel.box.saving = true; save.textContent = "Saving…";
         try {
-          const body = await crop.blob();
-          const response = await send("PUT", id, body);
+          const response = await send("PUT", id, await crop.blob());
           if (!response.ok) throw new Error(await errorOf(response));
-          photos[id] = (await response.json()).v; repaint(id); hide();
-        } catch (error) {
-          if (panel.isConnected) preview(error.message || "Couldn't connect. Try again.");
-        } finally { button.disabled = false; }
-      };
-      show(crop.node, note(message, true), el("div", { class: "row" }, save, another, cancel));
+          photos[id] = (await response.json()).v; repaint(id); label.textContent = "Change photo"; hide();
+        } catch (error) { if (panel) preview(error.message || "Couldn't connect. Try again."); }
+        finally { if (panel) panel.box.saving = false; }
+      }, true);
+      const another = action("Choose another", () => picker.click());
+      panel.body.replaceChildren(el("p", { class: "photo-person" }, displayName(id)), crop.node, note(message, true), picker);
+      panel.footer.replaceChildren(another, save);
     }
     preview();
   };
-  button.onclick = () => (panel.hidden ? menu() : hide());
-  return { circle: button, panel, cleanup: hide };
+  const open = () => {
+    panel = window.familySite.openDialog("Profile photo");
+    if (!panel) return;
+    panel.box.classList.add("photo-dialog");
+    panel.box.addEventListener("close", () => { cleanup(); panel = null; });
+    menu();
+  };
+  button.onclick = label.onclick = open;
+  return { circle: button, label, cleanup: () => { hide(); cleanup(); } };
 }
 
 // Emphasize immediate family connections without tracing the entire ancestral tree.
@@ -599,7 +594,7 @@ function select(id, preserveComparison = false) {
   const partners = partnersOf(tree, id);
   const up = parentsOf(tree, id);
   const related = highlight(id);
-  const link = el("button", { class: "action" }, "Share person");
+  const link = el("button", { class: "action", "aria-label": "Share person" }, "Share");
   link.onclick = () => shareLink(link, `${displayName(id)} · ${tree.name}`, `${treeUrl}#${id}`);
   const compare = el("button", { class: "action", "aria-label": "Compare relationship" }, "Compare");
   compare.onclick = () => startComparison(id);
@@ -613,8 +608,8 @@ function select(id, preserveComparison = false) {
   const box = el(
     "div",
     { id: "card", role: "dialog", "aria-label": p.name },
-    el("div", { class: "top" }, photo.circle, el("div", { class: "who" }, el("h2", {}, displayName(id)))),
-    el("div", { class: "person-editing" }, window.familySite?.personActions(id), photo.panel),
+    el("div", { class: "top" }, photo.circle, el("div", { class: "who" }, el("h2", {}, displayName(id)), photo.label)),
+    el("div", { class: "person-editing" }, window.familySite?.personActions(id)),
     el("div", { class: "details-body", id: "details-body" },
       facts.length ? el("dl", { class: "person-facts" }, ...facts.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)])) : null,
       group("Parents", parentsOf(tree, id)),
@@ -651,22 +646,10 @@ function select(id, preserveComparison = false) {
     expand.textContent = "Collapse details";
   }
 
-  // While the tree glides to the person, the card waits at its final spot and appears on arrival.
+  // Details respond immediately while the camera glides to the selected family.
   const comparing = Boolean(comparison?.to);
   const frame = comparing ? comparisonFrame() : comparison ? [id] : [id, ...up, ...children(tree, id), ...partners];
-  if (comparing || !inView(frame)) {
-    box.classList.add("waiting");
-    const show = () => {
-      box.classList.remove("waiting");
-      stage.removeEventListener("transitionend", arrived);
-    };
-    // Cards fade too; only the stage's own move counts as arriving.
-    const arrived = (e) => e.target === stage && e.propertyName === "transform" && show();
-    if (centreOn(frame, { fitAll: comparing })) {
-      stage.addEventListener("transitionend", arrived);
-      setTimeout(show, 600);
-    } else show();
-  }
+  if (comparing || !inView(frame)) centreOn(frame, { fitAll: comparing });
   if (comparison?.to) {
     highlightComparison();
     box.querySelector(".compare-summary").focus({ preventScroll: true });
@@ -761,7 +744,10 @@ else {
   camera.y = 24 - at(anchor).y * camera.scale;
   apply();
   const start = decodeURIComponent(location.hash.slice(1));
-  if (tree.people[start]) select(start);
+  if (tree.people[start]) {
+    select(start);
+    stage.getAnimations().forEach(animation => animation.finish());
+  }
   try {
     const saved = JSON.parse(sessionStorage.getItem(viewKey) || "null");
     sessionStorage.removeItem(viewKey);
@@ -771,17 +757,9 @@ else {
       camera.x = saved.x * view.clientWidth - at(start).x * saved.scale;
       camera.y = saved.y * view.clientHeight - at(start).y * saved.scale;
       apply(); stage.getAnimations().forEach(animation => animation.finish());
-      $("card").classList.remove("waiting");
     }
   } catch {}
 }
-fetch(apiUrl("/api/photos"))
-    .then((response) => (response.ok ? response.json() : {}))
-    .then((found) => {
-      photos = found;
-      Object.keys(found).forEach(repaint);
-    })
-    .catch(() => {});
 })().catch((error) => {
   console.error("Unable to lay out family tree", error);
   document.getElementById("view").replaceChildren(Object.assign(document.createElement("p"), {

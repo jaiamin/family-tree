@@ -30,6 +30,26 @@ export function collectionFromRows(rows: D1Result<Record<string, unknown>>[]): S
 export async function readCollection(env: Env): Promise<Snapshot> {
   return collectionFromRows(await env.DB.batch<Record<string, unknown>>(collectionQueries(env)));
 }
+// Overview reads only summary rows. A tree and its photo pointers share one D1 snapshot.
+export async function readView(env: Env, id: string | null) {
+  if (!id) {
+    const [meta, trees] = await env.DB.batch<Record<string, unknown>>([
+      env.DB.prepare("SELECT site, revision FROM collections WHERE id = 'main'"),
+      env.DB.prepare("SELECT t.id, t.name, count(m.person_id) AS people FROM trees t LEFT JOIN tree_members m ON m.tree_id = t.id GROUP BY t.id ORDER BY t.rowid"),
+    ]);
+    const row = meta.results[0];
+    return { siteName: row?.site ? JSON.parse(String(row.site)).name || env.SITE_NAME : env.SITE_NAME,
+      revision: Number(row?.revision || 0), trees: trees.results, tree: null };
+  }
+  const rows = await env.DB.batch<Record<string, unknown>>([
+    ...collectionQueries(env),
+    env.DB.prepare("SELECT p.person_id, p.version FROM photos p JOIN tree_members m ON m.person_id = p.person_id WHERE m.tree_id = ?").bind(id),
+  ]);
+  const { collection: c, revision } = collectionFromRows(rows);
+  return { siteName: c.site?.name || env.SITE_NAME, revision,
+    trees: Object.values(c.trees).map(t => ({ id: t.id, name: t.name, people: t.members.length })),
+    tree: { ...treeView(c, id, env.SITE_NAME), photo_versions: Object.fromEntries(rows[6].results.map(p => [String(p.person_id), String(p.version)])) } };
+}
 export async function saveCollection(env: Env, collection: unknown, revision: unknown, user: Identity, reason: string) {
   validateCollection(collection);
   assert(typeof revision === "number" && Number.isSafeInteger(revision) && revision >= 0, "A current revision is required.", 409);
