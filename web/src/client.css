@@ -25,12 +25,9 @@
 .form-status { min-height: 0; color: var(--fg); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
 .form-status:not(:empty) { margin: 12px 0; }
 .form-status:empty { display: none; }
-header .edit-button { min-height: 36px; }
-header .site-menu .account-trigger { display: flex; width: auto; gap: 6px; padding: 0 10px; }
 .account-avatar { position: relative; flex: none; display: grid; place-items: center; width: 24px; height: 24px; overflow: hidden; border-radius: 50%; background: var(--chip); font-size: 12px; font-weight: 600; }
 .account-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .account-name { display: block; margin-bottom: 4px; color: var(--fg); font-size: 13px; }
-.account-trigger .icon { width: 14px; height: 14px; flex: none; }
 .account-identity { display: flex; align-items: center; gap: 10px; margin: 0 8px 4px; padding: 12px 0; border-bottom: 1px solid var(--border); }
 .account-identity .account-avatar { flex: none; width: 36px; height: 36px; }
 .account-identity .account-address { min-width: 0; padding: 0; }
@@ -104,16 +101,17 @@ header > .actions:empty { display: none; }
   body[data-family-base]:has(#family-list) header { flex-wrap: nowrap; }
   body[data-family-base]:has(#family-list) header .title { flex: 1; min-width: 0; }
   header > .actions, .header-utilities { flex: none; gap: 4px; }
-  body[data-family-base]:has(#canvas) header { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; }
+  body[data-family-base]:has(#canvas) header { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+  body[data-family-base]:has(#canvas) header > .actions { display: none; }
   body[data-family-base]:has(#canvas) header .title { grid-column: 1 / -1; grid-row: 1; }
-  body[data-family-base]:has(#canvas) header .header-utilities { grid-column: 3; grid-row: 2; justify-self: end; }
+  body[data-family-base]:has(#canvas) header .header-utilities { grid-column: 2; grid-row: 2; justify-self: end; }
   body[data-family-base]:has(#canvas) header .search { grid-column: 1; grid-row: 2; width: auto; min-width: 0; }
-  body[data-family-base]:has(#canvas) header > .actions { grid-column: 2; grid-row: 2; justify-self: end; }
   body[data-family-base]:has(#canvas) .search input { min-width: 0; text-overflow: ellipsis; }
   body[data-family-base]:has(#canvas) .results { width: min(320px, calc(100vw - 32px)); right: auto; }
-  header .site-menu .account-trigger { padding: 0 8px; }
   .site-dialog { max-height: calc(100dvh - 24px); }
   .login-content input, .site-dialog input, .site-dialog textarea, .site-dialog select { font-size: 16px; }
+  input[type="search"] { font-size: 16px; }
+  #compare-search { font-size: 16px; }
   .form-grid > div { min-width: 0; }
 }
 

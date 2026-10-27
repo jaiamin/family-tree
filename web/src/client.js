@@ -356,33 +356,22 @@
   function mountHeader() {
     const actions = document.querySelector("header > .actions");
     const signOut = async () => { await api("/logout", {}); location.reload(); };
-    if (session.role === "member") actions.prepend(button("Edit", editorSignIn, "site-button edit-button"));
-    else {
-      const account = el("details", { class: "site-menu account-menu", name: "family-header-menu" });
-      const accountAvatar = () => {
-        const avatar = el("span", { class: "account-avatar", "aria-hidden": "true" },
-          (session.name || session.email).trim().split(/\s+/).slice(0, 2).map(part => part.charAt(0)).join("").toUpperCase());
-        if (session.picture) {
-          const image = el("img", { src: session.picture, alt: "", referrerpolicy: "no-referrer", hidden: "" });
-          image.onload = () => { image.hidden = false; };
-          avatar.append(image);
-        }
-        return avatar;
-      };
-      const trigger = el("summary", { class: "account-trigger", title: session.email, "aria-label": `Account: ${session.email}` },
-        accountAvatar(), icon(["m6 9 6 6 6-6"]));
-      const signOutButton = button("", signOut);
-      signOutButton.append(icon(["M9 5H5v14h4M14 8l4 4-4 4M9 12h9"]), el("span", {}, "Sign out of editing"));
-      const options = el("div", { class: "menu-items" }, el("div", { class: "account-identity" }, accountAvatar(),
-        el("div", { class: "account-address" }, session.name ? el("strong", { class: "account-name" }, session.name) : null, el("span", {}, session.email))), signOutButton);
-      account.append(trigger, options); actions.prepend(account);
-    }
     const menu = el("details", { class: "site-menu", name: "family-header-menu" }), summary = el("summary", { "aria-label": "Family menu", title: "Family menu" }, icon(["M5 12h.01M12 12h.01M19 12h.01"]));
     const items = el("div", { class: "menu-items" });
     const item = (label, paths, action) => {
       const entry = button("", () => { menu.open = false; action(); });
       entry.append(icon(paths), el("span", {}, label)); items.append(entry); return entry;
     };
+    if (session.role !== "member") {
+      const avatar = el("span", { class: "account-avatar", "aria-hidden": "true" },
+        (session.name || session.email).trim().split(/\s+/).slice(0, 2).map(part => part.charAt(0)).join("").toUpperCase());
+      if (session.picture) {
+        const image = el("img", { src: session.picture, alt: "", referrerpolicy: "no-referrer", hidden: "" });
+        image.onload = () => { image.hidden = false; }; avatar.append(image);
+      }
+      items.append(el("div", { class: "account-identity" }, avatar,
+        el("div", { class: "account-address" }, session.name ? el("strong", { class: "account-name" }, session.name) : null, el("span", {}, session.email))));
+    }
     const treeId = location.pathname.slice(base.length).match(/^\/trees\/([0-9a-f-]+)\/?$/)?.[1];
     if (treeId) item("Share tree", ["M12 16V3m-4 4 4-4 4 4M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"], () => $("share-tree").click()).classList.add("mobile-menu-item");
     if (treeId) items.append(el("a", { href: `${base}/api/trees/${treeId}/gedcom`, download: "" }, icon(["M12 3v12m-4-4 4 4 4-4M5 16v5h14v-5"]), el("span", {}, "Download GEDCOM")));
@@ -395,7 +384,8 @@
         items.append(notice);
       }
     }
-    if (session.role === "member") item("Sign out", ["M9 5H5v14h4M14 8l4 4-4 4M9 12h9"], signOut);
+    if (session.role === "member") item("Edit", ["M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L9 17l-4 1 1-4Z"], editorSignIn);
+    item(session.role === "member" ? "Sign out" : "Sign out of editing", ["M9 5H5v14h4M14 8l4 4-4 4M9 12h9"], signOut);
     menu.append(summary, items); document.querySelector(".header-utilities").append(menu);
     const headerMenus = [...actions.parentElement.querySelectorAll("details")];
     for (const dropdown of headerMenus) dropdown.addEventListener("toggle", () => {
