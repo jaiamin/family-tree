@@ -472,7 +472,15 @@
     document.title = data.tree ? `${data.tree.name} · ${data.siteName}` : data.siteName;
     if (data.tree) {
       const current = document.querySelector(".current-tree"); current.textContent = data.tree.name; current.href = `${base}/trees/${data.tree.id}`;
-      $("tree-options").replaceChildren(...data.trees.map(tree => el("li", {}, el("a", { href: `${base}/trees/${tree.id}`, ...tree.id === data.tree.id ? { "aria-current": "page" } : {} }, tree.name))));
+      $("tree-options").replaceChildren(...data.trees.map(tree => {
+        const current = tree.id === data.tree.id;
+        return el("li", {}, el("a", {
+          href: `${base}/trees/${tree.id}`, "aria-label": `${tree.name}, ${tree.people} ${tree.people === 1 ? "person" : "people"}`,
+          ...current ? { "aria-current": "page" } : {},
+        }, el("span", { class: "tree-option-check", "aria-hidden": "true" }, current ? icon(["m5 12 4 4L19 6"]) : null),
+          el("span", { class: "tree-option-name" }, tree.name),
+          el("span", { class: "tree-option-count", "aria-hidden": "true" }, String(tree.people))));
+      }));
     } else {
       $("family-heading").textContent = `Family trees (${data.trees.length})`;
       $("family-list").replaceChildren(...data.trees.map(tree => el("li", {}, el("a", { class: "tree-card", href: `${base}/trees/${tree.id}` }, el("div", {}, el("h3", {}, tree.name), el("p", {}, `${tree.people} ${tree.people === 1 ? "person" : "people"}`)), icon(["m9 6 6 6-6 6"])))));
