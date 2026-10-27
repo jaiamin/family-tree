@@ -1,5 +1,6 @@
 import { readFile, mkdir, writeFile } from "node:fs/promises";
-import { build } from "esbuild";
+import { build, transform } from "esbuild";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 process.chdir(fileURLToPath(new URL("..", import.meta.url)));
 const base = (process.env.FAMILY_BASE_PATH || "/family-tree").replace(/\/$/, "");
@@ -15,20 +16,30 @@ const treeHeader = render(header, { ...shared,
 });
 const css = await source("shell.css"), clientCss = await readFile("src/client.css", "utf8");
 const pages = {};
+async function script(name, content, browser = true) {
+  // Shared helpers also support Node tests. Remove those exports before wrapping browser code.
+  const result = await transform(content, { minify: true, target: "es2022", ...browser ? { define: { module: "undefined" } } : {} });
+  const code = browser ? `(() => {${result.code}})();` : result.code;
+  const hash = createHash("sha256").update(code).digest("hex").slice(0, 16);
+  const path = `/assets/${name}.${hash}.js`;
+  pages[path] = code;
+  return `<script src="${base}${path}" data-base="${base}" defer></script>`;
+}
+const appScript = await script("app", await readFile("src/client.js", "utf8"));
+const viewerScripts = await script("elk", await source("vendor/elk.bundled.js"), false) +
+  await script("viewer", (await Promise.all(["layout.js", "relationship.js", "photo-crop.js", "share.js"].map(source))).join("\n"));
 const templates = {
   "/index.html": render(await source("home.html"), { __TITLE__: "Family trees", __TREE_COUNT__: "0", __TREES__: '<ul class="trees" id="family-list"></ul>', __SHELL_CSS__: css, __HEADER__: homeHeader }).replace('<h2>Family trees (0)</h2>', '<h2 id="family-heading">Family trees</h2>'),
   "/tree.html": render(await source("share.html"), {
     __TITLE__: "Family tree", __SHELL_CSS__: css, __HEADER__: treeHeader,
-    __LAYOUT_ENGINE__: await source("vendor/elk.bundled.js"),
-    __LAYOUT_JS__: await source("layout.js") + "\n" + await source("relationship.js"), __SHARE_JS__: await source("photo-crop.js") + "\n" + await source("share.js"),
+    __VIEWER_SCRIPTS__: viewerScripts,
   }),
 };
 for (const [name, template] of Object.entries(templates)) {
-  pages[name] = template.replace('<body>', `<body data-family-base="${base}">`).replaceAll('href="/', `href="${base}/`).replaceAll(`href="${base}/"`, `href="${base || '/'}"`).replace('</head>', `<style>${clientCss}</style><script src="${base}/app.js"></script></head>`);
+  pages[name] = template.replace('<body>', `<body data-family-base="${base}">`).replaceAll('href="/', `href="${base}/`).replaceAll(`href="${base}/"`, `href="${base || '/'}"`).replace('</head>', `<style>${clientCss}</style>${appScript}</head>`);
 }
-pages["/login.html"] = (await readFile("src/login.html", "utf8")).replaceAll("__BASE__", base).replace("__SHELL_CSS__", css).replace("__CLIENT_CSS__", clientCss);
+pages["/login.html"] = (await readFile("src/login.html", "utf8")).replaceAll("__BASE__", base).replace("__SHELL_CSS__", css).replace("__CLIENT_CSS__", clientCss).replace(`<script src="${base}/app.js" defer></script>`, appScript);
 pages["/favicon.svg"] = await source("favicon.svg");
-pages["/app.js"] = await readFile("src/client.js", "utf8");
 await mkdir("generated", { recursive: true });
 await writeFile("generated/pages.json", JSON.stringify(pages));
 await build({ entryPoints: ["src/index.ts"], bundle: true, format: "esm", target: "es2022", outfile: "dist/worker.mjs", minify: true, sourcemap: true });

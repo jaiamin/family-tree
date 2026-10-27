@@ -1,5 +1,5 @@
 (() => {
-  const base = document.currentScript.src.replace(location.origin, "").replace(/\/app\.js$/, "");
+  const base = document.currentScript.dataset.base;
   const $ = id => document.getElementById(id);
   const el = (tag, attrs = {}, ...children) => {
     const node = document.createElement(tag);
@@ -374,7 +374,8 @@
   }
   async function loadTree() {
     const match = location.pathname.slice(base.length).match(/^\/trees\/([0-9a-f-]+)\/?$/);
-    data = await api(`/view${match ? `?tree=${match[1]}` : ""}`);
+    data = await (initialView || api(`/view${match ? `?tree=${match[1]}` : ""}`));
+    initialView = null;
     $("title").textContent = data.siteName;
     document.title = data.tree ? `${data.tree.name} · ${data.siteName}` : data.siteName;
     if (data.tree) {
@@ -396,9 +397,18 @@
       return tools;
     },
   };
+  const treeMatch = location.pathname.slice(base.length).match(/^\/trees\/([0-9a-f-]+)\/?$/);
+  const sessionRequest = api("/session");
+  let initialView = document.body.dataset.login ? null : api(`/view${treeMatch ? `?tree=${treeMatch[1]}` : ""}`);
+  // Requests start while the deferred graph engine is parsing; the UI handles failures below.
+  sessionRequest.catch(() => {});
+  initialView?.then(view => {
+    const id = decodeURIComponent(location.hash.slice(1)), version = view.tree?.photo_versions[id];
+    if (version) document.head.append(el("link", { rel: "preload", as: "image", href: `${base}/api/photos/${id}?v=${version}` }));
+  }).catch(() => {});
   const ready = new Promise(resolve => document.addEventListener("DOMContentLoaded", async () => {
     try {
-      session = await api("/session");
+      session = await sessionRequest;
       if (document.body.dataset.login) {
         $("login-title").textContent = session.siteName; document.title = session.siteName;
         const form = $("family-login"), status = $("login-status");

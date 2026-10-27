@@ -36,12 +36,14 @@ function el(tag, attrs = {}, ...kids) {
   return node;
 }
 // A person's current photo is shared across every tree and relationship list.
-let photos = {}; // person id -> photo version
+const photos = tree.photo_versions; // person id -> current photo version
 function paint(circle) {
-  circle.querySelector("img")?.remove();
   const id = circle.dataset.avatar;
+  const current = circle.querySelector("img");
+  if (current && current.dataset.version === photos[id]) return;
+  current?.remove();
   if (!photos[id]) return;
-  const img = el("img", { src: apiUrl(`/api/photos/${id}?v=${photos[id]}`), alt: "", decoding: "async" });
+  const img = el("img", { src: apiUrl(`/api/photos/${id}?v=${photos[id]}`), alt: "", decoding: "async", "data-version": photos[id] });
   img.onerror = () => img.remove();
   circle.append(img);
 }
@@ -651,22 +653,10 @@ function select(id, preserveComparison = false) {
     expand.textContent = "Collapse details";
   }
 
-  // While the tree glides to the person, the card waits at its final spot and appears on arrival.
+  // Details respond immediately while the camera glides to the selected family.
   const comparing = Boolean(comparison?.to);
   const frame = comparing ? comparisonFrame() : comparison ? [id] : [id, ...up, ...children(tree, id), ...partners];
-  if (comparing || !inView(frame)) {
-    box.classList.add("waiting");
-    const show = () => {
-      box.classList.remove("waiting");
-      stage.removeEventListener("transitionend", arrived);
-    };
-    // Cards fade too; only the stage's own move counts as arriving.
-    const arrived = (e) => e.target === stage && e.propertyName === "transform" && show();
-    if (centreOn(frame, { fitAll: comparing })) {
-      stage.addEventListener("transitionend", arrived);
-      setTimeout(show, 600);
-    } else show();
-  }
+  if (comparing || !inView(frame)) centreOn(frame, { fitAll: comparing });
   if (comparison?.to) {
     highlightComparison();
     box.querySelector(".compare-summary").focus({ preventScroll: true });
@@ -761,7 +751,10 @@ else {
   camera.y = 24 - at(anchor).y * camera.scale;
   apply();
   const start = decodeURIComponent(location.hash.slice(1));
-  if (tree.people[start]) select(start);
+  if (tree.people[start]) {
+    select(start);
+    stage.getAnimations().forEach(animation => animation.finish());
+  }
   try {
     const saved = JSON.parse(sessionStorage.getItem(viewKey) || "null");
     sessionStorage.removeItem(viewKey);
@@ -771,17 +764,9 @@ else {
       camera.x = saved.x * view.clientWidth - at(start).x * saved.scale;
       camera.y = saved.y * view.clientHeight - at(start).y * saved.scale;
       apply(); stage.getAnimations().forEach(animation => animation.finish());
-      $("card").classList.remove("waiting");
     }
   } catch {}
 }
-fetch(apiUrl("/api/photos"))
-    .then((response) => (response.ok ? response.json() : {}))
-    .then((found) => {
-      photos = found;
-      Object.keys(found).forEach(repaint);
-    })
-    .catch(() => {});
 })().catch((error) => {
   console.error("Unable to lay out family tree", error);
   document.getElementById("view").replaceChildren(Object.assign(document.createElement("p"), {
