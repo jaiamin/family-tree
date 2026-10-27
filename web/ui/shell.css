@@ -56,7 +56,7 @@
   .tree-picker button:hover, .tree-picker button[aria-expanded="true"] { background: var(--border); color: var(--fg); }
   .tree-options { position: fixed; min-width: min(240px, calc(100vw - 32px)); max-width: calc(100vw - 32px); margin: 0; padding: 4px; list-style: none; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow-lg); z-index: 4; }
   .tree-options a { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 10px; border-radius: 4px; font-size: 14px; font-weight: 400; white-space: normal; overflow-wrap: anywhere; }
-  .tree-options a:hover, .tree-options a[aria-current="page"] { background: var(--chip); color: var(--fg); }
+  .tree-options a:hover, .tree-options a:focus-visible { background: var(--chip); color: var(--fg); }
 
   @media (max-width: 640px) { body:has(#canvas) { --header-height: 92px; } }
 

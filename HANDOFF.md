@@ -19,3 +19,5 @@ Next: review and merge the PR. Main merges use the existing Cloudflare deploymen
 User approved trying people counts and a current-tree checkmark. Rows now use the existing SVG icon style, aligned names, muted tabular counts,44px minimum height and existing current-page semantics. Screen readers get person/people labels. Counts reuse the overview response; no extra request or backend change.
 
 Build, TypeScript and diff checks passed. Browser verified desktop/light and320px mobile, dark rendering and switching trees updates the current selection. Port8000 serves this experiment. Do not push until user approves it.
+
+Dropdown hover follow-up: current tree is indicated only by its checkmark. Gray background now follows hover/keyboard focus rather than persisting on the current row. Browser computed styles confirmed the current row is transparent and the hovered alternative uses the chip surface. Build/type checks passed. Local only.
