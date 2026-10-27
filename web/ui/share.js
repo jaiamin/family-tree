@@ -190,6 +190,16 @@ for (const e of connections(geometry, PAD)) {
 // Pan and zoom
 
 const camera = { x: 0, y: 0, scale: 1 };
+const viewKey = `family-view:${tree.id}`;
+document.addEventListener("family-tree-before-reload", () => {
+  if (!selected) return;
+  const p = at(selected);
+  try { sessionStorage.setItem(viewKey, JSON.stringify({
+    id: selected, scale: camera.scale, expanded: $("card")?.classList.contains("expanded"),
+    x: (camera.x + p.x * camera.scale) / view.clientWidth,
+    y: (camera.y + p.y * camera.scale) / view.clientHeight,
+  })); } catch {}
+});
 function apply(glide = false) {
   stage.classList.toggle("glide", glide);
   stage.style.transform = `translate(${camera.x}px, ${camera.y}px) scale(${camera.scale})`;
@@ -381,6 +391,7 @@ function renderComparison(box) {
   box.classList.add("comparing");
   box.setAttribute("aria-label", "Compare relationship");
   box.querySelector(".top").replaceChildren(el("h2", {}, "Compare relationship"));
+  box.photoCleanup?.();
   box.querySelector(".person-editing")?.remove();
   const body = box.querySelector(".details-body");
   const origin = el("div", { class: "compare-person" }, avatar(from), el("span", { class: "name" }, displayName(from)));
@@ -392,6 +403,7 @@ function renderComparison(box) {
       role: "combobox", "aria-autocomplete": "list", "aria-expanded": "false", "aria-controls": "compare-results",
     });
     const results = el("div", { id: "compare-results", role: "listbox" });
+    const empty = el("p", { class: "none", role: "status", hidden: "" }, "No matching people");
     let matches = [], active = -1;
     function activate(index) {
       active = index;
@@ -410,7 +422,7 @@ function renderComparison(box) {
         row.onpointerdown = event => { event.preventDefault(); select(id); };
         return row;
       }));
-      if (terms.length && !matches.length) results.append(el("p", { class: "none", role: "status" }, "No matching people"));
+      empty.hidden = !terms.length || Boolean(matches.length);
       input.setAttribute("aria-expanded", String(Boolean(matches.length)));
       activate(matches.length ? 0 : -1);
     };
@@ -421,7 +433,7 @@ function renderComparison(box) {
         results.children[active].scrollIntoView({ block: "nearest" });
       } else if (event.key === "Enter" && active >= 0) { event.preventDefault(); select(matches[active]); }
     };
-    body.append(label, input, el("p", { class: "compare-hint" }, "Or select someone in the tree."), results);
+    body.append(label, input, el("p", { class: "compare-hint" }, "Or select someone in the tree."), results, empty);
   } else {
     body.classList.add("comparison-result");
     body.replaceChildren();
@@ -429,6 +441,7 @@ function renderComparison(box) {
       ? `${displayName(to)} is ${displayName(from)}’s ${result.term}.`
       : result.path.length ? "Connected through family" : "No recorded connection in this tree.";
     body.append(el("p", { class: "compare-summary", role: "status", tabindex: "-1" }, summary));
+    if (result.explanation) body.append(el("p", { class: "compare-explanation" }, result.explanation));
     if (result.path.length > 1) {
       const path = el("ol", { class: "compare-path", "aria-label": "Connection path" });
       result.path.forEach((id, i) => {
@@ -468,19 +481,8 @@ async function send(method, id = "", body = null) {
   const headers = body ? { "content-type": body.type } : {};
   return fetch(apiUrl(`/api/photos${id && `/${id}`}`), { method, headers, body });
 }
-// Phones take large photos, so upload a 512px square crop from the middle.
-async function square(file) {
-  const image = await createImageBitmap(file);
-  const side = Math.min(image.width, image.height);
-  const size = Math.min(512, side);
-  const canvas = el("canvas", { width: size, height: size });
-  canvas.getContext("2d").drawImage(image, (image.width - side) / 2, (image.height - side) / 2, side, side, 0, 0, size, size);
-  image.close();
-  return new Promise((done, fail) => canvas.toBlob((blob) => (blob ? done(blob) : fail(new Error())), "image/jpeg", 0.85));
-}
-const errorOf = async (response) => (await response.json().catch(() => ({}))).error || "Something went wrong. Try again.";
+const errorOf = async response => (await response.json().catch(() => ({}))).error || "Something went wrong. Try again.";
 
-// Tap the profile photo to add or replace it. Previous uploads are retained.
 function photoEditor(id) {
   const circle = avatar(id, "lg");
   if (PLACEHOLDER.test(person(id).name)) return { circle, panel: null };
@@ -489,6 +491,7 @@ function photoEditor(id) {
   const button = el("button", { class: "photo", "aria-label": ["Photo", genderLabel(id)].filter(Boolean).join(", "), "aria-expanded": "false" }, circle, badge);
   const panel = el("div", { class: "photo-panel", hidden: "" });
   const picker = el("input", { type: "file", accept: "image/*", hidden: "" });
+  let crop, preparation = 0;
   const show = (...kids) => {
     panel.replaceChildren(...kids.filter(Boolean), picker);
     panel.hidden = false;
@@ -497,7 +500,8 @@ function photoEditor(id) {
     if (card && matchMedia("(max-width: 640px)").matches && !card.classList.contains("expanded")) card.querySelector(".sheet-toggle").click();
   };
   const hide = () => {
-    panel.hidden = true;
+    preparation++; crop?.destroy(); crop = null;
+    panel.hidden = true; panel.replaceChildren(picker);
     button.setAttribute("aria-expanded", "false");
   };
   const note = (text, error = false) => text && el("p", { class: `status${error ? " error" : ""}` }, text);
@@ -523,43 +527,37 @@ function photoEditor(id) {
     const chosen = picker.files[0];
     picker.value = "";
     if (!chosen) return;
+    const current = ++preparation;
+    crop?.destroy(); crop = null;
     show(note("Preparing preview…"));
-    let body, source;
-    try {
-      body = await square(chosen);
-      source = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(body);
-      });
-    } catch {
-      return menu("Couldn't read that image. Try a JPEG or PNG.", true);
-    }
-    if (!panel.isConnected) return;
+    let prepared;
+    try { prepared = await createPhotoCrop(chosen); }
+    catch { if (panel.isConnected && current === preparation) menu("Couldn't read that image. Try a JPEG or PNG.", true); return; }
+    if (!panel.isConnected || current !== preparation) { prepared.destroy(); return; }
+    crop = prepared;
     function preview(message = "") {
-      const image = el("img", { class: "photo-preview", src: source, alt: "Preview of the profile photo" });
       const save = el("button", { class: "action" }, "Save photo");
       const another = el("button", { class: "action" }, "Choose another");
-      another.onclick = () => picker.click();
+      const cancel = el("button", { class: "action" }, "Cancel");
+      another.onclick = () => picker.click(); cancel.onclick = hide;
       save.onclick = async () => {
-        save.disabled = another.disabled = button.disabled = true;
+        save.disabled = another.disabled = cancel.disabled = button.disabled = true;
         save.textContent = "Saving…";
-        const response = await send("PUT", id, body).catch(() => null);
-        button.disabled = false;
-        if (response?.ok) {
-          photos[id] = (await response.json()).v;
-          repaint(id);
-          return hide();
-        }
-        if (panel.isConnected) preview(response ? await errorOf(response) : "Couldn't connect. Try again.");
+        try {
+          const body = await crop.blob();
+          const response = await send("PUT", id, body);
+          if (!response.ok) throw new Error(await errorOf(response));
+          photos[id] = (await response.json()).v; repaint(id); hide();
+        } catch (error) {
+          if (panel.isConnected) preview(error.message || "Couldn't connect. Try again.");
+        } finally { button.disabled = false; }
       };
-      show(image, note(message, true), el("div", { class: "row" }, save, another));
+      show(crop.node, note(message, true), el("div", { class: "row" }, save, another, cancel));
     }
     preview();
   };
   button.onclick = () => (panel.hidden ? menu() : hide());
-  return { circle: button, panel };
+  return { circle: button, panel, cleanup: hide };
 }
 
 // Emphasize immediate family connections without tracing the entire ancestral tree.
@@ -624,6 +622,7 @@ function select(id, preserveComparison = false) {
     ),
     el("div", { class: "actions" }, compare, link, window.familySite?.suggestionAction(id)),
   );
+  box.photoCleanup = photo.cleanup;
   const shut = el("button", { class: "close", "aria-label": "Close" });
   shut.innerHTML = '<svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>';
   shut.onclick = close;
@@ -638,6 +637,11 @@ function select(id, preserveComparison = false) {
   box.append(shut);
   $("view").append(box);
   if (comparison) renderComparison(box);
+  if (comparison?.to && matchMedia("(max-width: 640px)").matches) {
+    box.classList.add("expanded");
+    expand.setAttribute("aria-expanded", "true");
+    expand.textContent = "Collapse details";
+  }
 
   // While the tree glides to the person, the card waits at its final spot and appears on arrival.
   const comparing = Boolean(comparison?.to);
@@ -661,7 +665,9 @@ function select(id, preserveComparison = false) {
   }
   history.replaceState(null, "", `#${id}`);
 }
+document.addEventListener("family-person-select", event => select(event.detail));
 function clear() {
+  $("card")?.photoCleanup?.();
   $("card")?.remove();
   for (const id of ids) cards[id].classList.remove("selected");
   unhighlight();
@@ -682,7 +688,7 @@ stage.addEventListener("click", (e) => {
   node ? select(node.dataset.id) : close();
 });
 view.addEventListener("click", (e) => { if (!moved && e.target === view) close(); });
-addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+addEventListener("keydown", (e) => { if (e.key === "Escape" && !e.defaultPrevented && !document.querySelector("dialog[open]")) close(); });
 
 // Search
 
@@ -748,6 +754,18 @@ else {
   apply();
   const start = decodeURIComponent(location.hash.slice(1));
   if (tree.people[start]) select(start);
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(viewKey) || "null");
+    sessionStorage.removeItem(viewKey);
+    if (saved?.id === start && [saved.scale, saved.x, saved.y].every(Number.isFinite) && saved.scale > 0) {
+      if (saved.expanded && !$("card").classList.contains("expanded")) $("card").querySelector(".sheet-toggle").click();
+      camera.scale = saved.scale;
+      camera.x = saved.x * view.clientWidth - at(start).x * saved.scale;
+      camera.y = saved.y * view.clientHeight - at(start).y * saved.scale;
+      apply(); stage.getAnimations().forEach(animation => animation.finish());
+      $("card").classList.remove("waiting");
+    }
+  } catch {}
 }
 fetch(apiUrl("/api/photos"))
     .then((response) => (response.ok ? response.json() : {}))

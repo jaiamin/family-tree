@@ -20,26 +20,30 @@ function compareRelationship(tree, from, to) {
     if (!common.length) return null;
     const root = common[0], ap = aa.get(root), bp = bb.get(root);
     const da = ap.length - 1, db = bp.length - 1;
-    let term;
+    let term, explanation;
     if (!da && !db) term = "same person";
-    else if (!da) term = grand(db) + word(b, "son", "daughter", "child");
-    else if (!db) term = grand(da) + word(b, "father", "mother", "parent");
+    else if (!da) term = db > 4 ? `descendant (${db} generations down)` : grand(db) + word(b, "son", "daughter", "child");
+    else if (!db) term = da > 4 ? `ancestor (${da} generations back)` : grand(da) + word(b, "father", "mother", "parent");
     else if (da === 1 && db === 1) {
       const pa = parents(a), pb = parents(b);
-      const half = pa.some(p => !pb.includes(p)) || pb.some(p => !pa.includes(p));
+      const half = pa.length === 2 && pb.length === 2 && pa.filter(p => pb.includes(p)).length === 1;
+      if (pa.length < 2 || pb.length < 2) explanation = "One shared parent is recorded; other parent information is incomplete.";
       term = (half ? "half-" : "") + word(b, "brother", "sister", "sibling");
-    } else if (da === 1) term = "great-".repeat(db - 2) + word(b, "nephew", "niece", "niece/nephew");
-    else if (db === 1) term = "great-".repeat(da - 2) + word(b, "uncle", "aunt", "aunt/uncle");
+    } else if (da === 1) term = db > 4 ? `${word(b, "nephew", "niece", "niece/nephew")} (${db - 1} generations down)` : "great-".repeat(db - 2) + word(b, "nephew", "niece", "niece/nephew");
+    else if (db === 1) term = da > 4 ? `${word(b, "uncle", "aunt", "aunt/uncle")} (${da - 1} generations back)` : "great-".repeat(da - 2) + word(b, "uncle", "aunt", "aunt/uncle");
     else {
       const degree = Math.min(da, db) - 1, removed = Math.abs(da - db);
       const ordinal = ["", "first", "second", "third", "fourth", "fifth"][degree] || `${degree}${degree % 100 >= 11 && degree % 100 <= 13 ? "th" : ({1:"st",2:"nd",3:"rd"}[degree % 10] || "th")}`;
+      if (removed) explanation = `${removed === 1 ? "Once removed means one generation" : removed === 2 ? "Twice removed means two generations" : `${removed} times removed means ${removed} generations`} apart.`;
       term = `${ordinal} cousin${removed ? ` ${removed === 1 ? "once" : removed === 2 ? "twice" : `${removed} times`} removed` : ""}`;
     }
-    return { term, path: [...ap, ...bp.slice(0, -1).reverse()] };
+    return { term, ...explanation ? { explanation } : {}, path: [...ap, ...bp.slice(0, -1).reverse()] };
   }
   const spouse = (a, b) => tree.partnerships?.[[a, b].sort().join("+")]?.status === "married" ? word(b, "husband", "wife", "spouse") : "partner";
   let result = blood(from, to);
-  if (!result && partners(from).includes(to)) result = { term: spouse(from, to), path: [from, to] };
+  if (from !== to && partners(from).includes(to)) result = {
+    term: spouse(from, to), path: [from, to], ...result ? { explanation: `Also recorded as ${result.term}.` } : {},
+  };
   if (!result) {
     for (const p of partners(to).sort()) {
       const relative = blood(from, p);

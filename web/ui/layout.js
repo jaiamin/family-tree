@@ -34,7 +34,7 @@ function siblings(tree, id) {
 function halfSiblings(tree, a, b) {
   const pa = parentsOf(tree, a);
   const pb = parentsOf(tree, b);
-  return pa.filter((p) => pb.includes(p)).length === 1 && Math.max(pa.length, pb.length) === 2;
+  return pa.length === 2 && pb.length === 2 && pa.filter((p) => pb.includes(p)).length === 1;
 }
 
 // Ordinary couples form a single block. Multiple partnerships remain separate people linked

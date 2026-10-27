@@ -82,13 +82,17 @@
   .photo-panel[hidden] { display: none; }
   .photo-panel { grid-template-columns: minmax(0, 1fr); }
   .photo-preview { display: block; width: min(100%, 96px, 14dvh); aspect-ratio: 1; object-fit: cover; border-radius: 50%; margin: 4px auto 8px; }
-  .person-editing:has(.photo-panel:not([hidden])) .person-tools { display: none; }
-  .photo-panel:has(.photo-preview) { grid-template-columns: 64px minmax(0, 1fr); align-items: center; }
-  .photo-panel:has(.photo-preview) .photo-preview { width: 64px; margin: 0; }
-  .photo-panel:has(.photo-preview) .row { flex-direction: column; }
-  .photo-panel:has(.photo-preview) .status { grid-column: 1 / -1; grid-row: 2; }
+  #card .person-editing:has(.photo-panel:not([hidden])) .person-tools { display: none; }
+  .photo-crop { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: 12px; }
+  .photo-crop .photo-preview { width: 96px; height: 96px; margin: 0; border-radius: 8px; cursor: move; touch-action: none; }
+  .photo-crop label { display: block; font-size: 13px; }
+  .photo-crop input { display: block; width: 100%; min-height: 36px; accent-color: var(--accent); }
+  .photo-crop p { margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+  #card:has(.photo-crop) > .actions, #card:has(.photo-crop) > .sheet-toggle { display: none; }
   .photo-panel .row { display: flex; gap: 8px; }
-  .photo-panel .action { min-height: 36px; }
+  .photo-panel .action { min-height: 44px; }
+  .photo-panel:has(.photo-crop) .row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) minmax(0, .8fr); gap: 6px; }
+  .photo-panel:has(.photo-crop) .action { min-width: 0; padding: 0 6px; }
   .photo-panel .status { margin: 0; font-size: 13px; color: var(--muted); }
   .photo-panel .status.error { color: var(--danger); font-weight: 500; }
   .name { display: block; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -117,9 +121,9 @@
   #card .sheet-toggle { display: none; }
   #card .top { flex: none; display: flex; align-items: center; gap: 12px; padding-right: 28px; }
   #card h2 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
-  #card .close { position: absolute; top: 10px; right: 10px; display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 6px; background: none; color: var(--muted); cursor: pointer; }
+  #card .close { position: absolute; top: 2px; right: 2px; display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 6px; background: none; color: var(--muted); cursor: pointer; }
   #card .close:hover { background: var(--chip); color: var(--fg); }
-  #card .person-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: baseline; gap: 10px 16px; margin: 18px 0 0; font-size: 13px; line-height: 1.5; }
+  #card .person-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: baseline; gap: 10px 16px; margin: 18px 0 0; font-size: 14px; line-height: 1.5; }
   #card .person-facts dt { color: var(--muted); }
   #card .person-facts dd { min-width: 0; margin: 0; white-space: pre-line; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
   #card section { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
@@ -133,9 +137,9 @@
   .relative .name { min-width: 0; }
   .relative .note { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; }
   #card .actions { display: flex; flex-wrap: wrap; flex: none; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
-  #card .actions .suggest-action { flex: 0 0 100%; padding: 6px 8px; }
+  #card .actions .suggest-action { flex: 0 0 100%; min-height: 44px; padding: 8px; }
   #card .action {
-    flex: 1; height: 36px; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px; white-space: nowrap;
+    flex: 1; min-height: 44px; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px; white-space: nowrap;
     background: var(--surface); font-size: 13px; font-weight: 500; cursor: pointer; transition: background-color .15s;
   }
   #card .action:hover { background: var(--chip); }
@@ -152,14 +156,22 @@
     .count { white-space: nowrap; }
     .search { order: 1; flex: 1 0 100%; width: 100%; min-width: 0; }
     main { flex-direction: column; }
+    .zoom { flex-direction: row; }
+    .canvas-control-group { flex-direction: row; }
+    .zoom button + button { border-top: 0; border-left: 1px solid var(--border); }
     #card {
       flex: none; height: clamp(340px, 42dvh, 400px); max-height: calc(100% - 88px); border-left: 0; border-top: 1px solid var(--border);
       padding-bottom: max(16px, env(safe-area-inset-bottom));
     }
+    #card:has(.person-tools) { height: min(70dvh, 480px); }
     #card.expanded { height: 70dvh; max-height: calc(100% - 48px); }
-    #card .sheet-toggle { display: block; flex: none; align-self: flex-start; margin: 8px 0 0; padding: 4px 0; border: 0; background: none; text-decoration: underline; cursor: pointer; }
+    #card .sheet-toggle { display: block; flex: none; align-self: flex-start; min-height: 44px; margin: 4px 0 0; padding: 8px 0; border: 0; background: none; text-decoration: underline; cursor: pointer; }
     #card:not(.waiting) { animation-name: sheet; }
     @keyframes sheet { from { transform: translateY(24px); opacity: 0; } }
+  }
+  @media (max-width: 640px) and (max-height: 700px) {
+    #card .person-tools { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    #card:not(.expanded) { max-height: calc(100% - 64px); }
   }
   @media (prefers-reduced-motion: reduce) { #stage.glide, #card { transition: none; animation: none; } }
   #card.comparing .top { padding-bottom: 16px; border-bottom: 1px solid var(--border); }
@@ -171,6 +183,7 @@
   .compare-hint { margin: 10px 0 16px; padding: 0 8px; color: var(--muted); font-size: 12px; }
   #compare-results .relative[aria-selected="true"] { background: var(--chip); }
   #card .compare-summary { margin: 24px 0; padding: 0 8px; font-size: 16px; font-weight: 500; line-height: 1.5; overflow-wrap: anywhere; outline: none; }
+  #card .compare-explanation { flex: none; margin: -12px 8px 20px; color: var(--muted); font-size: 13px; line-height: 1.5; }
   #card .path-heading { padding: 0 8px; margin-bottom: 12px; }
   #card .comparison-result { display: flex; flex-direction: column; overflow: hidden; }
   .comparison-result > .compare-summary, .comparison-result > .path-heading { flex: none; }

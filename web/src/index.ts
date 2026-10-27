@@ -182,7 +182,12 @@ async function route(request: Request, env: Env): Promise<Response> {
     }
     if (path === "/api/people" && method === "GET") {
       requireRole(user, "editor");
-      return json((await env.DB.prepare("SELECT id, name, birth_date FROM people ORDER BY name COLLATE NOCASE").all()).results);
+      const { collection } = await readCollection(env);
+      return json(Object.values(collection.people).sort((a, b) => a.name.localeCompare(b.name)).map(p => ({
+        id: p.id, name: p.name, birth_date: p.birth_date,
+        parents: p.parents.map(id => collection.people[id].name),
+        trees: Object.values(collection.trees).filter(tree => tree.members.includes(p.id)).map(tree => tree.name),
+      })));
     }
     if (/^\/api\/people\/[^/]+$/.test(path) && method === "DELETE") {
       requireRole(user, "owner");
@@ -223,6 +228,18 @@ async function route(request: Request, env: Env): Promise<Response> {
         applyPersonEdit(collection, id, body.fields);
         collection.trees[body.treeId].members.push(id);
         applyLink(collection, body.relativeId, id, body.relation, false, body.status);
+      }
+      if (body.otherParentId != null && body.otherParentId !== "") {
+        assert(method === "POST" && body.remove !== true && body.relation === "child" && uuid(body.otherParentId), "Choose an existing other parent for this child.");
+        const parentId = path === "/api/relationships" ? body.personId : body.relativeId;
+        const childId = path === "/api/relationships" ? body.relativeId : id;
+        assert(uuid(parentId) && uuid(childId) && uuid(body.treeId), "Choose an existing family and child.");
+        assert(body.otherParentId !== parentId, "Choose a different other parent.");
+        assert(collection.people[body.otherParentId], "Other parent not found.");
+        applyLink(collection, childId, body.otherParentId, "parent");
+        const family = collection.trees[body.treeId];
+        assert(family && family.members.includes(parentId), "Choose an existing family tree.");
+        if (!family.members.includes(body.otherParentId)) family.members.push(body.otherParentId);
       }
       const next = await saveCollection(env, collection, revision, user, path === "/api/relationships" ? "Updated a relationship" : `${method === "POST" ? "Added" : "Updated"} ${collection.people[id].name}`);
       return json({ id: id || null, revision: next });
