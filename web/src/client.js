@@ -210,7 +210,7 @@
     const value = el("input", { type: "hidden", name: label, hidden: "" });
     const select = (id, name) => {
       value.value = id; search.hidden = Boolean(id); results.hidden = Boolean(id);
-      node.querySelector("label").hidden = Boolean(id);
+      // Keep the label visible when a person is selected.
       if (create) create.hidden = Boolean(id);
       choice.hidden = !id;
       choice.replaceChildren(el("span", {}, name), button("Change", () => { select("", ""); search.focus(); }, "text-button"));

@@ -13,3 +13,9 @@ Complete locally: shared Profile photo dialog with existing cropper, dirty-dismi
 Verification:33 web tests,88 Python tests, TypeScript, production build and deployment dry run pass; Impeccable detector and whitespace clean. Browser checked1280/390/320×568, light/dark, viewer-only restrictions, long name/notes and many relatives, fixed header/footer while content scrolls, expansion, comparison and crop dialog. Synthetic upload failed via network interception, retained its crop, then succeeded on retry; cancellation kept the same profile node. Current name/metadata alignment measured0px difference. No production data/photos changed. Real Google auth and physical touch not retested.
 
 Next: review at http://localhost:8000/family-tree/. Keep UI changes local until asked to push. Performance PR29 remains separate on remote; local UI commit follows it on the assigned branch. Preserve preexisting .impeccable.
+
+## Dialog refinement
+
+Completed locally: reviewed Edit details, Add relative, suggestions, editor access, deletion, photo and comparison surfaces. Shared dialogs now have compact aligned headers, consistent20px gutters,44px form/footer controls and clearer primary action hierarchy. Selected people retain field labels; connection actions stay readable beside long names. Existing dirty/busy guards, native focus lifecycle, permissions and date flexibility are preserved. No backend or production data changes.
+
+Verification: browser screenshots reviewed at desktop1280, mobile390 and dark320×568; edit/add new-person/other-parent, suggestion, empty inbox, access list, delete confirmation, photo and comparison inspected.33 web tests and TypeScript pass; build, whitespace and Impeccable detector pass. Real Google sign-in and physical device keyboard not retested. Keep local for user review on8000; do not push.
