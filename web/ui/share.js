@@ -20,10 +20,14 @@ function years(p) {
   if (p.death_date) return `d. ${year(p.death_date)}`;
   return "";
 }
-// "1915–1998 · 83 years" when both years are known.
-function lifespan(p) {
-  const [born, died] = [p.birth_date, p.death_date].map((d) => Number(d?.match(/\d{4}/)?.[0]));
-  return born && died && died >= born ? `${years(p)} · ${died - born} years` : "";
+function formatDate(value) {
+  if (!value) return "";
+  const match = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(value);
+  if (!match) return value;
+  const [, year, month, day] = match;
+  const date = new Date(`${year}-${month}-${day || "01"}T00:00:00Z`);
+  if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== `${year}-${month}-${day || "01"}`) return value;
+  return new Intl.DateTimeFormat("en-GB", { ...day ? { day: "numeric" } : {}, month: "short", year: "numeric", timeZone: "UTC" }).format(date);
 }
 function el(tag, attrs = {}, ...kids) {
   const node = document.createElement(tag);
@@ -42,8 +46,12 @@ function paint(circle) {
   circle.append(img);
 }
 const repaint = (id) => document.querySelectorAll(`[data-avatar="${id}"]`).forEach(paint);
+const genderLabel = id => person(id).sex === "male" ? "Male" : person(id).sex === "female" ? "Female" : "";
 function avatar(id, size = "") {
-  const circle = el("span", { class: `avatar ${size}`, "aria-hidden": "true", "data-avatar": id }, initials(id));
+  const gender = person(id).sex, label = genderLabel(id);
+  const circle = el("span", { class: `avatar ${size}`, "data-avatar": id,
+    ...label ? { "data-gender": gender, role: "img", "aria-label": label, title: label } : { "aria-hidden": "true" },
+  }, initials(id));
   paint(circle);
   return circle;
 }
@@ -157,7 +165,7 @@ for (const c of geometry.nodes) {
   const caption = years(p);
   const node = el("button", {
     class: `person${c.joined ? ` joined-${c.joined}` : ""}${PLACEHOLDER.test(p.name) ? " unknown" : ""}`,
-    "data-id": id, "aria-label": `${p.name}${caption ? `, ${caption}` : ""}`,
+    "data-id": id, "aria-label": [p.name, caption, genderLabel(id)].filter(Boolean).join(", "),
   }, avatar(id), el("span", { class: "text" }, el("span", { class: "name" }, displayName(id)),
     caption && el("span", { class: "years" }, caption)));
   Object.assign(node.style, { left: `${c.x + PAD}px`, top: `${c.y + PAD}px`, width: `${card.w}px`, height: `${card.h}px` });
@@ -217,19 +225,23 @@ function inView(group) {
   return x + b.x * s >= 0 && y + b.y * s >= 0 && x + (b.x + b.w) * s <= w && y + (b.y + b.h) * s <= h && s >= 0.6;
 }
 // Frames the person with their line, zooming out only as far as needed.
-function centreOn([id, ...group]) {
+function centreOn([id, ...group], { fitAll = false } = {}) {
   const b = bounds([id, ...group]);
   const { w, h } = room();
-  const scale = Math.max(0.6, Math.min(camera.scale, 1, (w - 48) / b.w, (h - 48) / b.h));
+  const fitScale = Math.min(1, Math.max(1, w - 48) / b.w, Math.max(1, h - 48) / b.h);
+  const scale = fitAll ? fitScale : Math.max(0.6, Math.min(camera.scale, fitScale));
   camera.scale = scale;
   camera.x = w / 2 - (b.x + b.w / 2) * scale;
   // Leave room below the selection for relatives and the details panel.
-  camera.y = Math.min(h / 2 - (b.y + b.h / 2) * scale, 64 - b.y * scale);
+  camera.y = h / 2 - (b.y + b.h / 2) * scale;
+  if (!fitAll) camera.y = Math.min(camera.y, 64 - b.y * scale);
   // When the whole line can't fit at a readable size, keep the person in view.
-  const p = at(id);
-  const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
-  camera.x = clamp(camera.x, 24 - p.x * scale, w - 24 - (p.x + card.w) * scale);
-  camera.y = clamp(camera.y, 24 - p.y * scale, h - 24 - (p.y + card.h) * scale);
+  if (!fitAll) {
+    const p = at(id);
+    const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+    camera.x = clamp(camera.x, 24 - p.x * scale, w - 24 - (p.x + card.w) * scale);
+    camera.y = clamp(camera.y, 24 - p.y * scale, h - 24 - (p.y + card.h) * scale);
+  }
   const before = stage.style.transform;
   apply(true);
   return stage.style.transform !== before;
@@ -309,10 +321,13 @@ async function switchLayout(next) {
     for (const e of connections(geometry, PAD)) edge(e);
     if (selected) {
       comparison?.to ? highlightComparison() : highlight(selected);
-      const p = at(selected);
-      camera.x = view.clientWidth / 2 - (p.x + card.w / 2) * camera.scale;
-      camera.y = view.clientHeight / 2 - (p.y + card.h / 2) * camera.scale;
-      apply();
+      if (comparison?.to) centreOn(comparisonFrame(), { fitAll: true });
+      else {
+        const p = at(selected);
+        camera.x = view.clientWidth / 2 - (p.x + card.w / 2) * camera.scale;
+        camera.y = view.clientHeight / 2 - (p.y + card.h / 2) * camera.scale;
+        apply();
+      }
     } else fit();
     updateLayoutButtons();
     try { localStorage.setItem("tree-layout", direction); } catch {}
@@ -325,7 +340,7 @@ async function switchLayout(next) {
 $("layout-down").onclick = () => switchLayout("DOWN");
 $("layout-right").onclick = () => switchLayout("RIGHT");
 window.addEventListener("resize", () => {
-  if (comparison?.to) centreOn(comparison.result.path.length ? comparison.result.path : [comparison.from]);
+  if (comparison?.to) centreOn(comparisonFrame(), { fitAll: true });
 });
 updateLayoutButtons();
 
@@ -333,6 +348,9 @@ updateLayoutButtons();
 
 let selected = null;
 let comparison = null;
+function comparisonFrame() {
+  return comparison.result.path.length ? comparison.result.path : [comparison.from, comparison.to];
+}
 function resetComparison() {
   comparison = null;
 }
@@ -363,6 +381,7 @@ function renderComparison(box) {
   box.classList.add("comparing");
   box.setAttribute("aria-label", "Compare relationship");
   box.querySelector(".top").replaceChildren(el("h2", {}, "Compare relationship"));
+  box.querySelector(".person-editing")?.remove();
   const body = box.querySelector(".details-body");
   const origin = el("div", { class: "compare-person" }, avatar(from), el("span", { class: "name" }, displayName(from)));
   body.replaceChildren(origin);
@@ -467,7 +486,7 @@ function photoEditor(id) {
   if (PLACEHOLDER.test(person(id).name)) return { circle, panel: null };
   const badge = el("span", { class: "badge", "aria-hidden": "true" });
   badge.innerHTML = '<svg class="icon" viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3"/></svg>';
-  const button = el("button", { class: "photo", "aria-label": "Photo", "aria-expanded": "false" }, circle, badge);
+  const button = el("button", { class: "photo", "aria-label": ["Photo", genderLabel(id)].filter(Boolean).join(", "), "aria-expanded": "false" }, circle, badge);
   const panel = el("div", { class: "photo-panel", hidden: "" });
   const picker = el("input", { type: "file", accept: "image/*", hidden: "" });
   const show = (...kids) => {
@@ -476,7 +495,6 @@ function photoEditor(id) {
     button.setAttribute("aria-expanded", "true");
     const card = panel.closest("#card");
     if (card && matchMedia("(max-width: 640px)").matches && !card.classList.contains("expanded")) card.querySelector(".sheet-toggle").click();
-    panel.scrollIntoView({ block: "nearest" });
   };
   const hide = () => {
     panel.hidden = true;
@@ -580,19 +598,19 @@ function select(id, preserveComparison = false) {
   const compare = el("button", { class: "action", "aria-label": "Compare relationship" }, "Compare");
   compare.onclick = () => startComparison(id);
   const facts = [
-    ["Born", [p.birth_date, p.birth_place && `in ${p.birth_place}`].filter(Boolean).join(" ")],
-    ["Died", p.death_date],
+    ["Born", formatDate(p.birth_date)],
+    ["Birthplace", p.birth_place],
+    ["Died", formatDate(p.death_date)],
+    ["Notes", p.notes],
   ].filter(([, v]) => v);
   const photo = photoEditor(id);
   const box = el(
     "div",
     { id: "card", role: "dialog", "aria-label": p.name },
-    el("div", { class: "top" }, photo.circle, el("div", { class: "who" }, el("h2", {}, displayName(id)), lifespan(p) && el("span", { class: "years" }, lifespan(p)))),
+    el("div", { class: "top" }, photo.circle, el("div", { class: "who" }, el("h2", {}, displayName(id)))),
+    el("div", { class: "person-editing" }, window.familySite?.personActions(id), photo.panel),
     el("div", { class: "details-body", id: "details-body" },
-      facts.length ? el("dl", {}, ...facts.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)])) : null,
-      window.familySite?.personActions(id),
-      photo.panel,
-      p.notes && el("p", { class: "notes" }, p.notes),
+      facts.length ? el("dl", { class: "person-facts" }, ...facts.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)])) : null,
       group("Parents", parentsOf(tree, id)),
       group(partners.length > 1 ? "Partners" : "Partner", partners, (o) => partnerNote(id, o)),
       group("Siblings", siblings(tree, id), (o) => (halfSiblings(tree, id, o) ? "Half" : "")),
@@ -614,7 +632,7 @@ function select(id, preserveComparison = false) {
     const expanded = box.classList.toggle("expanded");
     expand.setAttribute("aria-expanded", String(expanded));
     expand.textContent = expanded ? "Collapse details" : "Expand details";
-    if (!inView(frame)) centreOn(frame);
+    if (comparison?.to || !inView(frame)) centreOn(frame, { fitAll: Boolean(comparison?.to) });
   };
   box.querySelector(".top").after(expand);
   box.append(shut);
@@ -622,8 +640,9 @@ function select(id, preserveComparison = false) {
   if (comparison) renderComparison(box);
 
   // While the tree glides to the person, the card waits at its final spot and appears on arrival.
-  const frame = comparison ? (comparison.result?.path.length ? comparison.result.path : [id]) : [id, ...up, ...children(tree, id), ...partners];
-  if (!inView(frame)) {
+  const comparing = Boolean(comparison?.to);
+  const frame = comparing ? comparisonFrame() : comparison ? [id] : [id, ...up, ...children(tree, id), ...partners];
+  if (comparing || !inView(frame)) {
     box.classList.add("waiting");
     const show = () => {
       box.classList.remove("waiting");
@@ -631,14 +650,13 @@ function select(id, preserveComparison = false) {
     };
     // Cards fade too; only the stage's own move counts as arriving.
     const arrived = (e) => e.target === stage && e.propertyName === "transform" && show();
-    if (centreOn(frame)) {
+    if (centreOn(frame, { fitAll: comparing })) {
       stage.addEventListener("transitionend", arrived);
       setTimeout(show, 600);
     } else show();
   }
   if (comparison?.to) {
     highlightComparison();
-    centreOn(comparison.result.path.length ? comparison.result.path : [id]);
     box.querySelector(".compare-summary").focus({ preventScroll: true });
   }
   history.replaceState(null, "", `#${id}`);

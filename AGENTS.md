@@ -25,6 +25,7 @@
 - Never print or commit credentials or family data. Keep secrets in their existing runtime settings; use placeholders in configuration examples.
 
 ## Delivery
+- For Codex-authored commits, append `Co-authored-by: Codex <noreply@openai.com>` exactly once, preserving existing trailers. Do not rewrite past commits solely for attribution.
 - Work through a task branch and PR. Do not push to `main`, merge, or bypass required checks without explicit authorization.
 - CI must pass: `mcp (3.10)`, `mcp (3.14)`, `web`, and `secrets`. Stop publication if secret scanning reports a finding; report the file/rule without the secret.
 - Merging into `main` triggers Cloudflare Workers Builds (`web` root). CI checks do not deploy. Do not manually deploy or change production resources unless authorized.
