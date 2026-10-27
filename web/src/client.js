@@ -13,7 +13,12 @@
   };
   const icon = paths => { const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("class", "icon"); svg.setAttribute("aria-hidden", "true"); for (const d of paths) { const p = document.createElementNS(svg.namespaceURI, "path"); p.setAttribute("d", d); svg.append(p); } return svg; };
   async function api(path, body, method = body === undefined ? "GET" : "POST") {
-    const response = await fetch(`${base}/api${path}`, { method, headers: body === undefined ? {} : { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+    let response;
+    try {
+      response = await fetch(`${base}/api${path}`, { method, headers: body === undefined ? {} : { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+    } catch {
+      throw new Error("Couldn't connect. Please try again.");
+    }
     const result = await response.json();
     if (!response.ok) {
       if (response.status === 401 && path !== "/google/login") location.reload();
@@ -434,9 +439,11 @@
     }
     if (treeId) items.append(el("a", { href: `${base}/api/trees/${treeId}/gedcom`, download: "" }, icon(["M12 3v12m-4-4 4 4 4-4M5 16v5h14v-5"]), el("span", {}, "Download GEDCOM")));
     items.append(el("hr", { class: "menu-divider" }));
-    const theme = item("Light or dark", ["M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"], () => {
+    const themeLabel = () => document.documentElement.dataset.theme === "dark" ? "Use light mode" : "Use dark mode";
+    const theme = item(themeLabel(), ["M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"], () => {
       const dark = document.documentElement.dataset.theme !== "dark";
       dark ? document.documentElement.dataset.theme = "dark" : delete document.documentElement.dataset.theme;
+      theme.querySelector("span").textContent = themeLabel();
       try { localStorage.setItem("theme", dark ? "dark" : "light"); } catch {}
     });
     theme.id = "theme";
