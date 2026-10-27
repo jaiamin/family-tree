@@ -21,3 +21,7 @@ User approved trying people counts and a current-tree checkmark. Rows now use th
 Build, TypeScript and diff checks passed. Browser verified desktop/light and320px mobile, dark rendering and switching trees updates the current selection. Port8000 serves this experiment. Do not push until user approves it.
 
 Dropdown hover follow-up: current tree is indicated only by its checkmark. Gray background now follows hover/keyboard focus rather than persisting on the current row. Browser computed styles confirmed the current row is transparent and the hovered alternative uses the chip surface. Build/type checks passed. Local only.
+
+Editor identity follow-up: reduced name/email separation from4px to1px. Build/type checks passed; browser confirmed1px computed margin with a synthetic editor session response (no account or auth changes). Local only.
+
+Landing review: independent Impeccable design/evidence assessments inspected password entry and overview in desktop/mobile light/dark. Existing minimal layout is sound; no redesign warranted. Recommend plain network-error wording and explicit destination labels for theme toggle. Larger utility targets were noted but are intentionally consistent with user-approved36px controls. No landing redesign applied. No production data mutations.
