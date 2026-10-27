@@ -2,10 +2,12 @@ import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { build, transform } from "esbuild";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { existsSync } from "node:fs";
+import { installationConfig } from "./config.mjs";
 process.chdir(fileURLToPath(new URL("..", import.meta.url)));
-const configPath = process.env.FAMILY_INSTALLATION_CONFIG;
-const config = configPath ? JSON.parse(await readFile(configPath.startsWith("/") ? configPath : `./${configPath}`, "utf8")) : null;
-const base = config ? config.basePath : "/family-tree";
+const config = process.env.FAMILY_INSTALLATION_CONFIG_JSON || process.env.FAMILY_INSTALLATION_CONFIG || existsSync("installation.json") ? installationConfig() : null;
+const base = config ? config.basePath : process.env.BASE_PATH ?? "/family-tree";
+if (!/^(\/[a-zA-Z0-9_-]+)*$/.test(base)) throw Error("Invalid BASE_PATH.");
 const source = name => readFile(`ui/${name}`, "utf8");
 const render = (template, values) => template.replace(/__[A-Z_]+__/g, token => { if (!(token in values)) throw Error(`Missing ${token}`); return values[token]; });
 const header = await source("header.html");
@@ -62,4 +64,4 @@ await build({ entryPoints: ["src/public-ids.ts"], bundle: true, format: "esm", p
 
 await build({ entryPoints: ["src/platform/local.ts"], bundle: true, format: "esm", platform: "node", target: "node26", outfile: "dist/local.mjs" });
 
-await build({ entryPoints: ["src/backup.ts", "src/recovery.ts", "src/backup-export.ts", "src/auth.ts", "src/accounts/password.ts"], bundle:true, format:"esm", platform:"node", target:"node26", outdir:"dist/maintenance" });
+await build({ entryPoints: ["src/backup.ts", "src/recovery.ts", "src/backup-export.ts", "src/auth.ts", "src/accounts/password.ts", "src/legacy-migration.ts"], bundle:true, format:"esm", platform:"node", target:"node26", outdir:"dist/maintenance" });

@@ -1,3 +1,4 @@
+import { audited } from "../activity";
 import { assert, uuid } from "../model";
 import { bodyOf, text } from "../http";
 import { cookie, newSession, rateLimit, requireRole, secretMatches, sessionCookie, sha256, type UserRow } from "../auth";
@@ -23,7 +24,7 @@ export async function accountRoute(request: Request, env: Env, user: Identity | 
     const { username, password, name } = credentials(body);
     const id = crypto.randomUUID(), recoveryCode = token();
     const result = await env.DB.prepare(`INSERT INTO users(id,username,name,role,password_hash,recovery_hash)
-      SELECT ?,?,?,'owner',?,? WHERE NOT EXISTS(SELECT 1 FROM users) RETURNING id`)
+      SELECT ?,?,?,'owner',?,? WHERE NOT EXISTS(SELECT 1 FROM users WHERE role='owner') RETURNING id`)
       .bind(id, username, name, await hashPassword(password), await sha256(recoveryCode)).all();
     assert(result.results.length, "This installation has already been claimed.", 409);
     return json({ recoveryCode }, { status: 201, headers: { "set-cookie": await newSession(request, env, id) } });
@@ -50,12 +51,12 @@ export async function accountRoute(request: Request, env: Env, user: Identity | 
     const body = await bodyOf(request), details = credentials(body);
     assert(typeof body.token === "string" && body.token.length <= 200, "Invalid invitation.");
     const hash = await sha256(body.token);
-    const invitation = await env.DB.prepare("SELECT id,role,target_id FROM invitations WHERE token_hash=? AND expires>? AND used_by IS NULL").bind(hash, now()).first<{ id: string; role: string; target_id: string | null }>();
+    const invitation = await env.DB.prepare("SELECT id,role,target_id,target_version FROM invitations WHERE token_hash=? AND expires>? AND used_by IS NULL").bind(hash, now()).first<{ id: string; role: string; target_id: string | null; target_version: number | null }>();
     assert(invitation, "This invitation has expired or has already been used.", 403);
     const id = invitation.target_id || crypto.randomUUID(), operation = token(), passwordHash = await hashPassword(details.password);
     const guard = "EXISTS(SELECT 1 FROM invitations WHERE id=? AND used_by=?)";
-    const statements = [env.DB.prepare("UPDATE invitations SET used_by=? WHERE id=? AND used_by IS NULL AND expires>? RETURNING id").bind(operation, invitation.id, now())];
-    if (invitation.target_id) statements.push(env.DB.prepare(`UPDATE users SET password_hash=?,auth_version=auth_version+1 WHERE id=? AND ${guard}`).bind(passwordHash, id, invitation.id, operation));
+    const statements = [env.DB.prepare("UPDATE invitations SET used_by=? WHERE id=? AND used_by IS NULL AND expires>? AND (target_id IS NULL OR EXISTS(SELECT 1 FROM users WHERE id=target_id AND enabled=1 AND role= invitations.role AND role!='owner' AND auth_version=target_version)) RETURNING id").bind(operation, invitation.id, now())];
+    if (invitation.target_id) statements.push(env.DB.prepare(`UPDATE users SET password_hash=?,auth_version=auth_version+1 WHERE id=? AND role!='owner' AND enabled=1 AND auth_version=? AND ${guard}`).bind(passwordHash, id, invitation.target_version, invitation.id, operation));
     else statements.push(env.DB.prepare(`INSERT INTO users(id,username,name,role,password_hash) SELECT ?,?,?,?,? WHERE ${guard}`).bind(id, details.username, details.name, invitation.role, passwordHash, invitation.id, operation));
     const result = await env.DB.batch(statements);
     assert(result[0].results.length, "This invitation has already been used.", 409);
@@ -74,7 +75,7 @@ export async function accountRoute(request: Request, env: Env, user: Identity | 
   }
   if (path === "/api/google/link" && method === "DELETE") {
     requireRole(user);
-    await env.DB.prepare("DELETE FROM identities WHERE user_id=? AND provider='google'").bind(user.id).run();
+    await audited(env,user,"google.unlinked",[env.DB.prepare("DELETE FROM identities WHERE user_id=? AND provider='google'").bind(user.id)]);
     return json({ ok: true });
   }
   if (!/^\/api\/(users|invitations|automation|ownership)(\/|$)/.test(path)) return null;
@@ -86,20 +87,25 @@ export async function accountRoute(request: Request, env: Env, user: Identity | 
     const body = await bodyOf(request);
     assert(body.role === "viewer" || body.role === "editor", "Choose viewer or editor access.");
     const targetId = body.targetId || null;
-    if (targetId) assert(uuid(targetId) && await env.DB.prepare("SELECT id FROM users WHERE id=? AND role!='owner' AND enabled=1").bind(targetId).first(), "Choose an active relative's account.");
+    let target: {auth_version:number;role:string} | null = null;
+    if (targetId) {
+      assert(uuid(targetId),"Choose an active relative's account.");
+      target=await env.DB.prepare("SELECT auth_version,role FROM users WHERE id=? AND role!='owner' AND enabled=1").bind(targetId).first<{auth_version:number;role:string}>();
+      assert(target && target.role === body.role,"Choose an active relative's account and its current role.");
+    }
     const id = crypto.randomUUID(), secret = token(), expires = now() + 48 * 3600;
-    await env.DB.prepare("INSERT INTO invitations(id,token_hash,role,target_id,expires,created_by) VALUES(?,?,?,?,?,?)").bind(id, await sha256(secret), body.role, targetId, expires, user.id).run();
+    await audited(env,user,"invitation.created",[env.DB.prepare("INSERT INTO invitations(id,token_hash,role,target_id,target_version,expires,created_by) VALUES(?,?,?,?,?,?,?)").bind(id, await sha256(secret), body.role, targetId, target?.auth_version ?? null, expires, user.id)],id);
     return json({ id, token: secret, expires }, { status: 201 });
   }
   const invitationId = path.match(/^\/api\/invitations\/([^/]+)$/)?.[1];
   if (invitationId && method === "DELETE") {
-    await env.DB.prepare("DELETE FROM invitations WHERE id=?").bind(invitationId).run(); return json({ ok: true });
+    await audited(env,user,"invitation.revoked",[env.DB.prepare("DELETE FROM invitations WHERE id=?").bind(invitationId)],invitationId); return json({ ok: true });
   }
   const userId = path.match(/^\/api\/users\/([^/]+)$/)?.[1];
   if (userId && method === "PATCH") {
     const body = await bodyOf(request);
     assert(uuid(userId) && (body.role === "viewer" || body.role === "editor") && typeof body.enabled === "boolean", "Choose a role and access status.");
-    const changed = await env.DB.prepare("UPDATE users SET role=?,enabled=?,auth_version=auth_version+1 WHERE id=? AND role!='owner' RETURNING id").bind(body.role, Number(body.enabled), userId).all();
+    const [changed] = await audited(env,user,"account.access_requested",[env.DB.prepare("UPDATE users SET role=?,enabled=?,auth_version=auth_version+1 WHERE id=? AND role!='owner' RETURNING id").bind(body.role, Number(body.enabled), userId)],userId);
     assert(changed.results.length, "The owner cannot be changed here.", 409);
     return json({ ok: true });
   }
@@ -111,22 +117,24 @@ export async function accountRoute(request: Request, env: Env, user: Identity | 
     const next = await env.DB.prepare("SELECT id FROM users WHERE id=? AND enabled=1 AND role!='owner'").bind(body.userId).first();
     assert(next, "Choose another active account.");
     const recoveryCode = token();
-    await env.DB.batch([
-      env.DB.prepare("UPDATE users SET role='editor',recovery_hash=NULL,auth_version=auth_version+1 WHERE id=? AND role='owner'").bind(user.id),
+    const transferred = await audited(env,user,"ownership.transfer_requested",[
+      env.DB.prepare("UPDATE users SET role='editor',recovery_hash=NULL,auth_version=auth_version+1 WHERE id=? AND role='owner' AND EXISTS(SELECT 1 FROM users WHERE id=? AND enabled=1 AND role!='owner') RETURNING id").bind(user.id,body.userId),
       env.DB.prepare("UPDATE users SET role='owner',recovery_hash=?,auth_version=auth_version+1 WHERE id=? AND enabled=1 AND NOT EXISTS(SELECT 1 FROM users WHERE role='owner')").bind(await sha256(recoveryCode), body.userId),
-      env.DB.prepare("DELETE FROM automation_credentials"),
+      env.DB.prepare("DELETE FROM automation_credentials WHERE EXISTS(SELECT 1 FROM users WHERE id=? AND role='owner')").bind(body.userId),
+      env.DB.prepare("DELETE FROM invitations WHERE target_id IN (?,?) AND EXISTS(SELECT 1 FROM users WHERE id=? AND role='owner')").bind(user.id,body.userId,body.userId),
     ]);
+    assert(transferred[0].results.length === 1,"The target account changed. Reload before transferring ownership.",409);
     return json({ recoveryCode });
   }
   if (path === "/api/automation" && method === "GET") return json((await env.DB.prepare("SELECT id,name,created_at FROM automation_credentials ORDER BY created_at DESC").all()).results);
   if (path === "/api/automation" && method === "POST") {
     const body = await bodyOf(request), secret = token(), id = crypto.randomUUID();
-    await env.DB.prepare("INSERT INTO automation_credentials(id,name,token_hash,user_id) VALUES(?,?,?,?)").bind(id, text(body.name, 100, true), await sha256(secret), user.id).run();
+    await audited(env,user,"agent.created",[env.DB.prepare("INSERT INTO automation_credentials(id,name,token_hash,user_id) VALUES(?,?,?,?)").bind(id, text(body.name, 100, true), await sha256(secret), user.id)],id);
     return json({ id, token: secret }, { status: 201 });
   }
   const automationId = path.match(/^\/api\/automation\/([^/]+)$/)?.[1];
   if (automationId && method === "DELETE") {
-    await env.DB.prepare("DELETE FROM automation_credentials WHERE id=?").bind(automationId).run(); return json({ ok: true });
+    await audited(env,user,"agent.revoked",[env.DB.prepare("DELETE FROM automation_credentials WHERE id=?").bind(automationId)],automationId); return json({ ok: true });
   }
   return null;
 }

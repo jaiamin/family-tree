@@ -1,4 +1,5 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
+import { audited } from "./activity";
 import { assert, HttpError } from "./model";
 import type { Env, Identity } from "./types";
 
@@ -90,7 +91,12 @@ export async function googleLogin(request: Request, env: Env, token: string, use
     assert(user && !user.automationId && user.id===row.user_id,"Sign in to the account you are linking.",401);
     const existing=await env.DB.prepare("SELECT user_id FROM identities WHERE provider='google' AND subject=?").bind(payload.sub).first<{user_id:string}>();
     assert(!existing || existing.user_id===user.id,"This Google account is already linked.",409);
-    await env.DB.prepare("INSERT INTO identities(provider,subject,user_id) VALUES('google',?,?) ON CONFLICT(provider,user_id) DO UPDATE SET subject=excluded.subject").bind(payload.sub,user.id).run();
+    const email = typeof payload.email === "string" ? payload.email.slice(0,254) : user.email;
+    const picture = typeof payload.picture === "string" && /^https:\/\/[^/]+\.googleusercontent\.com\//.test(payload.picture) ? payload.picture : null;
+    await audited(env,user,"google.linked",[
+      env.DB.prepare("INSERT INTO identities(provider,subject,user_id) VALUES('google',?,?) ON CONFLICT(provider,user_id) DO UPDATE SET subject=excluded.subject").bind(payload.sub,user.id),
+      env.DB.prepare("UPDATE users SET email=?,picture=? WHERE id=?").bind(email,picture,user.id),
+    ]);
   }
   const linked=await env.DB.prepare("SELECT u.id FROM identities i JOIN users u ON u.id=i.user_id WHERE i.provider='google' AND i.subject=? AND u.enabled=1").bind(payload.sub).first<{id:string}>();
   assert(linked,"This Google account is not linked to an approved account.",403);

@@ -1,6 +1,6 @@
 # ADR 001: Installation-wide family access
 
-Status: product decision and final plan agreed; implementation pending.
+Status: implemented.
 
 Each independent installation owns one collection of shared people and relationships and may expose multiple named trees. Trees are membership views, not authorization scopes. A person retains its UUID and public ID across trees; changes propagate wherever included. Login users are separate from people.
 

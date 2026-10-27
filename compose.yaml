@@ -1,12 +1,16 @@
 services:
   family-tree:
-    build: ./web
+    build:
+      context: ./web
+      args:
+        BASE_PATH: ${BASE_PATH-/family-tree}
     restart: unless-stopped
     ports:
       - "127.0.0.1:8000:8000"
     environment:
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Set your HTTPS origin}
-      BASE_PATH: ${BASE_PATH:-/family-tree}
+      BASE_PATH: ${BASE_PATH-/family-tree}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       SETUP_TOKEN: ${SETUP_TOKEN:?Set a strong single-use setup credential}
     volumes:
       - family-data:/data

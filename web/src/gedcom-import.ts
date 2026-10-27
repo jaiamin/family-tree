@@ -50,7 +50,7 @@ export async function previewGedcom(source: string, name: string) {
     const notes = record.children.filter(node => node.tag === "NOTE").map(node => value(node));
     const sourceId = value(child(record,"_UID"));
     if (sourceId) notes.push(`Source identifier: ${sourceId}`);
-    const eventDate = (event?: Node) => value(child(event || record,"NOTE")).startsWith("Date: ") ? value(child(event!,"NOTE")).slice(6) : date(event && child(event,"DATE"));
+    const eventDate = (event?: Node) => !event ? "" : value(child(event,"NOTE")).startsWith("Date: ") ? value(child(event,"NOTE")).slice(6) : date(child(event,"DATE"));
     const person: Person = { id, name: value(child(record,"NAME")).replaceAll("/","").trim(), parents: [], partners: [],
       ...sex === "M" ? {sex:"male"} : sex === "F" ? {sex:"female"} : {},
       birth_date: eventDate(birth) || null, death_date: eventDate(death) || null,

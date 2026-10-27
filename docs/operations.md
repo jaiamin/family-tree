@@ -1,83 +1,61 @@
-# Hosting and recovery
+# Installation and recovery
 
-## Deployment
+One installation contains one shared collection, any number of tree groupings, and one owner. Access applies to every tree. Accounts are separate from genealogical people. Never expose database files or photo/backup storage publicly.
 
-The Worker serves every page/API/photo through authentication. D1 holds people, relationships, memberships, photo references, suggestions, and access settings. Two **private** R2 buckets hold uploaded images and their backup copies. Never enable public bucket access.
+## Local production
 
-1. Configure your account, D1/R2 bindings, owner email, Google client ID, and public origin in `web/cloudflare.config.ts`. For a new installation, create your own resources; the checked-in IDs belong to this deployment.
-2. Apply `web/schema.sql` to the **new** D1 database. Add approved editors through owner access or the `editors` table. Do not import into an existing populated website.
-3. Set Worker secrets **FAMILY_PASSWORD** and **MCP_TOKEN** through Cloudflare's dashboard or interactive secret prompts. Generate a strong independent MCP token. Never put secrets in source, command arguments, or documentation. Never set LOCAL_MODE in production.
-4. Build and deploy with `pnpm --dir web deploy`. Deployment updates code, not existing records or photos. There is no automatic production deployment from the MCP or this repository's CI.
-5. Google OAuth: configure a Web application client with your exact website origin as an authorized JavaScript origin (and localhost:8000 for development). The browser callback uses Google Identity Services; no redirect URI is needed. Only owner/approved editor emails gain editing access.
+Requires Docker Compose and an HTTPS reverse proxy forwarding the configured path to localhost:8000. The app needs no internet after installation; optional Google sign-in and remote access require connectivity.
 
-### Existing custom domain on Vercel
+1. Copy `.env.example` to ignored `.env`. Set your HTTPS `PUBLIC_ORIGIN`, `BASE_PATH`, a random `SETUP_TOKEN`, and an absolute private `BACKUP_DIRECTORY`. The backup folder must be writable by container UID 1000; choose a separate device if possible. A second path on the same disk is not off-device protection.
+2. Initialize **fresh** storage and start:
 
-The Astro portfolio in `jaiamin/website` remains on Vercel. Create `vercel.json` at that repository’s root with these rewrites **before catch-all rewrites** in its own repository, replacing the Worker hostname if needed:
+   ```sh
+   docker compose build
+   docker compose run --rm family-tree node scripts/maintain.mjs init
+   docker compose up -d
+   ```
 
-```json
-{
-  "trailingSlash": false,
-  "rewrites": [
-    { "source": "/family-tree", "destination": "https://family-tree.jaiamin.workers.dev/family-tree/" },
-    { "source": "/family-tree/:path*", "destination": "https://family-tree.jaiamin.workers.dev/family-tree/:path*" }
-  ]
-}
-```
+3. Visit the HTTPS app URL. Enter the setup credential, create your owner account and save the recovery code separately. Create a tree and its first person. Use **Family access** to share single-use invitations (48 hours).
 
-`trailingSlash: false` redirects previously shared URLs ending in `/` to their canonical paths before proxying. Without this, Vercel can return its own 404 for a tree even though the Worker accepts the route.
+The process runs unprivileged with private persistent data/backup mounts. Do not run `init` against an existing installation or remove its volumes. Changing `BASE_PATH` requires rebuilding the image as well as changing runtime configuration. Back up before upgrading; retain the previous image until verified.
 
-Ensure the portfolio middleware does not intercept this path. Test Google sign-in, cookies, photos, and deep links through the custom domain; testing the Worker hostname alone is insufficient.
+## Cloudflare production
 
-## Repository name
+Create a fresh D1 database and two private R2 buckets. Copy `web/installation.example.json` to ignored `web/installation.json`; fill in your own account/resource IDs, origin, base path, name and optional Google client ID. Alternatively set build variable `FAMILY_INSTALLATION_CONFIG_JSON` to that JSON. `FAMILY_INSTALLATION_CONFIG` selects an explicit configuration file and takes precedence. No personal resources or owner emails are built in.
 
-Repository: [jaiamin/family-tree](https://github.com/jaiamin/family-tree). The local MCP package and command remain `family-tree-mcp`. Repository renames do not change the website, Worker, or data; update the Git remote, source link, and any connected Cloudflare build afterward.
+Use an existing resource-scoped `CLOUDFLARE_API_TOKEN` in your operator environment; never put it in commands, source or logs. Initialize with `DEPLOYMENT=cloudflare pnpm --dir web maintain init`. Configure the Worker `SETUP_TOKEN` secret interactively/in the dashboard; build and deploy with `pnpm --dir web deploy`. Claim the owner account in the browser. Deployment updates code, never imports family data or initializes a database.
 
-## GitHub deployments
+For GitHub-connected Workers Builds: root `web`, Node 26, branch `main`, build `pnpm build && pnpm exec vite build`, deploy `pnpm exec cf deploy --prebuilt --mode production`. Provide the installation JSON as a **build** variable. CI uses example IDs and does not deploy. Never attach preview deployments to live storage. Schema-changing releases require the explicit procedure below before deployment; an incompatible schema returns 503.
 
-After this code is merged, connect the Worker to the GitHub repository in **Settings → Builds**. Use production branch `main`, root directory `web`, build command `pnpm build && pnpm exec vite build`, and deploy command `pnpm exec cf deploy --prebuilt --mode production`. Set the build Node version to 26. Disable non-production deployments against the live database. Cloudflare may require the owner to authorize its GitHub application and build token. No deployment trigger is enabled by this change.
+Configure your reverse proxy/custom domain to forward the base path and all descendants without intercepting tree routes. `PUBLIC_ORIGIN` must be the exact HTTPS browser origin, without a path. Shared links remain private after sign-in. Optional Google: register that origin as an authorized JavaScript origin, set the client ID, then link Google from an already authenticated account. Email alone never grants access.
 
-## Initial migration
+## Upgrades and the existing installation
 
-- Use the authoritative `collection.json` from the current owner machine, not a preview fixture. MCP `import_collection(path)` loads it into an empty hosted website, preserving person/tree UUIDs and stripping obsolete static-site settings. It refuses a populated destination.
-- Migrate existing photos **before cutover**, matching their original person UUIDs. Existing public Pages/KV storage must remain untouched until record counts, relationships, UUIDs, and every current photo are verified in the private destination. This installation migrated the two published trees only; obsolete legacy photo storage was removed at the owner’s request.
-- After verification, retire old public Pages deployments and public photo access. Protecting the new Worker does not retroactively make those old URLs private.
+Schema2 is the named-account baseline. The one-time pre-baseline conversion is `migrate-legacy`; there is no old authentication mode or automatic schema migration. Keep the existing production bindings/code intact until rehearsal and cutover are explicitly approved.
 
-## Backups
+- **Current installations:** pause → preflight → update code → verify → resume. Local commands: `docker compose exec family-tree node scripts/maintain.mjs pause` (then `preflight` or `resume`). Operator commands can also run with `DEPLOYMENT=cloudflare pnpm --dir web maintain <command>`. Pause is enforced in SQL, including writes already in flight. Preflight requires schema 2 and maintenance mode, verifies retained backup photo hashes, and replaces the previous pre-upgrade point only after verification. Future schema releases must ship a numbered conversion and tests; unsupported versions stop instead of guessing.
+- **Legacy conversion:** stop writes to the old installation, provision a **fresh** schema 2 destination, and run a rehearsal. For local storage set destination `DATA_DIR`/`BACKUP_DIR` plus `LEGACY_DATA_DIR`/`LEGACY_BACKUP_DIR`; run `pnpm --dir web maintain migrate-legacy`. For Cloudflare set destination configuration plus `LEGACY_INSTALLATION_CONFIG` pointing to the source configuration; run `DEPLOYMENT=cloudflare pnpm --dir web maintain migrate-legacy`. Both sources are read-only. Destination backup storage must also be empty.
+- Conversion checks source fingerprints before/after; verifies primary and backup bytes for every retained photo; preserves genealogy, memberships, UUIDs and short IDs; restores into fresh storage. It does not carry over shared passwords, sessions, invitations, API tokens or inferred Google identities. Previous approved editors become disabled named accounts for the new owner to review/enable and reset by invitation. Claim a new owner using the destination setup credential and save its recovery code.
+- Compare counts, shared memberships, links, current photos and retained uploads; verify viewer/editor/owner permissions and recovery. Only then change production bindings/configuration and deploy. Keep the verified source offline until cutover is confirmed; deleting it is a separate decision. Never import a development fixture over production.
 
-- After each successful data/photo/access/suggestion write, the Worker asynchronously refreshes **one** `collection.json` manifest in the private backup bucket. It includes all records, current photo pointers, every registered upload, suggestions, and editor access.
-- A scheduled trigger retries every 15 minutes. Owner session/MCP `get_website` exposes backup status; failures appear in the owner's menu. This is not per-edit undo: accidental deletions also enter the next backup.
-- Each photo upload gets an immutable key containing the person UUID and upload UUID. Both buckets receive the bytes **before** the current-photo reference changes. Editors may remove the displayed photo; this clears only its current reference and keeps every upload. Replacing a photo retains all previous uploads; no automated pruning or deployment cleanup removes them. The browser lets the uploader position and zoom a square profile crop; it uploads that crop, not the untouched camera file.
-- Sessions and temporary login/rate-limit data are intentionally excluded. People sign in again after recovery. Separate buckets protect against main-storage failure, not loss of the entire Cloudflare account; no zero-loss guarantee.
+Code-only releases can deploy automatically. Do not merge a schema-changing release into an automatically deploying production branch until its installation configuration and reviewed migration procedure are ready.
 
-## Disaster recovery
+## Backups and photos
 
-`web/src/recovery.ts` exports the maintenance-only `recoverBackup(env)` operation; it is deliberately unavailable to browser visitors and MCP clients.
+Each accepted photo is immutable, keyed by person UUID/upload UUID, and written to primary **and** backup storage before its database pointer advances. Replacement and displayed-photo removal keep every upload, including after person deletion. Browser uploads are square crops, not original camera files.
 
-1. Stop writes to the damaged installation. Keep its database/buckets intact.
-2. Create a fresh D1 database, apply the schema without seeding editor records, and create a fresh private primary photo bucket. Bind these as DB and PHOTOS, with the **existing** backup bucket as BACKUP, in an isolated maintenance Worker.
-3. Invoke `recoverBackup` once through a trusted maintenance entrypoint. It validates the manifest, requires an empty database, checks that every retained photo exists, copies all originals, then restores records and photo pointers in one D1 batch. It refuses conflicting destination photos and never modifies the backup. An interrupted copy can be rerun against the still-empty destination database.
-4. Verify person/tree/suggestion counts, relationships, current photos, and retained uploads before changing production bindings. Remove the temporary maintenance Worker afterward. Reconfigure authentication secrets separately.
+Successful mutations refresh the latest consistent manifest asynchronously; a 15-minute schedule retries and creates daily points. Retain latest state, seven daily points, and one verified pre-upgrade point. Photos are reused across snapshots. The owner's **Backups** view shows last success, pending changes and failures. Local `BACKUP_DIR`/Compose `BACKUP_DIRECTORY` selects the second destination. Protect both; loss of the host/account can still destroy both copies.
 
-The automated recovery test restores into fresh D1/R2 storage and compares photo bytes. Run a production restore drill before relying on a new installation.
+The owner can export an AES-256-GCM encrypted archive in **Backups**. Save its recovery key separately; losing the key makes the export unrecoverable. Local/operator `maintain export` requires `EXPORT_FILE` and a **new** `RECOVERY_KEY_FILE` and writes private files without printing keys. Move one copy off-device. GEDCOM is only genealogy interchange; it is not complete recovery.
 
-Owner-only person deletion removes the person from all trees, relationship links, and current photo references, with name/revision confirmation. Immutable uploads stay in both buckets. Deletion is reflected in the rolling backup; it is not an undo history.
+## Restore / lost owner access
 
-## GEDCOM export
+Restore always targets a **fresh initialized database**, primary storage and empty backup staging destination. Set `EXPORT_FILE` and `RECOVERY_KEY_FILE`; run `maintain restore` (same local/Cloudflare selector as above). The tool authenticates/decrypts records, validates manifest/collection consistency, verifies all photo hashes, copies retained bytes, and restores rows atomically. It excludes sessions, invitations and automation credentials. Accounts sign in again; recreate MCP credentials separately. Interrupted photo copying leaves the database empty; an interrupted encrypted staging requires a new empty staging destination. Do not delete an uncertain destination to retry.
 
-Open a tree and choose **Download GEDCOM** from the top-right menu. Any signed-in family viewer can export that tree as GEDCOM 5.5.1, including people, recorded gender, dates, places, notes, and relationships. People outside the tree and photos are excluded. Person UUIDs are retained in `_UID` fields; free-text dates are preserved as event notes. This is a portable download, separate from the automatic recovery backup.
+To recover a daily/pre-upgrade point instead, use maintenance-only `recoverBackup(env, key)` with fresh DB/primary bindings and the existing backup binding; keys are `daily/YYYY-MM-DD.json` or `pre-upgrade.json`. It never writes to the source backup. The encrypted CLI restores `collection.json`.
 
-## Short links
+A saved owner recovery code rotates after use and invalidates owner sessions. If it is lost, the installer can run `maintain recover-owner` with `OWNER_PASSWORD` in the environment and a new private `RECOVERY_KEY_FILE`; it writes the replacement recovery credential before changing access and never prints it. Password recovery does not erase genealogy. Ownership transfer requires the owner's current password, an active target account, and a newly saved recovery code; it revokes agent credentials and stale reset links.
 
-Tree URLs are `/family-tree/t/<12-character ID>`; a person adds `#<12-character ID>`. IDs use random Base58 characters, remain permanent, and never grant access. UUIDs remain internal to API/MCP records, relationships, GEDCOM and photo storage. Old `/trees/<UUID>` routes and UUID fragments are unsupported.
+## Checks
 
-For an existing deployment, build first, then apply the additive migration and backfill **before deploying this version**:
-
-```sh
-pnpm --dir web build
-# Use an existing D1-scoped CLOUDFLARE_API_TOKEN in the environment; never put it in the command.
-node web/scripts/migrate-public-ids.mjs ACCOUNT_ID DATABASE_ID
-```
-
-The command applies `web/migrations/0001_public_ids.sql`, allocates missing IDs with uniqueness retries, and checks that family records/photo pointers did not change. Rerunning preserves assigned IDs. No family import, UUID rewrite or R2 move is involved. Local preview automatically applies the same migration to its separate local database.
-
-Deploy immediately after backfill, avoiding edits through an old deployment during the transition. New app/API/MCP writes assign IDs atomically with the existing revision check. The next scheduled backup (at most15minutes) replaces the rolling manifest with format2, including the ID mapping; verify `backup_state` is current. Restore requires format2 and preserves every short link. No legacy backup reader or URL fallback is retained.
+`pnpm --dir web build && pnpm --dir web check && pnpm --dir web test`; browser checks: `pnpm --dir web test:browser`; offline image/restore/restart check: `node web/tests/docker-smoke.mjs`. For Cloudflare build verification set `FAMILY_INSTALLATION_CONFIG=installation.example.json`, then run Vite build and `cf deploy --prebuilt --mode production --dry-run` from `web`. Run a restore drill before relying on a new installation. No zero-loss guarantee is implied by a successful backup job.

@@ -9,7 +9,8 @@
     "check": "tsc --noEmit && tsc -p tsconfig.browser.json",
     "deploy": "pnpm build && vite build && cf deploy --prebuilt --mode production",
     "start": "node scripts/server.mjs",
-    "maintain": "node scripts/maintain.mjs"
+    "maintain": "node scripts/maintain.mjs",
+    "test:browser": "playwright test"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",
@@ -18,6 +19,7 @@
   "devDependencies": {
     "@cloudflare/vite-plugin": "2.0.0-beta.v.5",
     "@cloudflare/workers-types": "^5.20261026.1",
+    "@playwright/test": "1.64.1",
     "@types/node": "^26.6.5",
     "cf": "1.0.0-beta.21",
     "esbuild": "^0.28.2",

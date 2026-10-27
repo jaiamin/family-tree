@@ -1,7 +1,7 @@
 # Working on Family Tree
 
 ## Structure
-- `web/src`: Cloudflare Worker, authentication, D1/R2 storage, browser forms.
+- `web/src`: shared API/auth/domain and browser forms; platform/ contains Cloudflare-compatible and local storage.
 - `web/ui`: graph layout, tree viewer, search, relationship comparison.
 - `mcp/src`: local Python MCP client for the hosted API.
 - `web/schema.sql`: database schema. `docs/operations.md`: hosting and recovery.
@@ -12,8 +12,8 @@
 - Install with `pnpm --dir web install --frozen-lockfile` and `uv sync --locked`.
 - Build before type checking: `pnpm --dir web build && pnpm --dir web check && pnpm --dir web test`.
 - Python checks: `uv run ruff format --check . && uv run ruff check . && uv run ty check && uv run pytest`.
-- For production build changes, run `pnpm --dir web exec vite build` and `pnpm --dir web exec cf deploy --prebuilt --mode production --dry-run`.
-- Preview: `pnpm --dir web dev`, port 8000, `/family-tree/`. Local-only password: `local-preview-only`.
+- For production build changes, use `FAMILY_INSTALLATION_CONFIG=installation.example.json` and run `pnpm --dir web exec vite build` and `pnpm --dir web exec cf deploy --prebuilt --mode production --dry-run`.
+- Preview: `pnpm --dir web dev`, port 8000, `/family-tree/`. Claim a fresh development installation with setup credential `local-setup-only`; choose account credentials in the browser.
 - Verify UI changes in a browser on desktop and mobile, including relevant scroll and error states.
 
 ## Data and access

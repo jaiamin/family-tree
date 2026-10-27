@@ -31,8 +31,8 @@ CREATE TABLE IF NOT EXISTS tree_members (
   position INTEGER NOT NULL, PRIMARY KEY(tree_id, person_id)
 );
 CREATE INDEX IF NOT EXISTS memberships_by_person ON tree_members(person_id);
-CREATE TABLE IF NOT EXISTS schema_version (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL);
-INSERT OR IGNORE INTO schema_version VALUES(1, 2);
+CREATE TABLE IF NOT EXISTS schema_version (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL, maintenance INTEGER NOT NULL DEFAULT 0 CHECK(maintenance IN (0,1)));
+INSERT OR IGNORE INTO schema_version(id,version) VALUES(1, 2);
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY, username TEXT NOT NULL UNIQUE COLLATE NOCASE,
   name TEXT NOT NULL, email TEXT, picture TEXT,
@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS identities (
 );
 CREATE TABLE IF NOT EXISTS invitations (
   id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, role TEXT NOT NULL CHECK(role IN ('viewer','editor')),
-  target_id TEXT REFERENCES users(id), expires INTEGER NOT NULL, used_by TEXT, created_by TEXT NOT NULL REFERENCES users(id)
+  target_id TEXT REFERENCES users(id), target_version INTEGER, expires INTEGER NOT NULL, used_by TEXT, created_by TEXT NOT NULL REFERENCES users(id)
 );
 CREATE TABLE IF NOT EXISTS automation_credentials (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE,
@@ -190,3 +190,131 @@ BEGIN UPDATE backup_state SET generation=generation+1 WHERE id=1; END;
 
 CREATE TRIGGER IF NOT EXISTS backup_activity_delete AFTER DELETE ON activity
 BEGIN UPDATE backup_state SET generation=generation+1 WHERE id=1; END;
+
+/* Maintenance also blocks requests already in flight. */
+CREATE TRIGGER IF NOT EXISTS pause_collections_insert BEFORE INSERT ON collections
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_collections_update BEFORE UPDATE ON collections
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_collections_delete BEFORE DELETE ON collections
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_people_insert BEFORE INSERT ON people
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_people_update BEFORE UPDATE ON people
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_people_delete BEFORE DELETE ON people
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_trees_insert BEFORE INSERT ON trees
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_trees_update BEFORE UPDATE ON trees
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_trees_delete BEFORE DELETE ON trees
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_parents_insert BEFORE INSERT ON parents
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_parents_update BEFORE UPDATE ON parents
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_parents_delete BEFORE DELETE ON parents
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_partnerships_insert BEFORE INSERT ON partnerships
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_partnerships_update BEFORE UPDATE ON partnerships
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_partnerships_delete BEFORE DELETE ON partnerships
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_tree_members_insert BEFORE INSERT ON tree_members
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_tree_members_update BEFORE UPDATE ON tree_members
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_tree_members_delete BEFORE DELETE ON tree_members
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_photos_insert BEFORE INSERT ON photos
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_photos_update BEFORE UPDATE ON photos
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_photos_delete BEFORE DELETE ON photos
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_photo_uploads_insert BEFORE INSERT ON photo_uploads
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_photo_uploads_update BEFORE UPDATE ON photo_uploads
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_photo_uploads_delete BEFORE DELETE ON photo_uploads
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_suggestions_insert BEFORE INSERT ON suggestions
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_suggestions_update BEFORE UPDATE ON suggestions
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_suggestions_delete BEFORE DELETE ON suggestions
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_users_insert BEFORE INSERT ON users
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_users_update BEFORE UPDATE ON users
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_users_delete BEFORE DELETE ON users
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_identities_insert BEFORE INSERT ON identities
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_identities_update BEFORE UPDATE ON identities
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_identities_delete BEFORE DELETE ON identities
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_invitations_insert BEFORE INSERT ON invitations
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_invitations_update BEFORE UPDATE ON invitations
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_invitations_delete BEFORE DELETE ON invitations
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_automation_credentials_insert BEFORE INSERT ON automation_credentials
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_automation_credentials_update BEFORE UPDATE ON automation_credentials
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_automation_credentials_delete BEFORE DELETE ON automation_credentials
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_activity_insert BEFORE INSERT ON activity
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_activity_update BEFORE UPDATE ON activity
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;
+CREATE TRIGGER IF NOT EXISTS pause_activity_delete BEFORE DELETE ON activity
+WHEN (SELECT maintenance FROM schema_version WHERE id=1)=1
+BEGIN SELECT RAISE(ABORT, 'installation_paused'); END;

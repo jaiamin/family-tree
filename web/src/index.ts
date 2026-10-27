@@ -72,8 +72,9 @@ async function route(request: Request, env: Env): Promise<Response> {
     const site = await env.DB.prepare("SELECT site FROM collections WHERE id='main'").first<{site:string|null}>();
     return json({ ...(user?.role === "owner" ? { backup: await env.DB.prepare("SELECT generation,saved_generation,saved_at,error FROM backup_state WHERE id=1").first() } : {}),
       authenticated: !!user, role: user?.role, id: user?.id, email: user?.email, name: user?.name, picture: user?.picture,
-      needsSetup: !(await env.DB.prepare("SELECT id FROM users LIMIT 1").first()),
-      siteName: site?.site ? JSON.parse(site.site).name : env.SITE_NAME, googleClientId: env.GOOGLE_CLIENT_ID || "" });
+      needsSetup: !(await env.DB.prepare("SELECT id FROM users WHERE role='owner' LIMIT 1").first()),
+      googleLinked: !!user && !!(await env.DB.prepare("SELECT subject FROM identities WHERE user_id=? AND provider='google'").bind(user.id).first()),
+      siteName: site?.site ? JSON.parse(site.site)?.name || env.SITE_NAME : env.SITE_NAME, googleClientId: env.GOOGLE_CLIENT_ID || "" });
   }
   const accounts = await accountRoute(request,env,user,path);
   if (accounts) return accounts;
@@ -133,7 +134,7 @@ async function route(request: Request, env: Env): Promise<Response> {
       requireRole(user, "editor");
       const body = await bodyOf(request), id = path.split("/")[3];
       assert(uuid(id) && (body.status === "open" || body.status === "done"), "Invalid suggestion status.");
-      const result = await env.DB.prepare("UPDATE suggestions SET status = ? WHERE id = ?").bind(body.status, id).run();
+      const [result] = await audited(env,user,"suggestion.reviewed",[env.DB.prepare("UPDATE suggestions SET status = ? WHERE id = ?").bind(body.status, id)],id);
       assert(result.meta.changes, "Suggestion not found.", 404);
       return json({ ok: true });
     }
@@ -141,7 +142,7 @@ async function route(request: Request, env: Env): Promise<Response> {
       requireRole(user, "editor");
       const id = path.split("/")[3];
       assert(uuid(id), "Invalid suggestion.");
-      const result = await env.DB.prepare("DELETE FROM suggestions WHERE id = ?").bind(id).run();
+      const [result] = await audited(env,user,"suggestion.deleted",[env.DB.prepare("DELETE FROM suggestions WHERE id = ?").bind(id)],id);
       assert(result.meta.changes, "Suggestion not found.", 404);
       return json({ ok: true });
     }
@@ -233,12 +234,17 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     let response: Response;
     try {
-      const version = await env.DB.prepare("SELECT version FROM schema_version WHERE id=1").first<{version:number}>();
+      const version = await env.DB.prepare("SELECT version,maintenance FROM schema_version WHERE id=1").first<{version:number;maintenance:number}>().catch(error => {
+        if (error instanceof Error && /no such table: schema_version/.test(error.message)) throw new HttpError(503,"This installation requires initialization or an explicit schema upgrade.");
+        throw error;
+      });
       assert(version?.version === 2,"This installation requires an explicit schema upgrade.",503);
+      assert(!version.maintenance,"The family website is temporarily paused for maintenance.",503);
       response = await route(request, env);
     }
     catch (error) {
-      if (error instanceof HttpError) response = json({ error: error.message }, error.status);
+      if (error instanceof Error && /installation_paused/.test(error.message)) response = json({error:"The family website is temporarily paused for maintenance."},503);
+      else if (error instanceof HttpError) response = json({ error: error.message }, error.status);
       else if (error instanceof Error && /UNIQUE constraint failed/.test(error.message)) response = json({error:"That username or identity is already in use."},409);
       else { console.error(JSON.stringify({ event: "request_failed", method: request.method, path: new URL(request.url).pathname })); response = json({ error: "Something went wrong. Please try again." }, 500); }
     }
@@ -251,5 +257,8 @@ export default {
     headers.set("permissions-policy", "camera=(), microphone=(), geolocation=()");
     return new Response(request.method === "HEAD" ? null : response.body, { status: response.status, headers });
   },
-  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) { ctx.waitUntil(refreshBackup(env)); },
+  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) {
+    const state = await env.DB.prepare("SELECT version,maintenance FROM schema_version WHERE id=1").first<{version:number;maintenance:number}>();
+    if (state?.version === 2 && !state.maintenance) ctx.waitUntil(refreshBackup(env));
+  },
 } satisfies ExportedHandler<Env>;

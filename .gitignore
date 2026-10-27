@@ -27,3 +27,6 @@ web/installation.json
 .preview-browser-errors.txt
 
 .env
+
+web/test-results/
+web/playwright-report/

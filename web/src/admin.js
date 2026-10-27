@@ -26,6 +26,16 @@ export function administration({ api, dialog, field, formIn, el, button, base, r
         }
         list.append(row);
       }
+      for (const invitation of await api("/invitations")) {
+        const target = users.find(user => user.id === invitation.target_id);
+        list.append(el("div", { class: "admin-row" }, el("div", {},
+          el("strong", {}, target ? `Reset for ${target.name}` : `${invitation.role === "editor" ? "Editor" : "Viewer"} invitation`),
+          el("small", {}, `Expires ${new Date(invitation.expires * 1000).toLocaleString()}`)),
+          button("Revoke link", async () => {
+            try { await api(`/invitations/${invitation.id}`, undefined, "DELETE"); reload(); }
+            catch (failure) { error(panel, failure); }
+          }, "text-button")));
+      }
       let role;
       const { form, finish } = formIn(panel, "Create invitation", async () => {
         const invitation = await api("/invitations", { role: role.value });
@@ -83,7 +93,7 @@ export function administration({ api, dialog, field, formIn, el, button, base, r
     panel.footer.remove();
     try {
       const entries = await api("/activity");
-      panel.body.append(...entries.map(entry => el("div", { class: "admin-row" }, el("div", {}, el("strong", {}, entry.actor_name), el("p", {}, entry.action)), el("small", {}, new Date(`${entry.created_at}Z`).toLocaleString()))));
+      panel.body.append(...entries.map(entry => el("div", { class: "admin-row" }, el("div", {}, el("strong", {}, entry.actor_name), el("p", {}, entry.action), entry.target ? el("small", {}, entry.target) : null), el("small", {}, new Date(`${entry.created_at}Z`).toLocaleString()))));
       if (!entries.length) panel.body.append(el("p", { class: "form-note" }, "No activity yet."));
     } catch (failure) { error(panel, failure); }
   }
@@ -122,7 +132,7 @@ export function administration({ api, dialog, field, formIn, el, button, base, r
   async function backups() {
     const panel=dialog("Backups"); if (!panel) return;
     const state=(await api("/session")).backup;
-    panel.body.append(el("p",{},state?.saved_at ? `Last saved: ${new Date(`${state.saved_at}Z`).toLocaleString()}` : "No successful backup yet."),el("p",{class:"form-note"},state?.error || "Latest state and seven daily recovery points. Keep an off-device copy."));
+    panel.body.append(el("p",{},state?.saved_at ? `Last saved: ${new Date(`${state.saved_at}Z`).toLocaleString()}` : "No successful backup yet."),el("p",{class:"form-note"},state?.error || (state && state.saved_generation < state.generation ? "Changes are awaiting backup. Keep an off-device copy." : "Latest state and seven daily recovery points. Keep an off-device copy.")));
     panel.footer.replaceChildren(button("Export encrypted backup",async()=>{
       try {
         const bytes=crypto.getRandomValues(new Uint8Array(32)), key=btoa(String.fromCharCode(...bytes));

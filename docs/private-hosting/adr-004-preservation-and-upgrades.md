@@ -1,8 +1,8 @@
 # ADR 004: Recoverable data and explicit upgrades
 
-Status: retention, encryption policy and explicit migration agreed; detailed format and cryptographic implementation pending validation.
+Status: implemented; production cutover remains operator-approved.
 
-Final interview decisions: encrypt off-device exports with a separately saved recovery key. Retain the most recent verified pre-upgrade snapshot and replace it only after the next upgrade's backup is verified. These policies are agreed; implementation and cryptographic details still require validation.
+Final interview decisions: encrypt off-device exports with a separately saved recovery key. Retain the most recent verified pre-upgrade snapshot and replace it only after the next upgrade's backup is verified. Exports use AES-256-GCM with authenticated record ordering; manifests and retained image bytes carry SHA-256 integrity checks.
 
 Retain latest recoverable state plus seven daily recovery points and a verified pre-upgrade point. Preserve all accepted immutable photo uploads separately from replaceable current-photo pointers. Primary/backup write success precedes pointer advancement. Show backup freshness/errors and warn when protection exists only on the primary disk.
 

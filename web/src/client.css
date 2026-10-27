@@ -64,9 +64,9 @@ header > .actions:empty { display: none; }
 .site-dialog .form-note { margin: 0 0 20px; overflow-wrap: anywhere; }
 .site-dialog form > label:first-child { margin-top: 0; }
 .site-dialog input, .site-dialog select { min-height: 44px; }
-.editor-sign-in { width: min(360px, calc(100% - 32px)); }
-.editor-sign-in .dialog-body { padding: 0 20px 20px; }
-.editor-sign-in .form-note { margin: 0 0 20px; }
+.google-account-dialog { width: min(360px, calc(100% - 32px)); }
+.google-account-dialog .dialog-body { padding: 0 20px 20px; }
+.google-account-dialog .form-note { margin: 0 0 20px; }
 .google-sign-in { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 44px; color: var(--muted); font-size: 13px; }
 .google-sign-in > .site-button { width: 100%; min-height: 44px; }
 .site-dialog h3 { margin: 24px 0 12px; font-size: 13px; font-weight: 500; }
@@ -183,3 +183,5 @@ header .share-tree-button { display: flex; gap: 6px; width: auto; padding: 0 10p
 .auth-field { display:grid; gap:8px; margin-bottom:16px; }
 .auth-field[hidden] { display:none; }
 .recovery-code { display:block; overflow-wrap:anywhere; margin:20px 0; }
+
+.admin-row strong, .admin-row small { overflow-wrap: anywhere; }

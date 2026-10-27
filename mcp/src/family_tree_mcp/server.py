@@ -25,14 +25,14 @@ Use add_people for atomic batches of new people; update_people for metadata and 
 Each link reads "relative_id is person_id's relation"; remove=true disconnects that link.
 Run check_tree after large edits. Merge duplicates with merge_people only when confirmed.
 Removing tree membership preserves the record; remove_person affects every tree.
-Website visitors cannot create trees; the owner's MCP can manage tree definitions.
+Only the owner manages tree definitions, through the browser or an approved MCP credential.
 If a save conflicts with another edit, re-read the current records and reconsider the change;
 never silently overwrite someone else's work or retry stale data.
 Suggestions are private, named family feedback. Review them before changing records.
 For migration, import_collection loads a local collection.json into an EMPTY hosted website
 without changing UUIDs. It never replaces a populated website.
-Dates are free text; prefer YYYY, YYYY-MM, or YYYY-MM-DD. The service maintains one rolling
-backup and preserves original photo uploads, but there is no per-edit undo tool.
+Dates are free text; prefer YYYY, YYYY-MM, or YYYY-MM-DD. The service maintains latest and daily
+backups and preserves accepted photo uploads, but there is no per-edit undo tool.
 """
 
 READ = ToolAnnotations(read_only_hint=True, open_world_hint=True)

@@ -41,6 +41,12 @@ export async function refreshBackup(env: Env) {
     await env.DB.prepare("UPDATE backup_state SET error='Backup failed. Check the destination; it will be retried automatically.' WHERE id=1").run();
   }
 }
+export async function verifyBackupPhotos(env: Env, snapshot: Backup) {
+  for (const upload of snapshot.uploads) {
+    const object = await env.BACKUP.get(upload.object_key);
+    assert(object && await digest(await object.arrayBuffer()) === upload.content_hash, "A retained backup photo failed integrity verification.");
+  }
+}
 export async function preUpgradeBackup(env: Env) {
   await refreshBackup(env);
   const state = await env.DB.prepare("SELECT generation,saved_generation,error FROM backup_state WHERE id=1").first<{ generation:number; saved_generation:number; error:string|null }>();
@@ -48,6 +54,7 @@ export async function preUpgradeBackup(env: Env) {
   const object = await env.BACKUP.get("collection.json");
   assert(object,"No verified backup is available.");
   const snapshot = await object.json<Backup>();
+  await verifyBackupPhotos(env,snapshot);
   // Replaces the prior point only after latest backup verification succeeds.
   await writeSnapshot(env,"pre-upgrade.json",snapshot);
 }

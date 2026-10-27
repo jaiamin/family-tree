@@ -96,7 +96,7 @@ import { administration } from "./admin.js";
     container.setAttribute("aria-label", "Loading Google sign-in");
     container.setAttribute("aria-busy", "true");
     try {
-      if (!session.googleClientId) throw new Error("Editor sign-in hasn't been configured yet.");
+      if (!session.googleClientId) throw new Error("Google sign-in hasn't been configured yet.");
       const challenge = await api("/google/start", {});
       if (!window.google?.accounts) {
         await new Promise((resolve, reject) => {
@@ -109,8 +109,8 @@ import { administration } from "./admin.js";
         callback: async response => {
           try {
             await api("/google/login", { credential: response.credential });
-            try { sessionStorage.setItem("family-editor-signed-in", "1"); location.reload(); }
-            catch { activeDialog?.close(); toast("Signed in to edit.", "success"); setTimeout(() => location.reload(), 3000); }
+            try { sessionStorage.setItem("family-signed-in", "1"); location.reload(); }
+            catch { activeDialog?.close(); toast("Signed in.", "success"); setTimeout(() => location.reload(), 3000); }
           } catch (error) {
             if (!container.isConnected) return;
             toast(error.message, "error");
@@ -126,7 +126,7 @@ import { administration } from "./admin.js";
         window.google.accounts.id.renderButton(container, { type: "standard", theme: document.documentElement.dataset.theme === "dark" ? "filled_black" : "outline", size: "large", shape: "rectangular", text: "signin_with", width });
       };
       render();
-      if (!container.signInObserver) container.closest("dialog").addEventListener("close", () => container.signInObserver?.disconnect(), { once: true });
+      if (!container.signInObserver) container.closest("dialog")?.addEventListener("close", () => container.signInObserver?.disconnect(), { once: true });
       container.signInObserver = new ResizeObserver(render); container.signInObserver.observe(container);
     } catch (error) {
       if (!container.isConnected) return;
@@ -134,13 +134,13 @@ import { administration } from "./admin.js";
       if (session.googleClientId) container.append(button("Try again", () => googleSignIn(container)));
     } finally { container.setAttribute("aria-busy", "false"); container.removeAttribute("aria-label"); }
   }
-  function editorSignIn() {
-    const panel = dialog("Sign in to edit");
+  function linkGoogleAccount() {
+    const panel = dialog("Link Google account");
     if (!panel) return;
-    panel.box.classList.add("editor-sign-in");
+    panel.box.classList.add("google-account-dialog");
     panel.footer.remove();
     const holder = el("div", { class: "google-sign-in" });
-    const note = el("p", { class: "form-note", id: "editor-sign-in-note" }, "Use an approved Google account.");
+    const note = el("p", { class: "form-note", id: "google-account-dialog-note" }, "Use Google for future sign-ins to this account.");
     panel.box.setAttribute("aria-describedby", note.id);
     panel.body.append(note, holder);
     googleSignIn(holder);
@@ -438,8 +438,11 @@ import { administration } from "./admin.js";
     items.append(el("a", { href: "https://github.com/jaiamin/family-tree", target: "_blank", rel: "noopener" },
       icon(["M9 19c-4 1-4-2-6-2M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5a5.4 5.4 0 0 0-1-3.5c.3-1.2.3-2.4 0-3.5 0 0-1 0-3 1.5a15.4 15.4 0 0 0-8 0C6 2 5 2 5 2c-.3 1.1-.3 2.3 0 3.5A5.4 5.4 0 0 0 4 9c0 3.5 3 5.5 6 5.5A4.8 4.8 0 0 0 9 18v4"]), el("span", {}, "GitHub")));
     items.append(el("hr", { class: "menu-divider" }));
-    if (session.googleClientId) item("Link Google account", ["M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L9 17l-4 1 1-4Z"], editorSignIn);
-    item(session.role === "viewer" ? "Sign out" : "Sign out", ["M9 5H5v14h4M14 8l4 4-4 4M9 12h9"], signOut);
+    if (session.googleClientId) item(session.googleLinked ? "Change linked Google account" : "Link Google account", ["M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L9 17l-4 1 1-4Z"], linkGoogleAccount);
+    if (session.googleLinked) item("Unlink Google account", ["M9 15 15 9M4 4l16 16"], async () => {
+      try { await api("/google/link", undefined, "DELETE"); reload(); } catch (failure) { toast(failure.message,"error"); }
+    });
+    item("Sign out", ["M9 5H5v14h4M14 8l4 4-4 4M9 12h9"], signOut);
     menu.append(summary, items); document.querySelector(".header-utilities").replaceChildren(menu);
     const headerMenus = [...actions.parentElement.querySelectorAll("details")];
     for (const dropdown of headerMenus) dropdown.addEventListener("toggle", () => {
@@ -478,6 +481,7 @@ import { administration } from "./admin.js";
       }));
     } else {
       $("family-heading").textContent = `Family trees (${data.trees.length})`;
+      if (session.role === "owner") $("family-heading").append(button("Create tree", admin.trees, "text-button"));
       $("family-list").replaceChildren(...data.trees.map(tree => el("li", {}, el("a", { class: "tree-card", href: `${base}/t/${tree.short_id}` }, el("div", {}, el("h3", {}, tree.name), el("p", {}, `${tree.people} ${tree.people === 1 ? "person" : "people"}`)), icon(["m9 6 6 6-6 6"])))));
     }
     if (data.tree && !Object.keys(data.tree.people).length && session.role === "owner") document.querySelector("main").append(button("Add the first person", () => admin.firstPerson(data.tree.id)));
@@ -538,6 +542,11 @@ import { administration } from "./admin.js";
           } catch (error) { status.classList.add("is-error"); status.textContent = error.message; }
           finally { submit.disabled = false; submit.textContent = "Continue"; }
         };
+        if (session.googleClientId && !session.needsSetup && !joining && !recovering) {
+          const holder = el("div", { class: "google-sign-in" });
+          form.after(holder);
+          googleSignIn(holder);
+        }
         const password = $("family-password"), toggle = $("password-toggle");
         toggle.onclick = () => {
           const show = password.type === "password";
@@ -549,9 +558,9 @@ import { administration } from "./admin.js";
       } else {
         mountHeader();
         try {
-          const signedIn = sessionStorage.getItem("family-editor-signed-in");
-          sessionStorage.removeItem("family-editor-signed-in");
-          if (signedIn && session.role !== "viewer") toast("Signed in to edit.", "success");
+          const signedIn = sessionStorage.getItem("family-signed-in");
+          sessionStorage.removeItem("family-signed-in");
+          if (signedIn) toast("Signed in.", "success");
         } catch {}
         if ($("family-list")) await loadTree();
       }

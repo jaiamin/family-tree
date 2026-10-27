@@ -1,23 +1,67 @@
 import { readFile, writeFile, open } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { localRuntime } from "./server.mjs";
-import { refreshBackup, preUpgradeBackup } from "../dist/maintenance/backup.js";
+import { createBackup, refreshBackup, preUpgradeBackup, verifyBackupPhotos, digest } from "../dist/maintenance/backup.js";
 import { recoverBackup } from "../dist/maintenance/recovery.js";
 import { encryptedBackup, stageEncryptedBackup } from "../dist/maintenance/backup-export.js";
-import { hashPassword } from "../dist/maintenance/password.js";
+import { hashPassword } from "../dist/maintenance/accounts/password.js";
 import { sha256 } from "../dist/maintenance/auth.js";
 
 const command = process.argv[2];
-if (!["init","backup","preflight","export","restore","recover-owner"].includes(command)) throw Error("Commands: init, backup, preflight, export, restore, recover-owner. Configure DATA_DIR, BACKUP_DIR and PUBLIC_ORIGIN through the environment.");
-const runtime = await localRuntime({directory:process.env.DATA_DIR || "/data",backupDirectory:process.env.BACKUP_DIR,
+const remote = process.env.DEPLOYMENT === "cloudflare";
+if (!["init","backup","preflight","export","restore","recover-owner","migrate-legacy","pause","resume"].includes(command)) throw Error("Commands: init, backup, preflight, export, restore, recover-owner, migrate-legacy, pause, resume. Configure DATA_DIR, BACKUP_DIR and PUBLIC_ORIGIN through the environment.");
+function required(name) {
+  if (!process.env[name]) throw Error(`Set ${name}.`);
+  return process.env[name];
+}
+async function remoteRuntime(path) {
+  const { installationConfig } = await import("./config.mjs");
+  const { cloudflareStorage } = await import("./cloudflare-storage.mjs");
+  return { env: cloudflareStorage(installationConfig(path)), close: async () => {} };
+}
+const runtime = remote ? await remoteRuntime() : await localRuntime({directory:process.env.DATA_DIR || "/data",backupDirectory:process.env.BACKUP_DIR,
   origin:process.env.PUBLIC_ORIGIN,basePath:process.env.BASE_PATH ?? "/family-tree",initialize:command === "init"});
 try {
+  if (remote && command === "init") {
+    const tables = await runtime.env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%'").all();
+    if (tables.results.length) throw Error("Initialization requires a fresh database.");
+    await runtime.env.DB.execute(await readFile(new URL("../schema.sql",import.meta.url),"utf8"));
+  }
+  if (command === "pause" || command === "resume") {
+    const changed = await runtime.env.DB.prepare("UPDATE schema_version SET maintenance=? WHERE id=1 AND version=2 RETURNING id").bind(command === "pause" ? 1 : 0).all();
+    if (changed.results.length !== 1) throw Error("Unsupported installation version.");
+  }
+  if (command === "migrate-legacy") {
+    const source = remote ? await remoteRuntime(required("LEGACY_INSTALLATION_CONFIG"))
+      : await localRuntime({ directory: required("LEGACY_DATA_DIR"), backupDirectory: process.env.LEGACY_BACKUP_DIR, origin: process.env.PUBLIC_ORIGIN });
+    try {
+      const { migrateLegacy } = await import("../dist/maintenance/legacy-migration.js");
+      console.log(JSON.stringify(await migrateLegacy(source.env,runtime.env)));
+    } finally { await source.close(); }
+  }
+  if (command === "backup" && remote) throw Error("Cloudflare runs automatic backups through its native bindings. Use preflight for a maintenance snapshot.");
   if (command === "backup") {
     await refreshBackup(runtime.env);
     const state=await runtime.env.DB.prepare("SELECT error FROM backup_state WHERE id=1").first();
     if(state.error) throw Error(state.error);
   }
-  if (command === "preflight") await preUpgradeBackup(runtime.env);
+  if (command === "preflight") {
+    const version = await runtime.env.DB.prepare("SELECT version,maintenance FROM schema_version WHERE id=1").first();
+    if (version?.version !== 2) throw Error("Unsupported schema. Use the explicit legacy conversion into fresh storage; do not initialize over existing records.");
+    if (!version.maintenance) throw Error("Pause the installation before preflight.");
+    if (remote) {
+      // The operator stops serving writes first. REST has no R2 conditional PUT;
+      // concurrent application backup writes must not race this maintenance step.
+      const snapshot = await createBackup(runtime.env);
+      await verifyBackupPhotos(runtime.env,snapshot);
+      const encoded = JSON.stringify(snapshot);
+      await runtime.env.BACKUP.put("pre-upgrade.json",encoded,{httpMetadata:{contentType:"application/json"}});
+      const saved = await runtime.env.BACKUP.get("pre-upgrade.json");
+      if (!saved || await digest(await saved.arrayBuffer()) !== await digest(new TextEncoder().encode(encoded))) throw Error("Pre-upgrade snapshot verification failed.");
+      const current = await runtime.env.DB.prepare("SELECT generation FROM backup_state WHERE id=1").first();
+      if (current.generation !== snapshot.generation) throw Error("Records changed during preflight. Stop writes and repeat.");
+    } else await preUpgradeBackup(runtime.env);
+  }
   if (command === "export") {
     if(!process.env.EXPORT_FILE || !process.env.RECOVERY_KEY_FILE) throw Error("Set EXPORT_FILE and RECOVERY_KEY_FILE to separate private destinations.");
     const key=Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64");
@@ -38,8 +82,12 @@ try {
     const recoveryCode=crypto.randomUUID()+crypto.randomUUID();
     // Write the recovery credential before changing access, never print it.
     await writeFile(process.env.RECOVERY_KEY_FILE,recoveryCode,{mode:0o600,flag:"wx"});
-    const result=await runtime.env.DB.prepare("UPDATE users SET password_hash=?,recovery_hash=?,auth_version=auth_version+1 WHERE role='owner' RETURNING id")
-      .bind(await hashPassword(process.env.OWNER_PASSWORD),await sha256(recoveryCode)).all();
+    const state = await runtime.env.DB.prepare("SELECT maintenance FROM schema_version WHERE id=1").first();
+    const result=(await runtime.env.DB.batch([
+      runtime.env.DB.prepare("UPDATE schema_version SET maintenance=0 WHERE id=1"),
+      runtime.env.DB.prepare("UPDATE users SET password_hash=?,recovery_hash=?,auth_version=auth_version+1 WHERE role='owner' RETURNING id").bind(await hashPassword(process.env.OWNER_PASSWORD),await sha256(recoveryCode)),
+      runtime.env.DB.prepare("UPDATE schema_version SET maintenance=? WHERE id=1").bind(state.maintenance),
+    ]))[1];
     if(result.results.length !== 1) throw Error("Recovery requires exactly one owner.");
   }
   console.log(`${command}: completed`);

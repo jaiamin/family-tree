@@ -40,7 +40,7 @@ export async function readView(env: Env, id: string | null) {
     ]);
     assert(trees.results.every(tree => isShortId(tree.short_id)), "Public ID migration is incomplete.", 503);
     const row = meta.results[0];
-    return { siteName: row?.site ? JSON.parse(String(row.site)).name || env.SITE_NAME : env.SITE_NAME,
+    return { siteName: row?.site ? JSON.parse(String(row.site))?.name || env.SITE_NAME : env.SITE_NAME,
       revision: Number(row?.revision || 0), trees: trees.results, tree: null };
   }
   assert(isShortId(id), "Family tree not found.", 404);
@@ -81,7 +81,7 @@ async function saveCollectionOnce(env: Env, collection: unknown, revision: unkno
   const statement = (sql: string, ...values: (string | number | null)[]) => env.DB.prepare(sql).bind(...values);
   const results = await env.DB.batch([
     statement("INSERT OR IGNORE INTO collections(id, site, operation, actor, reason) VALUES ('main', NULL, 'initial', 'setup', 'Initial collection')"),
-    statement("UPDATE collections SET site = ?, revision = revision + 1, operation = ?, actor = ?, reason = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 'main' AND revision = ? RETURNING revision", JSON.stringify(collection.site), operation, actor, reason, revision),
+    statement("UPDATE collections SET site = ?, revision = revision + 1, operation = ?, actor = ?, reason = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 'main' AND revision = ? RETURNING revision", collection.site === null ? null : JSON.stringify(collection.site), operation, actor, reason, revision),
     statement(`DELETE FROM parents WHERE ${guard} AND (child_id, parent_id) NOT IN (SELECT json_extract(value,'$[0]'),json_extract(value,'$[1]') FROM json_each(?))`, operation, parents),
     statement(`DELETE FROM partnerships WHERE ${guard} AND (person_a, person_b) NOT IN (SELECT json_extract(value,'$.a'),json_extract(value,'$.b') FROM json_each(?))`, operation, partnerships),
     statement(`DELETE FROM tree_members WHERE ${guard} AND (tree_id, person_id) NOT IN (SELECT json_extract(value,'$[0]'),json_extract(value,'$[1]') FROM json_each(?))`, operation, members),
@@ -102,7 +102,7 @@ async function saveCollectionOnce(env: Env, collection: unknown, revision: unkno
     statement(`INSERT INTO tree_members(tree_id,person_id,position) SELECT json_extract(value,'$[0]'),json_extract(value,'$[1]'),json_extract(value,'$[2]') FROM json_each(?) WHERE ${guard}
       ON CONFLICT(tree_id,person_id) DO UPDATE SET position=excluded.position WHERE position != excluded.position`, members, operation),
     statement(`INSERT INTO public_ids(kind,entity_id,short_id) SELECT json_extract(value,'$.kind'),json_extract(value,'$.entity_id'),json_extract(value,'$.short_id') FROM json_each(?) WHERE ${guard} ON CONFLICT(kind,entity_id) DO NOTHING`, JSON.stringify(additions), operation),
-    env.DB.prepare(`INSERT INTO activity(actor_id,actor_name,action,target) SELECT ?,?,?,? WHERE ${guard}`).bind(user.automationId || user.id,user.name,"genealogy.updated",null,operation),
+    env.DB.prepare(`INSERT INTO activity(actor_id,actor_name,action,target) SELECT ?,?,?,? WHERE ${guard}`).bind(user.automationId || user.id,user.name,"genealogy.updated",reason,operation),
     env.DB.prepare("DELETE FROM activity WHERE id NOT IN (SELECT id FROM activity ORDER BY id DESC LIMIT 1000)"),
   ]);
   assert(results[1].results.length === 1, "Someone else updated the family tree. Reload before saving.", 409);

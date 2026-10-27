@@ -6,12 +6,14 @@ import { localRuntime } from "../scripts/server.mjs";
 import { runtime as workerRuntime } from "../scripts/runtime.mjs";
 import { build } from "esbuild";
 
-await build({ entryPoints: ["src/backup.ts", "src/recovery.ts", "src/backup-export.ts", "src/gedcom-import.ts"].map(path => new URL(`../${path}`,import.meta.url).pathname),
+await build({ entryPoints: ["src/backup.ts", "src/recovery.ts", "src/backup-export.ts", "src/gedcom-import.ts", "src/legacy-migration.ts", "src/accounts/routes.ts"].map(path => new URL(`../${path}`,import.meta.url).pathname),
   bundle:true, format:"esm", platform:"node", outdir:new URL("../dist/contracts",import.meta.url).pathname });
 const { refreshBackup, preUpgradeBackup } = await import("../dist/contracts/backup.js");
 const { recoverBackup } = await import("../dist/contracts/recovery.js");
 const { encryptedBackup, stageEncryptedBackup } = await import("../dist/contracts/backup-export.js");
 const { previewGedcom } = await import("../dist/contracts/gedcom-import.js");
+const { migrateLegacy } = await import("../dist/contracts/legacy-migration.js");
+const { accountRoute } = await import("../dist/contracts/accounts/routes.js");
 const origin="https://family.test",base=`${origin}/family-tree`,password="synthetic-password";
 async function installation(kind) {
   if (kind === "Cloudflare") {
@@ -40,6 +42,8 @@ for(const kind of ["Cloudflare","Local"]) {
       assert.equal((await viewer.call("/setup",{token:"local-setup-only",username:"intruder",name:"Intruder",password})).status,409);
       const treeResponse=await owner.call("/trees",{name:"Family",revision:0});assert.equal(treeResponse.status,200);
       const tree=await treeResponse.json();
+      assert.equal((await owner.call("/session")).status,200,"new installs can read their neutral site settings");
+      assert.equal((await owner.call("/view")).status,200);
       const personResponse=await owner.call("/first-person",{treeId:tree.id,revision:tree.revision,fields:{name:"First relative"}});assert.equal(personResponse.status,200);
       const person=await personResponse.json();
       const invitation=await (await owner.call("/invitations",{role:"viewer"})).json();
@@ -65,6 +69,100 @@ for(const kind of ["Cloudflare","Local"]) {
       viewer.cookie=oldCookie;assert.equal((await viewer.call("/view")).status,401);
     }finally{await runtime.close();}
   });
+  test(`${kind}: legacy rehearsal preserves shared IDs and retained photos without changing source`, async () => {
+    const source=await installation(kind), target=await installation(kind), owner=client(source);
+    try {
+      await owner.call("/setup",{token:"local-setup-only",username:"owner",password});
+      const tree=await(await owner.call("/trees",{name:"First",revision:0})).json();
+      const person=await(await owner.call("/first-person",{treeId:tree.id,revision:tree.revision,fields:{name:"Shared relative",sex:"female"}})).json();
+      const snapshot=await(await owner.call("/collection")).json();
+      const second=crypto.randomUUID();snapshot.collection.trees[second]={id:second,name:"Second",members:[person.id]};
+      assert.equal((await owner.call("/collection",snapshot,"PUT")).status,200);
+      const bytes=new Uint8Array([255,216,255,224,1,2]);
+      assert.equal((await source.fetch(new Request(`${base}/api/photos/${person.id}`,{method:"PUT",headers:{cookie:owner.cookie,origin,"content-type":"image/jpeg"},body:bytes}))).status,200);
+      await source.env.DB.prepare("CREATE TABLE editors(email TEXT PRIMARY KEY)").run();
+      await source.env.DB.prepare("INSERT INTO editors VALUES(?)").bind("relative@example.test").run();
+      const original=await(await owner.call("/collection")).json();
+      const result=await migrateLegacy(source.env,target.env);
+      assert.equal(result.people,1);assert.equal(result.trees,2);assert.equal(result.photos,1);assert.equal(result.pendingAccounts,1);
+      assert.deepEqual(await(await owner.call("/collection")).json(),original);
+      assert.equal((await target.env.DB.prepare("SELECT count(*) AS n FROM tree_members WHERE person_id=?").bind(person.id).first()).n,2);
+      const before=(await source.env.DB.prepare("SELECT * FROM public_ids ORDER BY short_id").all()).results;
+      assert.deepEqual((await target.env.DB.prepare("SELECT * FROM public_ids ORDER BY short_id").all()).results,before);
+      const pending=await target.env.DB.prepare("SELECT enabled,role FROM users").first();assert.equal(pending.enabled,0);assert.equal(pending.role,"editor");
+      const nextOwner=client(target);
+      assert.equal((await nextOwner.call("/setup",{token:"local-setup-only",username:"new-owner",password})).status,201);
+      const restored=await(await nextOwner.call("/collection")).json();assert.deepEqual(restored.collection,original.collection);
+      await assert.rejects(migrateLegacy(source.env,target.env),/fresh destination/);
+    } finally {await source.close();await target.close();}
+  });
+  test(`${kind}: maintenance blocks in-flight writes at the database boundary`, async () => {
+    const runtime=await installation(kind), owner=client(runtime);
+    try {
+      await owner.call("/setup",{token:"local-setup-only",username:"owner",password});
+      const tree=await(await owner.call("/trees",{name:"Family",revision:0})).json();
+      await runtime.env.DB.prepare("UPDATE schema_version SET maintenance=1 WHERE id=1").run();
+      assert.equal((await owner.call("/view")).status,503);
+      await assert.rejects(runtime.env.DB.prepare("UPDATE trees SET name='Changed' WHERE id=?").bind(tree.id).run(),/installation_paused/);
+      await assert.rejects(runtime.env.DB.prepare("INSERT INTO users(id,username,name,role,password_hash) VALUES('bad','intruder','Intruder','viewer','bad')").run(),/installation_paused/);
+      await preUpgradeBackup(runtime.env);
+      assert.ok(await runtime.env.BACKUP.head("pre-upgrade.json"));
+      await runtime.env.DB.prepare("UPDATE schema_version SET maintenance=0 WHERE id=1").run();
+      assert.equal((await owner.call("/view")).status,200);
+      assert.equal((await runtime.env.DB.prepare("SELECT name FROM trees").first()).name,"Family");
+      await runtime.env.DB.prepare("UPDATE schema_version SET version=999 WHERE id=1").run();
+      assert.equal((await owner.call("/view")).status,503);
+    } finally {await runtime.close();}
+  });
+  test(`${kind}: ownership target revoked between validation and transaction stays safe`, async () => {
+    const runtime=await installation(kind), owner=client(runtime), relative=client(runtime);
+    try {
+      await owner.call("/setup",{token:"local-setup-only",username:"owner",password});
+      const invitation=await(await owner.call("/invitations",{role:"editor"})).json();
+      await relative.call("/join",{token:invitation.token,username:"relative",password});
+      await owner.call("/automation",{name:"Preserved client"});
+      const users=await(await owner.call("/users")).json(), target=users.find(user=>user.username==="relative"), actor=users.find(user=>user.role==="owner");
+      const DB=runtime.env.DB;
+      const guarded={...runtime.env,DB:{batch:statements=>DB.batch(statements),prepare(sql){
+        const statement=DB.prepare(sql);
+        if(sql === "SELECT id FROM users WHERE id=? AND enabled=1 AND role!='owner'") return {bind(...values){const bound=statement.bind(...values);return {async first(){const result=await bound.first();await DB.prepare("UPDATE users SET enabled=0 WHERE id=?").bind(target.id).run();return result;}};}};
+        return statement;
+      }}};
+      await assert.rejects(accountRoute(new Request(`${base}/api/ownership`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({userId:target.id,password})}),guarded,actor,"/api/ownership"),/target account changed/);
+      assert.equal((await DB.prepare("SELECT count(*) AS n FROM users WHERE role='owner'").first()).n,1);
+      assert.equal((await DB.prepare("SELECT role FROM users WHERE id=?").bind(actor.id).first()).role,"owner");
+      assert.equal((await DB.prepare("SELECT count(*) AS n FROM automation_credentials").first()).n,1);
+    } finally {await runtime.close();}
+  });
+  test(`${kind}: ownership transfer invalidates reset links and preserves the sole owner`, async () => {
+    const runtime = await installation(kind), owner = client(runtime), relative = client(runtime);
+    try {
+      await owner.call("/setup", {token:"local-setup-only",username:"owner",name:"Owner",password});
+      const invitation = await (await owner.call("/invitations", {role:"editor"})).json();
+      await relative.call("/join", {token:invitation.token,username:"relative",name:"Relative",password});
+      const users = await (await owner.call("/users")).json();
+      const target = users.find(user => user.username === "relative");
+      const reset = await (await owner.call("/invitations", {role:"editor",targetId:target.id})).json();
+      const access = await (await owner.call("/automation", {name:"Test client"})).json();
+      assert.ok(access.token);
+      await owner.call(`/users/${target.id}`, {role:"editor",enabled:false}, "PATCH");
+      assert.equal((await owner.call("/ownership", {userId:target.id,password})).status,400);
+      assert.equal((await owner.call("/automation")).status,200);
+      assert.equal((await (await owner.call("/automation")).json()).length,1,"failed transfer preserves credentials");
+      await owner.call(`/users/${target.id}`, {role:"editor",enabled:true}, "PATCH");
+      assert.equal((await relative.call("/join", {token:reset.token,username:"relative",password})).status,409,"role changes invalidate reset links");
+      const freshReset = await (await owner.call("/invitations", {role:"editor",targetId:target.id})).json();
+      const transfer = await owner.call("/ownership", {userId:target.id,password});
+      assert.equal(transfer.status,200,await transfer.clone().text());
+      assert.ok((await transfer.json()).recoveryCode);
+      assert.equal((await relative.call("/join", {token:freshReset.token,username:"relative",password})).status,403,"old reset cannot take over the new owner");
+      assert.equal((await owner.call("/view")).status,401);
+      assert.equal((await relative.call("/login", {username:"relative",password})).status,200);
+      const owners = await runtime.env.DB.prepare("SELECT count(*) AS n FROM users WHERE role='owner'").first();
+      assert.equal(owners.n,1);
+      assert.equal((await (await relative.call("/automation")).json()).length,0);
+    } finally { await runtime.close(); }
+  });
   test(`${kind}: retained photos, encrypted portability and daily recovery`,async()=>{
     const source=await installation(kind),target=await installation(kind),owner=client(source);
     try{
@@ -78,6 +176,8 @@ for(const kind of ["Cloudflare","Local"]) {
       const snapshots=(await source.env.BACKUP.list()).objects.map(object=>object.key);
       assert.ok(snapshots.includes("pre-upgrade.json"));assert.ok(snapshots.some(key=>key.startsWith("daily/")));
       const key=Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64");
+      const wrongKey=Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64");
+      await assert.rejects(stageEncryptedBackup(target.env,await encryptedBackup(source.env,key),wrongKey));
       const encrypted=await encryptedBackup(source.env,key);
       await stageEncryptedBackup(target.env,encrypted,key);
       assert.deepEqual(await recoverBackup(target.env),{people:1,photos:2});

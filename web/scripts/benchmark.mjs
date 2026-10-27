@@ -1,7 +1,7 @@
 // Run after build: node scripts/benchmark.mjs [baseline worker path] [result path].
 // Requires agent-browser; uses disposable synthetic D1/R2, never production or .local.
 import { migratePublicIds } from "../dist/public-ids.mjs";
-import { runtime } from "./runtime.mjs";
+import { runtime } from "../tests/support.mjs";
 import { randomUUID } from "node:crypto";
 import { writeFile, mkdir } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
@@ -14,7 +14,7 @@ const mf = await runtime({ port: 0, host: "127.0.0.1", ...process.argv[2] ? { sc
 let ws;
 try {
   const origin = String(await mf.ready).replace(/\/$/, ""), base = `${origin}/family-tree`;
-  const db = await mf.getD1Database("DB"), bucket = await mf.getR2Bucket("PHOTOS");
+  const db = await mf.getD1Database("DB"), bucket = await mf.getR2Bucket("PHOTOS"), backup = await mf.getR2Bucket("BACKUP");
   const ids = Array.from({ length: 256 }, () => randomUUID()), tree = randomUUID();
   await db.batch([
     db.prepare("INSERT INTO collections(id,site,operation,actor,reason) VALUES ('main',NULL,'bench','bench','Synthetic benchmark')"),
@@ -29,9 +29,12 @@ try {
   const image = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX2kAAAAASUVORK5CYII=", "base64");
   for (const id of ids.slice(0, 16)) {
     await bucket.put(id, image, { httpMetadata: { contentType: "image/png" } });
+    await backup.put(id, image, { httpMetadata: { contentType: "image/png" } });
+    const hash = Buffer.from(await crypto.subtle.digest("SHA-256",image)).toString("hex");
+    await db.prepare("INSERT INTO photo_uploads(id,person_id,object_key,content_type,content_hash) VALUES(?,?,?,?,?)").bind(id,id,id,"image/png",hash).run();
     await db.prepare("INSERT INTO photos(person_id,object_key,version) VALUES (?,?,?)").bind(id, id, id).run();
   }
-  const login = await mf.dispatchFetch(`${base}/api/login`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ password: "local-preview-only" }) });
+  const login = await mf.dispatchFetch(`${base}/api/login`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ username: "viewer", password: "local-preview-only" }) });
   const cookie = login.headers.get("set-cookie").split(";")[0];
   const headers = { cookie };
   const median = values => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
