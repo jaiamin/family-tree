@@ -4,7 +4,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { readFile } from "node:fs/promises";
 const exec = promisify(execFile), prefix = `family-contract-${process.pid}`;
-const image = `${prefix}:local`, data = `${prefix}-data`, backup = `${prefix}-backup`;
+const image = process.env.DOCKER_TEST_IMAGE || `${prefix}:local`, data = `${prefix}-data`, backup = `${prefix}-backup`;
 const docker = (...args) => exec("docker", args, {maxBuffer: 4 * 1024 * 1024});
 const settings = ["--network=none", "--read-only", "--tmpfs=/tmp", "--cap-drop=ALL", "--security-opt=no-new-privileges",
   "-v",`${data}:/data`,"-v",`${backup}:/backup`,"-e","PUBLIC_ORIGIN=https://family.test","-e","FAMILY_PASSWORD=synthetic-password","-e","OWNER_EMAIL=owner@example.com","-e","TRUST_PROXY_HOPS=1"];
@@ -14,7 +14,7 @@ async function inContainer(source) {
   await new Promise((resolve,reject)=>{child.on("error",reject);child.on("exit",code=>code===0?resolve():reject(Error(`Container contract failed (${code}).`)));});
 }
 try {
-  await docker("build","-t",image,new URL("..",import.meta.url).pathname);
+  if (!process.env.DOCKER_TEST_IMAGE) await docker("build","-t",image,new URL("..",import.meta.url).pathname);
   await docker("volume","create",data); await docker("volume","create",backup);
   await docker("run","--rm",...settings,image,"node","scripts/maintain.mjs","init");
   await docker("run","-d","--name",prefix,...settings,image);
@@ -41,5 +41,5 @@ try {
 } finally {
   await docker("rm","-f",prefix).catch(()=>{});
   await docker("volume","rm",data,backup).catch(()=>{});
-  await docker("image","rm",image).catch(()=>{});
+  if (!process.env.DOCKER_TEST_IMAGE) await docker("image","rm",image).catch(()=>{});
 }

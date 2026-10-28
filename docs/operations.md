@@ -46,11 +46,15 @@ For GitHub-connected Workers Builds:
 | Root / production branch | `web` / `main` |
 | Node | 26 |
 | Build | `pnpm build && pnpm exec vite build` |
-| Deploy | `pnpm exec cf deploy --prebuilt --mode production` |
+| Deploy | `pnpm exec cf deploy --prebuilt --mode production && pnpm smoke` |
 | Build variable | `FAMILY_INSTALLATION_CONFIG_JSON` |
 | Runtime secret | `FAMILY_PASSWORD` |
 
-CI uses example resources and never deploys. Both deployments require matching build/runtime base paths.
+Enable build caching; include `web/*` and exclude `web/tests/*`, `web/playwright.config.mjs` in build watch paths. These patterns are relative to the repository root.
+
+CI uses example resources and never deploys. Require all five checks (`mcp (3.10)`, `mcp (3.14)`, `web`, `local`, `secrets`) before merging. Workers Builds runs independently of GitHub CI; branch rules protect merges, not direct/manual deployments. Both deployments require matching build/runtime base paths.
+
+`pnpm --dir web smoke` checks the configured public URL after deployment, without credentials or writes. For either host, override it with `pnpm --dir web smoke https://family.example.com/family-tree`. A failed check marks deployment verification failed; it does not roll back code or data. Browser CI failures retain reports, screenshots and traces for seven days.
 
 ## Google and first sign-in
 
