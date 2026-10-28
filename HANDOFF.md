@@ -23,11 +23,13 @@ Branch: `feat/gedcom-5mb-imports`.
 - [x] Inspect limits, parser, persistence, browser flow and current Cloudflare documentation.
 - [x] Implement safeguards and bounded persistence.
 - [x] Add regression coverage and verify browser flows.
-- [ ] Review, run checks, commit, push and create draft PR.
+- [x] Review, run checks, commit, push and create draft PR.
 
 ## Next steps
 
-Final secret scan, commit, push and create one draft PR. No production deployment is authorized.
+Draft PR: https://github.com/jaiamin/family-tree/pull/62
+
+Await CI and owner review. No production deployment is authorized. No schema migration or installation setting change is required. Browser sessions and disposable task services have been closed.
 
 ## Verification
 
@@ -36,4 +38,5 @@ Final secret scan, commit, push and create one draft PR. No production deploymen
 - Python 3.14: formatting, Ruff, ty and all 96 tests passed.
 - Docker smoke passed. Production Vite build and Cloudflare prebuilt deployment dry-run passed with the example installation configuration.
 - Exact 5 MB UTF-8/escaped boundaries, 100,000 lines, multi-megabyte saved notes, capacity, stale revisions, bad checksums, chunk rollback and chunked membership deletion are covered in both storage runtimes.
+- Gitleaks staged-diff and task-commit scans passed.
 - Live Cloudflare CPU/memory quotas were not tested; no production changes or schema migration.
