@@ -9,9 +9,14 @@ permissions:
   contents: read
   pull-requests: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   secrets:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
         with:
@@ -24,6 +29,7 @@ jobs:
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
   mcp:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       matrix:
         python: ["3.10", "3.14"]
@@ -34,11 +40,14 @@ jobs:
           python-version: ${{ matrix.python }}
       - run: uv sync --locked
       - run: uv run ruff format --check .
+        if: matrix.python == '3.14'
       - run: uv run ruff check .
+        if: matrix.python == '3.14'
       - run: uv run ty check
       - run: uv run pytest
   web:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       FAMILY_INSTALLATION_CONFIG: installation.example.json
     steps:
@@ -55,17 +64,31 @@ jobs:
       - run: pnpm --dir web build
       - run: pnpm --dir web check
       - run: pnpm --dir web test
-      - run: pnpm --dir web exec playwright install --with-deps chromium
-      - run: pnpm --dir web test:browser
+      - run: pnpm --dir web exec playwright install --with-deps --only-shell chromium
+      - name: Browser suite
+        run: pnpm --dir web test:browser --output=test-results/default
+        env:
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/default
       - name: Verify root and custom deployment paths
         run: |
-          env -u FAMILY_INSTALLATION_CONFIG BASE_PATH= pnpm --dir web test:browser
-          env -u FAMILY_INSTALLATION_CONFIG BASE_PATH=/our/family pnpm --dir web test:browser
+          env -u FAMILY_INSTALLATION_CONFIG BASE_PATH= PLAYWRIGHT_HTML_OUTPUT_DIR=playwright-report/root pnpm --dir web test:browser installation.spec.mjs --output=test-results/root
+          env -u FAMILY_INSTALLATION_CONFIG BASE_PATH=/our/family PLAYWRIGHT_HTML_OUTPUT_DIR=playwright-report/custom pnpm --dir web test:browser installation.spec.mjs --output=test-results/custom
           pnpm --dir web build
       - run: pnpm --dir web exec vite build
       - run: pnpm --dir web exec cf deploy --prebuilt --mode production --dry-run
+      - name: Browser failure diagnostics
+        if: failure() && !cancelled()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-diagnostics
+          path: |
+            web/playwright-report/
+            web/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
   local:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v4

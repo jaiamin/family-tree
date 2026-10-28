@@ -9,3 +9,5 @@ installation.json
 .env
 .dev.vars
 tests
+test-results
+playwright-report

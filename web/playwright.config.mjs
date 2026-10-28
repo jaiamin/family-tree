@@ -7,7 +7,9 @@ export default defineConfig({
   testDir: "./tests/browser",
   workers: 1,
   retries: process.env.CI ? 1 : 0,
-  use: { baseURL: "http://localhost:8002", trace: "retain-on-failure" },
+  globalTimeout: 5 * 60 * 1000,
+  reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
+  use: { baseURL: "http://localhost:8002", trace: "retain-on-failure", screenshot: "only-on-failure" },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"],
     ...process.env.PLAYWRIGHT_CHROMIUM_PATH ? { launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } } : {} } }],
   webServer: {
