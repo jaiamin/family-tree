@@ -104,7 +104,7 @@ class Store:
         request = Request(
             f"{self.url}/api{path}",
             data=json.dumps(body).encode() if body is not None else None,
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", "User-Agent": "family-tree-mcp"},
             method=method or ("POST" if body is not None else "GET"),
         )
         # urllib otherwise forwards ordinary headers to redirected origins.
@@ -113,10 +113,11 @@ class Store:
             with urlopen(request, timeout=30) as response:
                 return json.load(response)
         except HTTPError as error:
+            fallback = f"Website request failed (HTTP {error.code})."
             try:
-                message = json.loads(error.read(8192)).get("error", "Website request failed.")
+                message = json.loads(error.read(8192)).get("error", fallback)
             except (ValueError, AttributeError):
-                message = "Website request failed."
+                message = fallback
             raise ValueError(message) from None
         except (URLError, TimeoutError):
             raise ValueError(

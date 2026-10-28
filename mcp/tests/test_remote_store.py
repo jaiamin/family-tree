@@ -17,8 +17,9 @@ class State(TypedDict):
 
 
 @pytest.fixture
-def remote():
+def remote(request):
     state: State = {"collection": Collection().model_dump(mode="json"), "revision": 0, "writes": 0}
+    policy = getattr(request, "param", None)
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format: str, *args):
@@ -31,6 +32,14 @@ def remote():
             self.wfile.write(json.dumps(body).encode())
 
         def authorized(self):
+            if isinstance(policy, int) or (
+                policy == "client" and self.headers.get("User-Agent") != "family-tree-mcp"
+            ):
+                self.send_response(policy if isinstance(policy, int) else 403)
+                self.send_header("Content-Type", "text/plain")
+                self.end_headers()
+                self.wfile.write(b"error code: 1010\n")
+                return False
             if self.headers.get("Authorization") != "Bearer test-owner-token":
                 self.reply(401, {"error": "Please sign in."})
                 return False
@@ -104,6 +113,21 @@ def test_http_authentication_error_is_actionable(remote):
         unauthorized.collection()
 
 
+@pytest.mark.parametrize("remote", ["client"], indirect=True)
+def test_http_client_identifies_itself_for_protected_hosts(remote):
+    store, state = remote
+    tree = store.create("Family")
+    assert store.load(tree.id).name == "Family"
+    assert state["writes"] == 1
+
+
+@pytest.mark.parametrize("remote,status", [(403, 403), (502, 502)], indirect=["remote"])
+def test_non_json_http_errors_include_status(remote, status):
+    store, _ = remote
+    with pytest.raises(ValueError, match=rf"^Website request failed \(HTTP {status}\)\.$"):
+        store.collection()
+
+
 @pytest.mark.parametrize(
     "url",
     ["http://example.com", "https://user:password@example.com", "https://example.com?token=x"],
@@ -134,7 +158,9 @@ def test_redirects_never_forward_the_owner_token_to_another_origin(remote, statu
     try:
         source = Store(f"http://127.0.0.1:{server.server_port}/family-tree", "test-owner-token")
         # Python 3.10 refuses 308 redirects; newer versions follow without credentials.
-        with pytest.raises(ValueError, match=r"^(Please sign in\.|Website request failed\.)$"):
+        with pytest.raises(
+            ValueError, match=r"^(Please sign in\.|Website request failed \(HTTP 308\)\.)$"
+        ):
             source.collection()
         assert received == ["Bearer test-owner-token"]
         assert state["writes"] == 0

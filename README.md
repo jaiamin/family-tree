@@ -4,8 +4,6 @@ Self-hosted, private family trees with graph/list views, photos, search, relatio
 
 ![Fictional family tree with photos, highlighted connections and an open profile](docs/images/family-tree-profile.png)
 
-*Fictional demo · [Photo credits](docs/images/CREDITS.md).*
-
 ## Host your own
 
 One application, two deployments. Follow [setup & recovery](docs/operations.md).
