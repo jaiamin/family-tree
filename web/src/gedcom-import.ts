@@ -1,5 +1,6 @@
 import { assert, emptyCollection, pair, validateCollection, type Person } from "./model";
 import { digest } from "./backup";
+import { MAX_GEDCOM_BYTES, MAX_GEDCOM_LINES, MAX_COLLECTION_PEOPLE } from "./import-limits";
 
 interface Node { tag: string; value: string; pointer?: string; children: Node[] }
 const months = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
@@ -17,15 +18,21 @@ function date(node?: Node) {
   return `${match[3]}${month ? `-${String(month).padStart(2,"0")}` : ""}${match[1] && month ? `-${match[1].padStart(2,"0")}` : ""}`;
 }
 export async function previewGedcom(source: string, name: string) {
-  assert(source.length <= 1_000_000, "Choose a GEDCOM file smaller than 1 MB.", 413);
+  assert(typeof source === "string", "Choose a GEDCOM file.");
+  assert(source.length <= MAX_GEDCOM_BYTES && new TextEncoder().encode(source).byteLength <= MAX_GEDCOM_BYTES, "Choose a GEDCOM file of 5 MB or less.", 413);
+  assert(!/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(source), "Choose a GEDCOM file containing plain UTF-8 text.");
   const roots: Node[] = [], stack: Node[] = [], pointers = new Set<string>(), warnings = new Set<string>();
-  let previousLevel = 0;
-  for (const [index, line] of source.replace(/^\uFEFF/,"").split(/\r?\n/).entries()) {
+  let previousLevel = 0, index = 0, start = source.startsWith("\uFEFF") ? 1 : 0;
+  while (start < source.length) {
+    assert(++index <= MAX_GEDCOM_LINES, "Import a GEDCOM file with at most 100,000 lines.", 413);
+    const end = source.indexOf("\n", start);
+    const line = source.slice(start, end < 0 ? source.length : end).replace(/\r$/, "");
+    start = end < 0 ? source.length : end + 1;
     if (!line.trim()) continue;
     const match = /^(\d+) (?:(@[^@\s]+@) )?([A-Za-z0-9_]+)(?: (.*))?$/.exec(line);
-    assert(match, `Invalid GEDCOM line ${index+1}.`);
+    assert(match, `Invalid GEDCOM line ${index}.`);
     const level = Number(match[1]);
-    assert(level <= 10 && level <= previousLevel+1 && (!level || stack[level-1]), `Invalid nesting on line ${index+1}.`);
+    assert(level <= 10 && level <= previousLevel+1 && (!level || stack[level-1]), `Invalid nesting on line ${index}.`);
     previousLevel = level;
     const node: Node = { pointer: match[2], tag: match[3].toUpperCase(), value: match[4] || "", children: [] };
     if (node.pointer) { assert(!pointers.has(node.pointer), "Duplicate GEDCOM record identifiers."); pointers.add(node.pointer); }
@@ -48,7 +55,7 @@ export async function previewGedcom(source: string, name: string) {
   const treeId = crypto.randomUUID();
   collection.trees[treeId] = { id: treeId, name, members: [] };
   const people = roots.filter(node => node.tag === "INDI");
-  assert(people.length > 0 && people.length <= 10000, "Import 1–10,000 people.");
+  assert(people.length > 0 && people.length <= MAX_COLLECTION_PEOPLE, "Import 1–10,000 people.");
   for (const record of people) {
     consumed.add(record);
     assert(record.pointer,"A person is missing its record identifier.");

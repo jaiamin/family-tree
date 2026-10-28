@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { localRuntime } from "../scripts/server.mjs";
 import { runtime as workerRuntime } from "../scripts/runtime.mjs";
 import { build } from "esbuild";
+import { syntheticGedcom, sizedGedcom } from "./fixtures/gedcom.mjs";
 
 await build({ entryPoints: ["src/backup.ts", "src/recovery.ts", "src/backup-export.ts", "src/gedcom-import.ts", "src/legacy-migration.ts"].map(path => new URL(`../${path}`,import.meta.url).pathname),
   bundle:true, format:"esm", platform:"node", outdir:new URL("../dist/contracts",import.meta.url).pathname });
@@ -174,3 +175,105 @@ test("GEDCOM preview reports omitted event fields and preserves free-text partne
   assert.ok(draft.warnings.some(warning=>warning.includes("DEAT.PLAC")));
   assert.equal(Object.values(draft.collection.partnerships)[0].marriage_date,"Around spring 1980");
 });
+
+test("GEDCOM size is measured in UTF-8 bytes, including the exact 5 MB boundary", async () => {
+  assert.equal((await previewGedcom(sizedGedcom(5_000_000, "é"), "Boundary")).people, 1);
+  await assert.rejects(previewGedcom(sizedGedcom(5_000_001, "é"), "Oversized"), error => error.status === 413 && /5 MB/.test(error.message));
+  assert.equal((await previewGedcom(syntheticGedcom().replace("0 HEAD", "\uFEFF0 HEAD").replaceAll("\n", "\r\n"), "BOM and CRLF")).people, 1);
+  await assert.rejects(previewGedcom(syntheticGedcom(1, "bad\u0000text"), "Invalid text"), /plain UTF-8/);
+});
+
+test("GEDCOM counts blank and ignored lines before allocating more parser records", async () => {
+  const source = syntheticGedcom().replace("0 TRLR", `${"0 _X\n".repeat(99_995)}0 TRLR`);
+  assert.equal((await previewGedcom(source, "Line boundary")).people, 1);
+  await assert.rejects(previewGedcom(`\n${source}`, "Too many lines"), error => error.status === 413 && /100,000 lines/.test(error.message));
+  await assert.rejects(previewGedcom(`${"\n".repeat(100_000)}${syntheticGedcom()}`, "Blank lines"), /100,000 lines/);
+});
+
+for (const kind of ["Cloudflare", "Local"]) {
+  test(`${kind}: a multi-megabyte Unicode import saves, edits and rolls back atomically`, async () => {
+    const runtime = await installation(kind), owner = client(runtime);
+    try {
+      await ownerSession(runtime, owner);
+      const source = syntheticGedcom(1000, "é".repeat(1500));
+      assert.ok(Buffer.byteLength(source) > 3_000_000);
+      const previewResponse = await owner.call("/imports/preview", {name:"Large family", source});
+      assert.equal(previewResponse.status, 200);
+      const preview = await previewResponse.json();
+      assert.equal(preview.people, 1000); assert.equal(preview.revision, 0);
+      const committed = await owner.call("/imports/commit", {name:"Large family", source, ...preview});
+      assert.equal(committed.status, 200);
+      assert.equal((await committed.json()).revision, 1);
+      const first = await runtime.env.DB.prepare("SELECT id, notes FROM people ORDER BY rowid LIMIT 1").first();
+      assert.equal(first.notes, "é".repeat(1500));
+      assert.equal((await runtime.env.DB.prepare("SELECT count(*) AS n FROM people").first()).n, 1000);
+      assert.equal((await runtime.env.DB.prepare("SELECT count(*) AS n FROM public_ids").first()).n, 1001);
+      const mappings = (await runtime.env.DB.prepare("SELECT * FROM public_ids ORDER BY short_id").all()).results;
+      assert.equal((await owner.call(`/people/${first.id}`, {revision:1, fields:{name:"Updated relative"}}, "PATCH")).status, 200);
+      assert.deepEqual((await runtime.env.DB.prepare("SELECT * FROM public_ids ORDER BY short_id").all()).results, mappings);
+      const next = await (await owner.call("/imports/preview", {name:"Next family", source})).json();
+      assert.equal((await owner.call("/imports/commit", {name:"Next family", source, ...next, checksum:"wrong"})).status, 409);
+      await runtime.env.DB.prepare("CREATE TRIGGER reject_late_chunk BEFORE INSERT ON people WHEN NEW.name='Imported 1000' BEGIN SELECT RAISE(ABORT,'synthetic_late_chunk_failure'); END").run();
+      const generation = await runtime.env.DB.prepare("SELECT generation FROM backup_state").first();
+      const activity = (await runtime.env.DB.prepare("SELECT * FROM activity ORDER BY id").all()).results;
+      assert.equal((await owner.call("/imports/commit", {name:"Next family", source, ...next})).status, 500);
+      assert.equal((await runtime.env.DB.prepare("SELECT revision FROM collections").first()).revision, 2);
+      assert.equal((await runtime.env.DB.prepare("SELECT count(*) AS n FROM people").first()).n, 1000);
+      assert.equal((await runtime.env.DB.prepare("SELECT count(*) AS n FROM trees").first()).n, 1);
+      assert.deepEqual((await runtime.env.DB.prepare("SELECT * FROM public_ids ORDER BY short_id").all()).results, mappings);
+      assert.deepEqual(await runtime.env.DB.prepare("SELECT generation FROM backup_state").first(), generation);
+      assert.deepEqual((await runtime.env.DB.prepare("SELECT * FROM activity ORDER BY id").all()).results, activity);
+    } finally { await runtime.close(); }
+  });
+
+  test(`${kind}: exact 5 MB escaped uploads work; oversized sources and envelopes are rejected`, async () => {
+    const runtime = await installation(kind), owner = client(runtime);
+    try {
+      await ownerSession(runtime, owner);
+      const source = sizedGedcom(5_000_000, "\\");
+      const response = await owner.call("/imports/preview", {name:"Boundary family", source});
+      assert.equal(response.status, 200);
+      const preview = await response.json();
+      assert.equal((await owner.call("/imports/commit", {name:"Boundary family", source, ...preview})).status, 200);
+      assert.equal((await owner.call("/imports/preview", {name:"Oversized", source:`${source}x`})).status, 413);
+      const lineBoundary = syntheticGedcom().replace("0 TRLR", `${"0 _X\n".repeat(99_995)}0 TRLR`);
+      assert.equal((await owner.call("/imports/preview", {name:"Line boundary", source:lineBoundary})).status, 200);
+      assert.equal((await owner.call("/imports/preview", {name:"Too many lines", source:`\n${lineBoundary}`})).status, 413);
+      assert.equal((await owner.call("/imports/preview", {name:"Envelope", source:"x".repeat(10_010_001)})).status, 413);
+      assert.equal((await owner.call("/trees", {name:"x".repeat(1_500_001), revision:1})).status, 413, "ordinary requests retain their smaller body limit");
+      assert.equal((await runtime.env.DB.prepare("SELECT count(*) AS n FROM trees").first()).n, 1);
+    } finally { await runtime.close(); }
+  });
+
+  test(`${kind}: preview checks combined capacity and binds commit to the preview revision`, async () => {
+    const runtime = await installation(kind), owner = client(runtime);
+    try {
+      await ownerSession(runtime, owner);
+      const tree = await (await owner.call("/trees", {name:"Existing", revision:0})).json();
+      const ids = JSON.stringify(Array.from({length:9999}, () => crypto.randomUUID()));
+      await runtime.env.DB.batch([
+        runtime.env.DB.prepare("INSERT INTO people(id,name) SELECT value,'Existing relative' FROM json_each(?)").bind(ids),
+        runtime.env.DB.prepare("INSERT INTO tree_members(tree_id,person_id,position) SELECT ?,value,key FROM json_each(?)").bind(tree.id,ids),
+      ]);
+      const rejected = await owner.call("/imports/preview", {name:"Too many", source:syntheticGedcom(2)});
+      assert.equal(rejected.status, 400); assert.match((await rejected.json()).error, /10,000 people/);
+      const source = syntheticGedcom();
+      const preview = await (await owner.call("/imports/preview", {name:"One more",source})).json();
+      assert.equal(preview.revision, 1);
+      assert.equal((await owner.call("/site", {name:"Updated site",revision:1}, "PATCH")).status, 200);
+      assert.equal((await owner.call("/imports/commit", {name:"One more", source, ...preview})).status, 409);
+      assert.equal((await runtime.env.DB.prepare("SELECT count(*) AS n FROM people").first()).n, 9999);
+      const current = await (await owner.call("/imports/preview", {name:"One more",source})).json();
+      assert.equal((await owner.call("/imports/commit", {name:"One more", source, ...current})).status, 200);
+      assert.equal((await runtime.env.DB.prepare("SELECT count(*) AS n FROM people").first()).n, 10000);
+      assert.equal((await owner.call("/imports/preview", {name:"Full",source})).status, 400);
+      const snapshot = await (await owner.call("/collection")).json();
+      const cleared = await owner.call("/collection", {revision:snapshot.revision,
+        collection:{...snapshot.collection, people:{}, partnerships:{}, trees:{}}}, "PUT");
+      assert.equal(cleared.status, 200, "removing memberships across multiple chunks preserves foreign-key ordering");
+      for (const table of ["people", "trees", "tree_members", "public_ids"]) {
+        assert.equal((await runtime.env.DB.prepare(`SELECT count(*) AS n FROM ${table}`).first()).n, 0);
+      }
+    } finally { await runtime.close(); }
+  });
+}

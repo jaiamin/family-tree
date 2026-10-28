@@ -1,6 +1,7 @@
 import { encryptedBackup } from "./backup-export";
 import { previewGedcom } from "./gedcom-import";
-import { applyPersonEdit, assert, uuid } from "./model";
+import { applyPersonEdit, assert, uuid, validateCollection } from "./model";
+import { MAX_IMPORT_BODY_BYTES } from "./import-limits";
 import { readCollection, saveCollection, readView } from "./data";
 import { requireRole } from "./auth";
 import { bodyOf, text } from "./http";
@@ -22,13 +23,18 @@ export async function creatorRoute(request: Request, env: Env, user: Identity, p
   if (path === "/api/imports/preview" || path === "/api/imports/commit") {
     requireRole(user,"owner");
     assert(method === "POST","Method not allowed.",405);
-    const body = await bodyOf(request);
-    const draft = await previewGedcom(text(body.source,1_000_000,true),text(body.name,200,true));
-    if (path.endsWith("preview")) return Response.json({people:draft.people,warnings:draft.warnings,checksum:draft.checksum});
-    assert(body.checksum === draft.checksum,"Preview this file before importing.",409);
+    const body = await bodyOf(request, MAX_IMPORT_BODY_BYTES);
+    assert(typeof body.source === "string", "Choose a GEDCOM file.");
+    const draft = await previewGedcom(body.source,text(body.name,200,true));
     const {collection,revision} = await readCollection(env);
-    assert(body.revision === revision,"Someone else updated the tree. Preview again.",409);
+    const previewing = path.endsWith("preview");
+    if (!previewing) {
+      assert(body.checksum === draft.checksum,"Preview this file before importing.",409);
+      assert(body.revision === revision,"Someone else updated the tree. Preview again.",409);
+    }
     Object.assign(collection.people,draft.collection.people); Object.assign(collection.trees,draft.collection.trees); Object.assign(collection.partnerships,draft.collection.partnerships);
+    validateCollection(collection);
+    if (previewing) return Response.json({people:draft.people,warnings:draft.warnings,checksum:draft.checksum,revision});
     return Response.json({id:draft.treeId,revision:await saveCollection(env,collection,revision,user,"Imported GEDCOM")});
   }
   if (!(path === "/api/site" || path === "/api/trees" || treeId || path === "/api/first-person")) return null;

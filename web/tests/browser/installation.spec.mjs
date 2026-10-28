@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { sizedGedcom, syntheticGedcom } from "../fixtures/gedcom.mjs";
 const basePath = process.env.BASE_PATH ?? "/family-tree";
 
 test("owners manage trees and relatives browse privately without accounts", async ({page,browser}) => {
@@ -62,3 +63,35 @@ test("owners manage trees and relatives browse privately without accounts", asyn
   expect(overview.trees.some(tree=>tree.name === "Imported family" && tree.people === 1)).toBe(true);
   expect(errors).toEqual([]);
 });
+
+for (const viewport of [{width:1280,height:800}, {width:320,height:740}]) {
+  test(`GEDCOM imports larger than 1 MB and recoverable errors at ${viewport.width}px`, async ({page}) => {
+    await page.setViewportSize(viewport);
+    const errors=[]; page.on("pageerror", error => errors.push(error.message));
+    await page.context().addCookies([{name:"family_session",value:"synthetic-browser-owner",url:"http://localhost:8002",httpOnly:true}]);
+    await page.goto(`${basePath}/`);
+    await page.locator('summary[aria-label="Family menu"]').click();
+    await page.getByRole("button",{name:"Import GEDCOM",exact:true}).click();
+    const panel=page.getByRole("dialog",{name:"Import GEDCOM",exact:true});
+    await expect(panel.getByText(/Up to 5 MB and 100,000 lines/)).toBeVisible();
+    await page.getByLabel("Tree name",{exact:true}).fill(`Large import ${viewport.width}`);
+    const file=page.getByLabel("GEDCOM file",{exact:true});
+    await file.setInputFiles({name:"oversized.ged",mimeType:"text/plain",buffer:Buffer.from(sizedGedcom(5_000_001))});
+    await panel.getByRole("button",{name:"Preview import",exact:true}).click();
+    await expect(panel.getByText("Choose a GEDCOM file of 5 MB or less.",{exact:true})).toBeVisible();
+    await file.setInputFiles({name:"many-lines.ged",mimeType:"text/plain",buffer:Buffer.from("\n".repeat(100_000)+syntheticGedcom())});
+    await panel.getByRole("button",{name:"Preview import",exact:true}).click();
+    await expect(panel.getByText("Import a GEDCOM file with at most 100,000 lines.",{exact:true})).toBeVisible();
+    await file.setInputFiles({name:"large.ged",mimeType:"text/plain",buffer:Buffer.from(sizedGedcom(1_200_000,"é"))});
+    await panel.getByRole("button",{name:"Preview import",exact:true}).click();
+    await expect(panel.getByText("1 person · A new tree will be created.",{exact:true})).toBeVisible();
+    await expect(panel.getByText("Not imported: _PADDING.",{exact:true})).toBeVisible();
+    await panel.getByRole("button",{name:"Import tree",exact:true}).click();
+    await expect(panel).toHaveCount(0);
+    await page.getByRole("link",{name:`Large import ${viewport.width} 1 person`,exact:true}).click();
+    await page.getByRole("button",{name:"Imported 1",exact:true}).click();
+    await expect(page.getByRole("dialog")).toBeInViewport();
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    expect(errors).toEqual([]);
+  });
+}
