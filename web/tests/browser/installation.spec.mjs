@@ -85,6 +85,7 @@ for (const viewport of [{width:1280,height:800}, {width:320,height:740}]) {
     await file.setInputFiles({name:"large.ged",mimeType:"text/plain",buffer:Buffer.from(sizedGedcom(1_200_000,"é"))});
     await panel.getByRole("button",{name:"Preview import",exact:true}).click();
     await expect(panel.getByText("1 person · A new tree will be created.",{exact:true})).toBeVisible();
+    await panel.getByText("Review import warnings",{exact:true}).click();
     await expect(panel.getByText("Not imported: _PADDING.",{exact:true})).toBeVisible();
     await panel.getByRole("button",{name:"Import tree",exact:true}).click();
     await expect(panel).toHaveCount(0);
@@ -94,4 +95,36 @@ for (const viewport of [{width:1280,height:800}, {width:320,height:740}]) {
     expect(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     expect(errors).toEqual([]);
   });
+}
+
+for (const [encoding,buffer] of [
+  ['Windows-1252',Buffer.from('0 HEAD\r1 GEDC\r2 VERS 5.5.1\r1 CHAR ANSI\r0 @I1@ INDI\r1 NAME René /Synthetic/\r0 TRLR\r','latin1')],
+  ['UTF-16LE',Buffer.from('\ufeff0 HEAD\n1 GEDC\n2 VERS 5.5.1\n1 CHAR UNICODE\n0 @I1@ INDI\n1 NAME Zoë /Synthetic/\n0 @I2@ INDI\n0 TRLR\n','utf16le')]
+]) for (const width of [1280,320]) {
+ test(`original ${encoding} bytes and warnings at ${width}px`,async({page})=>{
+  await page.setViewportSize({width,height:800});
+  await page.context().addCookies([{name:'family_session',value:'synthetic-browser-owner',url:'http://localhost:8002',httpOnly:true}]);
+  await page.goto(`${basePath}/`);
+  await page.locator('summary[aria-label="Family menu"]').click();
+  await page.getByRole('button',{name:'Import GEDCOM',exact:true}).click();
+  const panel=page.getByRole('dialog',{name:'Import GEDCOM',exact:true});
+  await page.getByLabel('Tree name',{exact:true}).fill(`${encoding} ${width}`);
+  const file=page.getByLabel('GEDCOM file',{exact:true});
+  await file.setInputFiles({name:'broken.ged',mimeType:'text/plain',buffer:Buffer.from('0 HEAD\n1 CHAR UTF-8\n0 @I1@ INDI\n1 NAME \xff\n0 TRLR','latin1')});
+  await panel.getByRole('button',{name:'Preview import',exact:true}).click();
+  await expect(panel.getByText(/Invalid UTF-8 text/)).toBeVisible();
+  await file.setInputFiles({name:'legacy.ged',mimeType:'text/plain',buffer});
+  await panel.getByRole('button',{name:'Preview import',exact:true}).click();
+  await expect(panel.getByText(new RegExp(`GEDCOM 5.5.1 · ${encoding}`))).toBeVisible();
+  if (encoding==='UTF-16LE') {
+   await panel.getByText('Review import warnings',{exact:true}).click();
+   await expect(panel.getByText('An unnamed person was imported as Unknown.',{exact:true})).toBeVisible();
+  }
+  await expect(panel.getByRole('button',{name:'Import tree',exact:true})).toBeInViewport();
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await panel.getByRole('button',{name:'Import tree',exact:true}).click();
+  await expect(panel).toHaveCount(0);
+  await page.getByRole('link',{name:new RegExp(`${encoding} ${width} `)}).click();
+  await expect(page.getByRole('button',{name:encoding==='Windows-1252'?'René Synthetic':'Zoë Synthetic',exact:true})).toBeVisible();
+ });
 }

@@ -1,103 +1,156 @@
 import { assert, emptyCollection, pair, validateCollection, type Person } from "./model";
 import { digest } from "./backup";
-import { MAX_GEDCOM_BYTES, MAX_GEDCOM_LINES, MAX_COLLECTION_PEOPLE } from "./import-limits";
+import { MAX_COLLECTION_PEOPLE } from "./import-limits";
+import { decodeGedcom } from "./gedcom-decoding";
+import { child, gedcomText, importWarnings, parseGedcom, type GedcomNode as Node } from "./gedcom-format";
 
-interface Node { tag: string; value: string; pointer?: string; children: Node[] }
 const months = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
-const child = (node: Node, tag: string) => node.children.find(item => item.tag === tag);
-function value(node?: Node): string {
-  if (!node) return "";
-  return node.value.replaceAll("@@","@") + node.children.filter(item => item.tag === "CONT" || item.tag === "CONC").map(item => `${item.tag === "CONT" ? "\n" : ""}${value(item)}`).join("");
-}
-function date(node?: Node) {
-  const text = value(node);
-  const match = /^(?:(\d{1,2}) )?(?:([A-Z]{3}) )?(\d{4})$/.exec(text);
-  if (!match) return text;
-  const month = match[2] ? months.indexOf(match[2])+1 : 0;
-  if (match[2] && !month) return text;
-  return `${match[3]}${month ? `-${String(month).padStart(2,"0")}` : ""}${match[1] && month ? `-${match[1].padStart(2,"0")}` : ""}`;
-}
-export async function previewGedcom(source: string, name: string) {
-  assert(typeof source === "string", "Choose a GEDCOM file.");
-  assert(source.length <= MAX_GEDCOM_BYTES && new TextEncoder().encode(source).byteLength <= MAX_GEDCOM_BYTES, "Choose a GEDCOM file of 5 MB or less.", 413);
-  assert(!/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(source), "Choose a GEDCOM file containing plain UTF-8 text.");
-  const roots: Node[] = [], stack: Node[] = [], pointers = new Set<string>(), warnings = new Set<string>();
-  let previousLevel = 0, index = 0, start = source.startsWith("\uFEFF") ? 1 : 0;
-  while (start < source.length) {
-    assert(++index <= MAX_GEDCOM_LINES, "Import a GEDCOM file with at most 100,000 lines.", 413);
-    const end = source.indexOf("\n", start);
-    const line = source.slice(start, end < 0 ? source.length : end).replace(/\r$/, "");
-    start = end < 0 ? source.length : end + 1;
-    if (!line.trim()) continue;
-    const match = /^(\d+) (?:(@[^@\s]+@) )?([A-Za-z0-9_]+)(?: (.*))?$/.exec(line);
-    assert(match, `Invalid GEDCOM line ${index}.`);
-    const level = Number(match[1]);
-    assert(level <= 10 && level <= previousLevel+1 && (!level || stack[level-1]), `Invalid nesting on line ${index}.`);
-    previousLevel = level;
-    const node: Node = { pointer: match[2], tag: match[3].toUpperCase(), value: match[4] || "", children: [] };
-    if (node.pointer) { assert(!pointers.has(node.pointer), "Duplicate GEDCOM record identifiers."); pointers.add(node.pointer); }
-    (level ? stack[level-1].children : roots).push(node); stack[level] = node; stack.length = level+1;
+export async function previewGedcom(input: string | Uint8Array, name: string) {
+  assert(typeof input === "string" || input instanceof Uint8Array, "Choose a GEDCOM file.");
+  const decoded = decodeGedcom(input);
+  const { roots, pointers, version, modern } = parseGedcom(decoded.source);
+  assert(!modern || decoded.encoding === "UTF-8" && (!decoded.declared || ["UTF-8", "UTF8"].includes(decoded.declared)), "GEDCOM 7 requires UTF-8. Export this file as UTF-8 GEDCOM 7.");
+  const warnings = importWarnings(), consumed = new Set<Node>();
+  const statistics = { unnamedPeople: 0, notes: 0, families: 0, skippedParentLinks: 0, omittedFields: 0 };
+  if (decoded.textInput && decoded.declared && !["UTF-8", "UTF8", "ASCII"].includes(decoded.declared)) {
+    warnings.add("The API supplied decoded Unicode text; the legacy encoding declaration was not used to decode it again.");
   }
-  assert(roots[0]?.tag === "HEAD" && roots.at(-1)?.tag === "TRLR", "Choose a complete GEDCOM file with HEAD and TRLR records.");
-  const encoding = value(child(roots[0],"CHAR"));
-  assert(!encoding || encoding === "UTF-8" || encoding === "ASCII", "Convert this GEDCOM to UTF-8 before importing.");
-  const consumed = new Set<Node>();
-  const read = (node: Node, tag: string) => { const found=child(node,tag); if(found) consumed.add(found); return found; };
-  const markHeader = (node: Node) => { consumed.add(node); node.children.forEach(markHeader); };
-  markHeader(roots[0]); consumed.add(roots.at(-1)!);
+  const text = (node?: Node) => gedcomText(node, modern);
+  const read = (node: Node, tag: string) => { const found = child(node, tag); if (found) consumed.add(found); return found; };
+  const mark = (node: Node) => { consumed.add(node); node.children.forEach(mark); };
+  mark(roots[0]); consumed.add(roots.at(-1)!);
+  const date = (node?: Node) => {
+    const value = text(node), match = /^(?:(\d{1,2}) )?(?:([A-Z]{3}) )?(\d{4})$/.exec(value);
+    if (!match) return value || text(node && read(node, "PHRASE"));
+    const month = match[2] ? months.indexOf(match[2]) + 1 : 0;
+    if (match[2] && !month) return value;
+    return `${match[3]}${month ? `-${String(month).padStart(2,"0")}` : ""}${match[1] && month ? `-${match[1].padStart(2,"0")}` : ""}`;
+  };
+  const noteCache = new Map<Node, string>();
+  const noteText = (node: Node, visiting = new Set<Node>()): string => {
+    const cached = noteCache.get(node); if (cached !== undefined) return cached;
+    assert(!visiting.has(node) && visiting.size < 64, `Cyclic or excessively nested shared note on line ${node.line}.`);
+    visiting.add(node); consumed.add(node);
+    let value: string;
+    if (/^@[^@\s]+@$/.test(node.value)) {
+      const target = pointers.get(node.value);
+      assert(target && ["NOTE", "SNOTE"].includes(target.tag), `Unresolved shared note reference on line ${node.line}.`);
+      value = noteText(target, visiting);
+    } else value = text(node);
+    visiting.delete(node); noteCache.set(node, value); return value;
+  };
   const eventDate = (event?: Node) => {
     if (!event) return "";
-    const note=child(event,"NOTE");
-    if (value(note).startsWith("Date: ")) { consumed.add(note!); return value(note).slice(6); }
-    return date(read(event,"DATE"));
+    const note = child(event, "NOTE");
+    if (note && text(note).startsWith("Date: ")) return noteText(note).slice(6);
+    return date(read(event, "DATE"));
   };
-  const collection = emptyCollection(), ids = new Map<string,string>();
+  const collection = emptyCollection(), ids = new Map<string, string>();
   const treeId = crypto.randomUUID();
   collection.trees[treeId] = { id: treeId, name, members: [] };
   const people = roots.filter(node => node.tag === "INDI");
   assert(people.length > 0 && people.length <= MAX_COLLECTION_PEOPLE, "Import 1–10,000 people.");
   for (const record of people) {
     consumed.add(record);
-    assert(record.pointer,"A person is missing its record identifier.");
-    const id = crypto.randomUUID(); ids.set(record.pointer,id);
-    const birth = read(record,"BIRT"), death = read(record,"DEAT"), sex = value(read(record,"SEX"));
-    if (sex && sex !== "M" && sex !== "F") warnings.add(`Unrecognized gender ${sex}: left unspecified.`);
-    const notes = record.children.filter(node => node.tag === "NOTE").map(node => { consumed.add(node); return value(node); });
-    const sourceId = value(read(record,"_UID"));
+    assert(record.pointer, `A person is missing its record identifier on line ${record.line}.`);
+    const id = crypto.randomUUID(); ids.set(record.pointer, id);
+    const birth = read(record, "BIRT"), death = read(record, "DEAT"), sex = text(read(record, "SEX")).trim().toUpperCase();
+    if (sex && sex !== "M" && sex !== "F") warnings.add("Unrecognized or unspecified gender: left unspecified.");
+    const notes = record.children.filter(n => n.tag === "NOTE" || n.tag === "SNOTE").map(n => { statistics.notes++; return noteText(n); });
+    const sourceId = text(read(record, "_UID"));
     if (sourceId) notes.push(`Source identifier: ${sourceId}`);
-    const person: Person = { id, name: value(read(record,"NAME")).replaceAll("/","").trim(), parents: [], partners: [],
-      ...sex === "M" ? {sex:"male"} : sex === "F" ? {sex:"female"} : {},
+    const nameNode = read(record, "NAME");
+    let personName = text(nameNode).replaceAll("/", "").trim();
+    if (!personName && nameNode) personName = [text(read(nameNode,"GIVN")), text(read(nameNode,"SURN"))].filter(Boolean).join(" ").trim();
+    if (!personName) { personName = "Unknown"; statistics.unnamedPeople++; warnings.add("An unnamed person was imported as Unknown."); }
+    const person: Person = { id, name: personName, parents: [], partners: [],
+      ...sex === "M" ? { sex: "male" } : sex === "F" ? { sex: "female" } : {},
       birth_date: eventDate(birth) || null, death_date: eventDate(death) || null,
-      birth_place: value(birth && read(birth,"PLAC")) || null, notes: notes.join("\n") || null };
-    assert(person.name,"Every imported person needs a name."); collection.people[id] = person; collection.trees[treeId].members.push(id);
+      birth_place: text(birth && read(birth, "PLAC")) || null, notes: notes.join("\n") || null };
+    collection.people[id] = person; collection.trees[treeId].members.push(id);
   }
-  for (const family of roots.filter(node => node.tag === "FAM")) {
-    consumed.add(family);
-    const resolve = (tag: string) => family.children.filter(node => node.tag === tag).map(node => {
+  const families = roots.filter(n => n.tag === "FAM");
+  statistics.families = families.length;
+  const familyRecords = new Map(families.map(n => [n.pointer, n]));
+  const children = new Map<Node, Map<string, string>>(), spouses = new Map<Node, Set<string>>();
+  const addChild = (family: Node, id: string, pedigree = "") => {
+    const members = children.get(family) || new Map<string, string>();
+    const previous = members.get(id);
+    assert(!previous || !pedigree || previous === pedigree, `Conflicting parentage types on line ${family.line}.`);
+    members.set(id, pedigree || previous || ""); children.set(family, members);
+  };
+  const addSpouse = (family: Node, id: string) => {
+    const members = spouses.get(family) || new Set<string>(); members.add(id); spouses.set(family, members);
+  };
+  for (const family of families) {
+    consumed.add(family); assert(family.pointer, `A family is missing its record identifier on line ${family.line}.`);
+    const roleParents: string[] = [];
+    for (const node of family.children.filter(n => ["HUSB", "WIFE", "CHIL"].includes(n.tag))) {
       consumed.add(node);
-      const id = ids.get(node.value); assert(id, `Unresolved ${tag} reference ${node.value}.`); return id;
-    });
-    const parents = [...resolve("HUSB"),...resolve("WIFE")];
-    assert(parents.length <= 2 && new Set(parents).size === parents.length,"A family has invalid parent records.");
-    for (const id of resolve("CHIL")) collection.people[id].parents.push(...parents);
-    const marriage = read(family,"MARR"), divorce = read(family,"DIV");
-    const noteNode = child(family,"NOTE"), note = value(noteNode);
-    if (note.startsWith("Relationship: ")) consumed.add(noteNode!);
-    const recordedPartnership = read(family,"_PARTNERS") || marriage || divorce || note.startsWith("Relationship: ");
-    if (parents.length === 2 && recordedPartnership) {
-      const [a,b] = parents;
-      collection.people[a].partners.push(b); collection.people[b].partners.push(a);
-      const status = divorce ? "divorced" : marriage ? "married" : note.startsWith("Relationship: ") ? note.slice(14) : "partners";
-      collection.partnerships[pair(a,b)] = { status, marriage_date: eventDate(marriage) || null, marriage_place: value(marriage && read(marriage,"PLAC")) || null, divorce_date: eventDate(divorce) || null };
+      if (modern && node.value === "@VOID@") { warnings.add("An unspecified family reference was omitted."); continue; }
+      const id = ids.get(node.value); assert(id, `Unresolved ${node.tag} reference on line ${node.line}.`);
+      if (node.tag === "CHIL") addChild(family, id);
+      else { roleParents.push(id); addSpouse(family, id); }
+    }
+    assert(new Set(roleParents).size === roleParents.length, `A family has duplicate parent records on line ${family.line}.`);
+  }
+  for (const record of people) {
+    const id = ids.get(record.pointer!)!;
+    const adopted = new Set(record.children.filter(n => n.tag === "ADOP").flatMap(n => n.children.filter(c => c.tag === "FAMC").map(c => c.value)));
+    for (const node of record.children.filter(n => n.tag === "FAMC" || n.tag === "FAMS")) {
+      consumed.add(node);
+      if (modern && node.value === "@VOID@") { warnings.add("An unspecified family reference was omitted."); continue; }
+      const family = familyRecords.get(node.value);
+      assert(family, `Unresolved family reference on line ${node.line}.`);
+      if (node.tag === "FAMS") addSpouse(family, id);
+      else {
+        const pedigree = text(read(node, "PEDI")).trim().toUpperCase();
+        assert(!(pedigree === "BIRTH" && adopted.has(node.value)), `Conflicting birth and adoption records on line ${node.line}.`);
+        addChild(family, id, pedigree || (adopted.has(node.value) ? "ADOPTED" : ""));
+      }
+    }
+    // Some exporters put the adoption family only under the ADOP event.
+    for (const pointer of adopted) {
+      const family = familyRecords.get(pointer);
+      assert(family, `Unresolved adoption family reference on line ${record.line}.`);
+      addChild(family, id, "ADOPTED");
     }
   }
-  for (const p of Object.values(collection.people)) { p.parents = [...new Set(p.parents)]; p.partners = [...new Set(p.partners)]; }
+  for (const family of families) {
+    const parents = [...spouses.get(family) || []];
+    assert(parents.length <= 2, `A family has more than two parents on line ${family.line}.`);
+    for (const [id, pedigree] of children.get(family) || []) {
+      if (pedigree && pedigree !== "BIRTH") {
+        statistics.skippedParentLinks += parents.length;
+        warnings.add("Adoptive, foster or other non-birth parent links were omitted; this app cannot label them correctly.");
+      } else collection.people[id].parents.push(...parents);
+    }
+    const marriage = read(family, "MARR"), divorce = read(family, "DIV");
+    const noteNode = child(family, "NOTE"), note = noteNode && text(noteNode).startsWith("Relationship: ") ? noteText(noteNode) : "";
+    if (parents.length === 2) {
+      const [a,b] = parents, key = pair(a,b);
+      collection.people[a].partners.push(b); collection.people[b].partners.push(a);
+      const recordedStatus = note.startsWith("Relationship: ") ? note.slice(14) : "partners";
+      const status = divorce ? "divorced" : marriage ? "married" : ["married", "partners", "divorced"].includes(recordedStatus) ? recordedStatus : "partners";
+      if (collection.partnerships[key]) warnings.add("Multiple family records describe the same couple; the first union details were retained.");
+      else collection.partnerships[key] = { status, marriage_date: eventDate(marriage) || null,
+        marriage_place: text(marriage && read(marriage, "PLAC")) || null, divorce_date: eventDate(divorce) || null };
+    }
+  }
+  for (const p of Object.values(collection.people)) {
+    p.parents = [...new Set(p.parents)]; p.partners = [...new Set(p.partners)];
+    if (p.parents.length > 2) {
+      statistics.skippedParentLinks += p.parents.length; p.parents = [];
+      warnings.add("Conflicting or multiple parent families exceed the app’s two-parent limit; those parent links were omitted.");
+    }
+  }
   const visit = (node: Node, parent?: Node) => {
-    if (parent && consumed.has(parent) && (node.tag === "CONT" || node.tag === "CONC")) consumed.add(node);
-    if (!consumed.has(node)) warnings.add(`Not imported: ${parent ? `${parent.tag}.` : ""}${node.tag}.`);
-    node.children.forEach(item => visit(item,node));
+    if (parent && consumed.has(parent) && (node.tag === "CONT" || !modern && node.tag === "CONC")) consumed.add(node);
+    if (!consumed.has(node)) { statistics.omittedFields++; warnings.add(`Not imported: ${parent ? `${parent.tag.slice(0, 40)}.` : ""}${node.tag.slice(0, 40)}.`); }
+    node.children.forEach(item => visit(item, node));
   };
-  roots.forEach(node=>visit(node));
+  roots.forEach(node => visit(node));
   validateCollection(collection);
-  return { collection, treeId, warnings: [...warnings], checksum: await digest(new TextEncoder().encode(source)), people: people.length };
+  return { collection, treeId, warnings: warnings.list(), statistics, encoding: decoded.encoding, version,
+    checksum: await digest(decoded.bytes), people: people.length };
 }

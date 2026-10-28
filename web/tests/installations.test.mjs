@@ -277,3 +277,33 @@ for (const kind of ["Cloudflare", "Local"]) {
     } finally { await runtime.close(); }
   });
 }
+
+for (const kind of ['Cloudflare','Local']) test(`${kind}: raw GEDCOM bytes preserve encodings and preview safety`,async()=>{
+ const runtime=await installation(kind),owner=client(runtime),viewer=client(runtime);
+ try {
+  await ownerSession(runtime,owner);
+  const original='0 HEAD\r1 GEDC\r2 VERS 5.5.1\r1 CHAR ANSI\r0 @I1@ INDI\r1 NAME René /Synthetic/\r1 NOTE @N1@\r0 @I2@ INDI\r1 FAMC @F1@\r0 @F1@ FAM\r1 HUSB @I1@\r0 @N1@ NOTE Café\r0 TRLR\r';
+  for (const encoding of ['ANSI','ANSEL','UNICODE']) {
+   const source=original.replace('CHAR ANSI',`CHAR ${encoding}`);
+   const bytes=encoding==='UNICODE'?Buffer.from('\ufeff'+source,'utf16le'):Buffer.from(encoding==='ANSEL'?source.replaceAll('é','\xe2e'):source,'latin1');
+   const file=bytes.toString('base64'),body={name:`Synthetic ${encoding}`,file};
+   const response=await owner.call('/imports/preview',body); assert.equal(response.status,200);
+   const preview=await response.json(); assert.equal(preview.people,2); assert.equal(preview.statistics.unnamedPeople,1);
+   assert.equal(preview.checksum,createHash('sha256').update(bytes).digest('hex'));
+   assert.equal((await owner.call('/imports/commit',{...body,...preview,file:Buffer.concat([bytes,encoding==='UNICODE'?Buffer.from('\r','utf16le'):Buffer.from('\r')]).toString('base64')})).status,409);
+   assert.equal((await owner.call('/imports/commit',{...body,...preview,revision:-1})).status,409);
+   assert.equal((await owner.call('/imports/commit',{...body,...preview})).status,200);
+  }
+  const people=(await runtime.env.DB.prepare('SELECT name,notes FROM people').all()).results;
+  assert.equal(people.filter(p=>p.name==='René Synthetic'&&p.notes==='Café').length,3);
+  assert.equal(people.filter(p=>p.name==='Unknown').length,3);
+  assert.equal((await owner.call('/imports/preview',{name:'Raw boundary',file:Buffer.from(sizedGedcom(5_000_000)).toString('base64')})).status,200);
+  for (const file of [null,42,'!bad','a===']) assert.equal((await owner.call('/imports/preview',{name:'Bad',file})).status,400);
+  assert.equal((await owner.call('/imports/preview',{name:'Ambiguous',file:'',source:original})).status,400);
+  assert.equal((await owner.call('/imports/preview',{name:'Large',file:Buffer.alloc(5_000_001).toString('base64')})).status,413);
+  await viewer.call('/login',{password});
+  for (const path of ['/imports/preview','/imports/commit']) assert.equal((await viewer.call(path,{name:'Denied',file:Buffer.from(original,'latin1').toString('base64')})).status,403);
+  await runtime.env.DB.prepare("UPDATE users SET role='editor' WHERE email='owner@example.com'").run();
+  for (const path of ['/imports/preview','/imports/commit']) assert.equal((await owner.call(path,{name:'Denied',file:''})).status,403);
+ } finally {await runtime.close();}
+});

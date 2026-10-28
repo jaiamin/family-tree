@@ -1,4 +1,5 @@
 import { encryptedBackup } from "./backup-export";
+import { gedcomBytes } from "./gedcom-decoding";
 import { previewGedcom } from "./gedcom-import";
 import { applyPersonEdit, assert, uuid, validateCollection } from "./model";
 import { MAX_IMPORT_BODY_BYTES } from "./import-limits";
@@ -24,8 +25,10 @@ export async function creatorRoute(request: Request, env: Env, user: Identity, p
     requireRole(user,"owner");
     assert(method === "POST","Method not allowed.",405);
     const body = await bodyOf(request, MAX_IMPORT_BODY_BYTES);
-    assert(typeof body.source === "string", "Choose a GEDCOM file.");
-    const draft = await previewGedcom(body.source,text(body.name,200,true));
+    assert((body.file !== undefined) !== (body.source !== undefined), "Supply one GEDCOM file or decoded source.");
+    const input = body.file !== undefined ? gedcomBytes(body.file) : body.source;
+    assert(typeof input === "string" || input instanceof Uint8Array, "Choose a GEDCOM file.");
+    const draft = await previewGedcom(input,text(body.name,200,true));
     const {collection,revision} = await readCollection(env);
     const previewing = path.endsWith("preview");
     if (!previewing) {
@@ -34,7 +37,7 @@ export async function creatorRoute(request: Request, env: Env, user: Identity, p
     }
     Object.assign(collection.people,draft.collection.people); Object.assign(collection.trees,draft.collection.trees); Object.assign(collection.partnerships,draft.collection.partnerships);
     validateCollection(collection);
-    if (previewing) return Response.json({people:draft.people,warnings:draft.warnings,checksum:draft.checksum,revision});
+    if (previewing) return Response.json({people:draft.people,warnings:draft.warnings,checksum:draft.checksum,revision,encoding:draft.encoding,version:draft.version,statistics:draft.statistics});
     return Response.json({id:draft.treeId,revision:await saveCollection(env,collection,revision,user,"Imported GEDCOM")});
   }
   if (!(path === "/api/site" || path === "/api/trees" || treeId || path === "/api/first-person")) return null;
