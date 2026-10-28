@@ -47,4 +47,4 @@ Open **http://localhost:8000/family-tree/**; password: `local-preview-only`. The
 
 Editing requires [Google sign-in setup](docs/operations.md#google-and-first-sign-in): `GOOGLE_CLIENT_ID`, `OWNER_EMAIL` and an authorized localhost origin.
 
-[Checks & code map](AGENTS.md) · [Operations](docs/operations.md) · [Architecture](docs/private-hosting/adr-002-two-deployments-one-application.md) · [Screenshot credits](docs/images/CREDITS.md) · [MIT](LICENSE) · [ELK.js](web/ui/vendor/README.md) · [Geist (OFL)](https://github.com/vercel/geist-font/blob/main/LICENSE)
+[Checks & code map](AGENTS.md) · [Operations](docs/operations.md) · [Architecture](docs/private-hosting/adr-002-two-deployments-one-application.md) · [MIT](LICENSE) · [ELK.js](web/ui/vendor/README.md) · [Geist (OFL)](https://github.com/vercel/geist-font/blob/main/LICENSE)
