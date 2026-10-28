@@ -213,7 +213,7 @@ for (const kind of ["Cloudflare", "Local"]) {
       assert.deepEqual((await runtime.env.DB.prepare("SELECT * FROM public_ids ORDER BY short_id").all()).results, mappings);
       const next = await (await owner.call("/imports/preview", {name:"Next family", source})).json();
       assert.equal((await owner.call("/imports/commit", {name:"Next family", source, ...next, checksum:"wrong"})).status, 409);
-      await runtime.env.DB.prepare("CREATE TRIGGER reject_late_chunk BEFORE INSERT ON people WHEN NEW.name='Imported 1000' BEGIN SELECT RAISE(ABORT,'synthetic_late_chunk_failure'); END").run();
+      await runtime.env.DB.prepare("CREATE TRIGGER reject_late_chunk BEFORE INSERT ON people WHEN NEW.name='Imported 1000' AND NOT EXISTS (SELECT 1 FROM people WHERE id=NEW.id) BEGIN SELECT RAISE(ABORT,'synthetic_late_chunk_failure'); END").run();
       const generation = await runtime.env.DB.prepare("SELECT generation FROM backup_state").first();
       const activity = (await runtime.env.DB.prepare("SELECT * FROM activity ORDER BY id").all()).results;
       assert.equal((await owner.call("/imports/commit", {name:"Next family", source, ...next})).status, 500);
