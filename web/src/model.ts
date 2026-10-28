@@ -1,3 +1,5 @@
+import { MAX_COLLECTION_PEOPLE } from "./import-limits";
+
 export interface Person {
   id: string;
   name: string;
@@ -42,7 +44,7 @@ export function validateCollection(value: unknown): asserts value is Collection 
     assert(typeof c.site.name === "string" && c.site.name.trim().length > 0 && c.site.name.length <= 200, "Invalid website name.");
     assert(c.site.url == null || typeof c.site.url === "string" && c.site.url.length <= 2000, "Invalid website URL.");
   }
-  assert(Object.keys(c.people).length <= 10000, "This collection is too large.");
+  assert(Object.keys(c.people).length <= MAX_COLLECTION_PEOPLE, "This installation can contain at most 10,000 people.");
   for (const [id, p] of Object.entries(c.people)) {
     assert(record(p) && uuid(id) && p.id === id, "Person IDs must be UUIDs.");
     assert(typeof p.name === "string" && line(p.name).length > 0 && p.name.length <= 200, "Enter a name of at most 200 characters.");

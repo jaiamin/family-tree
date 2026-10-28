@@ -84,6 +84,12 @@ Code-only releases may deploy automatically. For schema changes, prepare and rev
 
 Future schema changes require numbered, tested conversions. Never reseed production, import preview fixtures or rely on runtime legacy fallbacks.
 
+## GEDCOM imports
+
+Owners can preview and import UTF-8 GEDCOM files up to **5,000,000 bytes (5 MB)** and **100,000 lines**, including blank lines. Each import creates a new tree and new person UUIDs; names are never merged automatically. Preview reports omitted fields and checks the existing and imported people against the installation-wide **10,000-person** limit. Person notes remain limited to 5,000 characters.
+
+Preview and commit must use the same file and collection revision. If someone changes the collection after preview, preview again before importing. Saves split JSON parameters below D1's 2 MB string limit and execute all chunks in one atomic transaction. Other API requests retain their existing body limits. Graph layout and rendering still process the whole tree; the person limit does not guarantee smooth graph performance on every device.
+
 ## Backups and photos
 
 Accepted photos are immutable, keyed by person/upload UUID, and written to primary **and** backup before changing the display pointer. Replacement, displayed-photo removal and person deletion retain all uploads. Browser uploads are square crops, not original camera files.

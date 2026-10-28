@@ -14,10 +14,10 @@ export async function limitedBody(request: Request, max = 1_500_000) {
   for (const chunk of chunks) { data.set(chunk, offset); offset += chunk.length; }
   return data;
 }
-export async function bodyOf(request: Request) {
+export async function bodyOf(request: Request, max = 1_500_000) {
   assert(request.headers.get("content-type")?.includes("application/json"), "Send JSON.", 415);
   try {
-    const body = JSON.parse(new TextDecoder().decode(await limitedBody(request)));
+    const body = JSON.parse(new TextDecoder().decode(await limitedBody(request, max)));
     assert(record(body), "Send a JSON object.");
     return body;
   } catch (error) {

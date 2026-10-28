@@ -1,3 +1,5 @@
+import { MAX_GEDCOM_BYTES } from "./import-limits";
+
 // Owner workflows reuse the same dialog/form primitives as person editing.
 export function administration({ api, dialog, field, formIn, el, button, base, reload, toast }) {
   function error(panel, failure) {
@@ -170,18 +172,18 @@ export function administration({ api, dialog, field, formIn, el, button, base, r
     const {form,finish}=formIn(panel,"Preview import",async()=>{
       const selected=file.files[0];
       if (!selected) throw Error("Choose a GEDCOM file.");
-      if (selected.size > 1_000_000) throw Error("Choose a GEDCOM file smaller than 1 MB.");
+      if (selected.size > MAX_GEDCOM_BYTES) throw Error("Choose a GEDCOM file of 5 MB or less.");
       const source=await selected.text();
       preview=await api("/imports/preview",{name:name.value,source});
-      const view=await api("/view");
       panel.body.replaceChildren(el("p",{},`${preview.people} ${preview.people === 1 ? "person" : "people"} · A new tree will be created.`),...preview.warnings.map(warning=>el("p",{class:"form-note"},warning)));
       const commit = button("Import tree", () => change(panel, commit, async () => {
-        await api("/imports/commit", { name: name.value, source, checksum: preview.checksum, revision: view.revision }); reload("Tree imported.");
+        await api("/imports/commit", { name: name.value, source, checksum: preview.checksum, revision: preview.revision }); reload("Tree imported.");
       }), "site-button primary");
       panel.footer.replaceChildren(commit);
     });
     name=field(form,"Tree name","",{required:true});
-    file=field(form,"GEDCOM file","",{type:"file",required:true}); file.accept=".ged,.gedcom,text/plain"; finish();
+    file=field(form,"GEDCOM file","",{type:"file",required:true}); file.accept=".ged,.gedcom,text/plain";
+    form.append(el("p", {class:"form-note"}, "UTF-8 GEDCOM · Up to 5 MB and 100,000 lines. This installation can contain up to 10,000 people.")); finish();
   }
   async function backups() {
     const panel = dialog("Backups"); if (!panel) return;
