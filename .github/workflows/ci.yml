@@ -64,7 +64,7 @@ jobs:
       - run: pnpm --dir web build
       - run: pnpm --dir web check
       - run: pnpm --dir web test
-      - run: pnpm --dir web exec playwright install --with-deps chromium
+      - run: pnpm --dir web exec playwright install --with-deps --only-shell chromium
       - name: Browser suite
         run: pnpm --dir web test:browser --output=test-results/default
         env:
