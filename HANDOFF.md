@@ -22,11 +22,12 @@ Branch: `feat/gedcom-compatibility`, based on main after PR #62.
 - [x] Implement byte decoding and bounded parser/domain mapping, raw-byte API and upload preview.
 - [x] Verify public corpus and UI; complete checks.
 - [x] Review and local verification, including clean Gitleaks scan.
-- [ ] Push, draft PR and required CI.
+- [x] Commit and push task branch; draft PR #63 opened.
+- [ ] Required CI: monitor the checks on PR #63.
 
 ## Next steps
 
-The owner authorized resolving the scanner findings and pushing. Renamed the public ANSEL table constants from KEYS to CODES to describe character codes accurately; mapping values and scanner rules are unchanged. Build, type checks, all 109 web tests and Gitleaks passed after the rename. Commit and push the task branch, open one draft PR and monitor required CI. No production changes are authorized.
+The owner authorized resolving the scanner findings and pushing. Renamed the public ANSEL table constants from KEYS to CODES to describe character codes accurately; mapping values and scanner rules are unchanged. Build, type checks, all 109 web tests and Gitleaks passed after the rename. Implementation is committed and pushed; draft PR: https://github.com/jaiamin/family-tree/pull/63. Monitor required CI there before owner review. No production changes are authorized.
 
 ## Verification
 
