@@ -173,17 +173,19 @@ export function administration({ api, dialog, field, formIn, el, button, base, r
       const selected=file.files[0];
       if (!selected) throw Error("Choose a GEDCOM file.");
       if (selected.size > MAX_GEDCOM_BYTES) throw Error("Choose a GEDCOM file of 5 MB or less.");
-      const source=await selected.text();
-      preview=await api("/imports/preview",{name:name.value,source});
-      panel.body.replaceChildren(el("p",{},`${preview.people} ${preview.people === 1 ? "person" : "people"} · A new tree will be created.`),...preview.warnings.map(warning=>el("p",{class:"form-note"},warning)));
+      const bytes=new Uint8Array(await selected.arrayBuffer()), chunks=[];
+      for (let offset=0; offset<bytes.length; offset+=0x8000) chunks.push(String.fromCharCode(...bytes.subarray(offset,offset+0x8000)));
+      const encoded=btoa(chunks.join(""));
+      preview=await api("/imports/preview",{name:name.value,file:encoded});
+      panel.body.replaceChildren(el("p",{},`${preview.people} ${preview.people === 1 ? "person" : "people"} · A new tree will be created.`),el("p",{class:"form-note"},`GEDCOM ${preview.version} · ${preview.encoding}. Notes imported: ${preview.statistics.notes}; unnamed people: ${preview.statistics.unnamedPeople}; omitted fields: ${preview.statistics.omittedFields}; omitted parent links: ${preview.statistics.skippedParentLinks}.`), ...(preview.warnings.length ? [el("details",{},el("summary",{},"Review import warnings"),...preview.warnings.map(warning=>el("p",{class:"form-note"},warning)))] : []));
       const commit = button("Import tree", () => change(panel, commit, async () => {
-        await api("/imports/commit", { name: name.value, source, checksum: preview.checksum, revision: preview.revision }); reload("Tree imported.");
+        await api("/imports/commit", { name: name.value, file:encoded, checksum: preview.checksum, revision: preview.revision }); reload("Tree imported.");
       }), "site-button primary");
       panel.footer.replaceChildren(commit);
     });
     name=field(form,"Tree name","",{required:true});
     file=field(form,"GEDCOM file","",{type:"file",required:true}); file.accept=".ged,.gedcom,text/plain";
-    form.append(el("p", {class:"form-note"}, "UTF-8 GEDCOM · Up to 5 MB and 100,000 lines. This installation can contain up to 10,000 people.")); finish();
+    form.append(el("p", {class:"form-note"}, "GEDCOM 5.5–5.5.1 and 7.0 · UTF-8, UTF-16, ANSEL or ANSI. Up to 5 MB and 100,000 lines. This installation can contain up to 10,000 people.")); finish();
   }
   async function backups() {
     const panel = dialog("Backups"); if (!panel) return;
