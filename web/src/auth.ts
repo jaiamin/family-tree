@@ -49,8 +49,20 @@ export function requireRole(user: Identity | null, role: "viewer" | "editor" | "
 }
 export function requireSameOrigin(request: Request, env: Env) {
   const origin = request.headers.get("origin");
-  const allowed = env.PUBLIC_ORIGIN || new URL(request.url).origin;
-  assert(origin === allowed || origin === new URL(request.url).origin || (request.headers.get("authorization") || "").startsWith("Bearer "), "This request must come from the family website.", 403);
+  const requestOrigin = new URL(request.url).origin;
+  const matches = (value: string | null) => value === (env.PUBLIC_ORIGIN || requestOrigin) || value === requestOrigin;
+  const fetchSite = request.headers.get("sec-fetch-site");
+  let sameOrigin = matches(origin);
+  // Some browsers/privacy tools omit Origin or send an opaque origin. Fetch
+  // Metadata is browser-controlled; an explicit foreign Origin still fails.
+  if (!origin || origin === "null") sameOrigin = fetchSite === "same-origin";
+  // Older browsers may omit Fetch Metadata too. Only a missing Origin may use
+  // the exact referring origin; never override cross-site or opaque evidence.
+  if (!origin && !fetchSite) {
+    try { sameOrigin = matches(new URL(request.headers.get("referer") || "").origin); }
+    catch { sameOrigin = false; }
+  }
+  assert(sameOrigin || (request.headers.get("authorization") || "").startsWith("Bearer "), "This request must come from the family website.", 403);
 }
 export async function rateLimit(request: Request, env: Env, action: string, limit: number, seconds: number) {
   const ip = env.CLIENT_IP || "unknown";
