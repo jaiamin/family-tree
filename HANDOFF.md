@@ -1,3 +1,17 @@
+# Password login origin compatibility
+
+Branch: `fix/password-origin-check`.
+
+- Report: visitors at the family website receive "This request must come from the family website." when entering the shared password.
+- Reproduced the exact 403 in both runtimes with a correct synthetic password and a missing Origin header, despite a same-origin Referer. Tests were red before the fix.
+- Preserve explicit Origin checks and bearer clients. For missing/opaque Origin, accept browser-controlled Sec-Fetch-Site: same-origin. For missing Origin and Fetch Metadata, accept an exactly matched Referer origin. Foreign/opaque origins without reliable evidence remain rejected.
+- The affected visitors' actual request headers are not available. Browser/app clarification requested; network policy blocks production inspection at jaiamin.com and documentation at developer.mozilla.org. No production changes made.
+- Verification: Node 26 build, TypeScript checks, all 111 web tests, all 16 browser tests (including header fallback login/session persistence at 320px and 1280px) and secret scan pass.
+- Draft PR: https://github.com/jaiamin/family-tree/pull/64. Local verification is complete; inspect required CI on the PR. Owner review/merge/deployment is still required; actual affected-browser confirmation remains outstanding.
+- Acceptance: reproduce exact error, support safe header fallbacks, retain password checks and cross-site rejection, verify desktop/mobile login and session persistence, publish a draft PR.
+
+## Previous completed task
+
 # GEDCOM compatibility upgrade
 
 Branch: `feat/gedcom-compatibility`, based on main after PR #62.
