@@ -35,7 +35,7 @@ Works on Free within request, CPU, D1 and R2 limits. Authentication uses a share
    pnpm --dir web run deploy
    ```
 
-4. Proxy the base path and descendants to the Worker. Set `PUBLIC_ORIGIN` to the exact HTTPS browser origin, without a path. Complete first sign-in below.
+4. Proxy the base path and descendants to the Worker. Set installation `publicOrigin` (and runtime `PUBLIC_ORIGIN`) to the exact HTTPS browser origin **after redirects**, without a path. Apex and `www` hostnames are different origins; keep the `FAMILY_INSTALLATION_CONFIG_JSON` build variable in sync so later deployments preserve the setting. Complete first sign-in below.
 
 Never initialize populated storage or bind previews to live resources. Deployment updates code, not family data. Incompatible schemas return 503.
 
@@ -54,7 +54,7 @@ Enable build caching; include `web/*` and exclude `web/tests/*`, `web/playwright
 
 CI uses example resources and never deploys. Require all five checks (`mcp (3.10)`, `mcp (3.14)`, `web`, `local`, `secrets`) before merging. Workers Builds runs independently of GitHub CI; branch rules protect merges, not direct/manual deployments. Both deployments require matching build/runtime base paths.
 
-`pnpm --dir web smoke` checks the configured public URL after deployment, without credentials or writes. For either host, override it with `pnpm --dir web smoke https://family.example.com/family-tree`. A failed check marks deployment verification failed; it does not roll back code or data. Browser CI failures retain reports, screenshots and traces for seven days.
+`pnpm --dir web smoke` checks the configured public URL after deployment, including the login origin guard, without credentials or writes. An `OPTIONS` probe checks the guard without attempting a login. For either host, override it with `pnpm --dir web smoke https://family.example.com/family-tree`. A failed check marks deployment verification failed; it does not roll back code or data. Browser CI failures retain reports, screenshots and traces for seven days.
 
 ## Google and first sign-in
 
