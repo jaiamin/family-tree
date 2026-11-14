@@ -1,3 +1,15 @@
+# Live password rejection investigation
+
+- Current task branch: `fix-cloudflare-password-request`. User reports that both shared links reach the login page, but password submission returns "This request must come from the family website." User confirms the address bar shows `jaiamin.com/family-tree`.
+- User wants both apex and www links to work and authorizes inspecting and fixing the live Cloudflare configuration. No production changes have been made.
+- Verified all four `jaiamin/website` commits affecting `vercel.json`. Both Worker rewrites are unchanged since their creation. Current config exactly equals the October 27 version (`2c2df48`); November 2 added a www-to-apex redirect and November 10 removed it with the stated reason that it looped with Fly's apex redirect. Restoring the redirect is not supported by the evidence.
+- GitHub records a successful Cloudflare Workers Build of `6066b11` on November 2, version `1ac4b73f-d9f9-490d-bd41-df2895da8ba5`. This does not establish the currently active deployment or runtime bindings.
+- Network access now works. Confirmed live cause: apex GET returns HTTP 308 from Fly to `https://www.jaiamin.com/family-tree`; both links reach the password page. POST from the www origin returns the exact website-origin rejection. The same direct Worker POST using the apex origin passes the origin guard and reaches password validation (tested with an empty password, never the real password). Direct apex POST returns 405, but the browser normally follows the page redirect first and submits from www.
+- A read-only OPTIONS probe against `/family-tree/api/login` distinguishes the origin guard without login attempts or data changes: direct Worker with apex Origin returns 401 "Please sign in."; www Origin returns the exact 403. Correct the canonical installation origin to `https://www.jaiamin.com` and keep the Workers Builds installation configuration in sync.
+- Cloudflare rejected the first secure credential as "Invalid API Token". A replacement API token has been requested through the secure input tool. Do not record or print credentials. Runtime settings and active deployments cannot yet be inspected through the API.
+- Added a deployment smoke check using the OPTIONS probe, regression coverage at all three supported base paths, and operational guidance on redirected origins/build configuration. Tests failed before the change and all four pass on Node 26 afterward. The new smoke check also reproduces the live www deployment failure. Diff whitespace checks and Gitleaks pass.
+- Next: obtain a valid token, inspect active Worker settings/deployment, update only the public origin while preserving all other bindings, synchronize the build configuration if permitted, and verify the canonical route reached from both shared links. Preserve secrets, database bindings and stored family data. Do not weaken origin checks.
+
 # Password login origin compatibility
 
 Branch: `fix/password-origin-check`.

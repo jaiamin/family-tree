@@ -28,6 +28,13 @@ export async function checkDeployment(address) {
   assert.equal(asset.status, 200, "Application script must be available.");
   assert.match(asset.headers.get("content-type") || "", /javascript/, "Application script must be JavaScript.");
   await asset.body?.cancel();
+  // Exercise the write-origin guard without attempting a login or changing data.
+  const originCheck = await fetch(new URL(`${path}/api/login`, base.origin), {
+    method: "OPTIONS", redirect: "error", signal: AbortSignal.timeout(10000),
+    headers: { Origin: base.origin, "User-Agent": "family-tree-smoke" },
+  });
+  assert.equal(originCheck.status, 401, "The deployed app must accept requests from its public origin.");
+  assert.equal((await originCheck.json()).error, "Please sign in.", "Expected the anonymous API authentication check.");
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -42,7 +49,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
         await setTimeout(3000);
       }
     }
-    console.log("Deployment: password page, API privacy and application asset passed.");
+    console.log("Deployment: password page, API privacy, application asset and public origin passed.");
   } catch (error) {
     console.error(`Deployment check failed: ${error.message}`);
     process.exitCode = 1;
